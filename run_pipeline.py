@@ -26,6 +26,7 @@ from src import (
     ingest_odds,
     ingest_weather,
     predict_baseline,
+    predict_ml,
 )
 from src.features import parse_dt
 
@@ -81,13 +82,28 @@ def run_sport(sport: str, target: date | None, args) -> list[dict]:
             print()
 
     slate = target or next_slate_date(sport)
-    predictions = predict_baseline.run(slate, sport)
-    if not predictions:
-        print(f"No {SPORTS[sport]} games on {slate}.")
-        return []
+    predictions = []
 
-    print()
-    print(predict_baseline.format_report(predictions))
+    if args.model in ("baseline", "both"):
+        predictions = predict_baseline.run(slate, sport)
+        if not predictions:
+            print(f"No {SPORTS[sport]} games on {slate}.")
+            return []
+        print()
+        print(predict_baseline.format_report(predictions))
+
+    if args.model in ("ml", "both"):
+        try:
+            ml = predict_ml.run(sport, slate)
+        except SystemExit as exc:
+            print(f"  [warn] ML layer unavailable: {exc}")
+            ml = []
+        if ml:
+            print()
+            print("LAYER 3 - trained margin model")
+            print(predict_ml.format_report(ml))
+            predictions = predictions or ml
+
     return predictions
 
 
@@ -97,6 +113,8 @@ def main() -> int:
     parser.add_argument("--date", help="slate date, YYYY-MM-DD (default: next slate with games)")
     parser.add_argument("--fresh-odds", action="store_true", help="bypass odds cache")
     parser.add_argument("--skip-ingest", action="store_true", help="predict from stored data only")
+    parser.add_argument("--model", default="baseline", choices=["baseline", "ml", "both"],
+                        help="which modeling layer to run")
     args = parser.parse_args()
 
     target = date.fromisoformat(args.date) if args.date else None
