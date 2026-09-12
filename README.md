@@ -156,52 +156,80 @@ model only ever saw as zero is a silent skew, not an upgrade.
 | `fundamentals` | no | the only one that can disagree with the market, so the only one that can find value |
 | `with_market` | yes | more accurate, and useless for value — the cheapest way to predict a margin is to copy the line |
 
-### Results: holdout is the most recent season, never trained on
+### Results: holdout is the most recent season, never used in fitting
+
+Early stopping chooses the number of trees, which makes whatever set it watches
+part of fitting. The season before the holdout is therefore carved out as a
+validation set, and the holdout is touched exactly once, at scoring time.
 
 Mean absolute error in points of margin:
 
 | | NFL (285 games) | NCAAF (762 games) |
 |---|---|---|
-| **Closing line** | **9.67** | **11.85** |
-| `fundamentals` | 10.15 (+0.48) | 12.97 (+1.13) |
-| `with_market` | 9.67 (+0.00) | 11.88 (+0.03) |
+| **Closing line** | **9.670** | **11.846** |
+| `fundamentals` | 10.152 (+0.482) | 12.98 (+1.13) |
+| `with_market` | 9.602 (**-0.069**) | 11.88 (+0.03) |
 
-Neither model beats the line. `with_market` matching the line almost exactly is
-confirmation it simply learned to copy it.
+Adding injuries moved the NFL `with_market` model from +0.002 to **-0.069**
+versus the line: with injury features it is no longer merely copying the line,
+it is slightly correcting it. That is the first evidence in this project of
+information the closing line does not fully price.
 
-Against the spread, break-even at -110 juice is 52.4%:
+It is also a very small effect, and it does **not** translate into a spread
+edge. Against the spread, no bucket in either sport survives correction for
+multiple comparisons — five thresholds across two models is ten chances to
+clear p<0.05 by luck, so roughly one false positive is expected per run:
 
-| Edge threshold | NFL | NCAAF |
-|---|---|---|
-| >= 2.0 pts | 52.4% (n=147) | 52.8% (n=587) |
-| >= 3.0 pts | 48.0% (n=98) | 52.7% (n=490) |
-| >= 4.0 pts | 47.8% (n=67) | 53.9% (n=423) |
-| >= 6.0 pts | 31.2% (n=16) | 53.6% (n=295) |
+| Edge | NFL win% (n) | raw p | corrected p |
+|---|---|---|---|
+| >= 2.0 | 56.1% (82) | 0.251 | 1.000 |
+| >= 3.0 | 58.3% (36) | 0.238 | 1.000 |
+| >= 4.0 | 68.8% (16) | 0.095 | 0.952 |
 
-The college numbers sit above break-even, and it would be easy to call them
-profitable. They are not significant — one-sided p ranges from 0.27 to 0.46, so
-a season of results this good happens by chance roughly a third of the time. The
-NFL numbers are worse: the win rate *falls* as the model's disagreement with the
-line grows, which is the opposite of a real edge.
+### A result that did not survive scrutiny
 
-### The value gate
+An earlier version of this backtest reported 65.1% ATS at edge >= 3 with
+p=0.047, marked SIGNIFICANT. It was wrong, for two compounding reasons:
 
-Because of the above, `predict_ml` reads its own backtest and refuses to label
-anything a value pick unless some threshold beat the line significantly. Edges
-are still computed, stored and displayed — none is called value. The point of
-running a backtest is to be allowed to change the answer.
+1. The holdout season was being used as the early-stopping `eval_set`, so the
+   model was tuned on the season used to judge it.
+2. No correction was applied for testing ten model/threshold combinations.
 
-A useful side observation: the ML model's largest college edge is 3.3 points
-where the baseline claimed 10.5. The trained model converges toward the market,
-which is itself evidence the baseline's big "edges" were its own error rather
-than the market's.
+Fixing both dropped that bucket to 58.3% with a corrected p of 1.000. The
+lesson is worth stating plainly: a backtest is only as good as its worst
+methodological shortcut, and a betting signal is exactly the wrong place to let
+one through.
 
-### The obvious next improvement
+### Injury features in training
 
-The ML layer does not use injuries — the training set has no injury features,
-though nflverse publishes reports back to 2009. Adding them is the most
-promising upgrade available, and is a prerequisite for the value flag ever
-passing its own gate.
+The training set scores every historical NFL injury report with
+`features.score_injuries` — the same function the live pipeline calls, so the
+model is trained on exactly the feature it is later served. Two features are
+produced: `injury_diff` (aggregate points) and `qb_loss_diff` (how much of a
+starting quarterback a side is missing), kept separate because losing a QB is a
+different kind of event rather than a larger quantity of damage.
+
+Snap share is the lookahead trap here. A player's season-long snap share
+includes games *after* the one being predicted, so shares are accumulated week
+by week, falling back to the prior season. The injury report itself is
+published before kickoff and is fine to use; only the usage weighting attached
+to it can leak.
+
+Coverage is ~99% of games across all ten seasons. `injury_diff` correlates
++0.139 with actual margin and — more interestingly — **+0.039 with the market
+residual**, the highest of any feature, which is what makes it the most
+promising place to keep looking.
+
+College gets zeros: there is no historical CFB injury feed, so the column is
+constant in training and held at 0 live to match.
+
+### The next things worth trying
+
+- Line movement (opening vs current) — the sharpest public signal not yet used.
+- Weather history for college, which would let the CFB model use the weather
+  the live pipeline already collects.
+- Several seasons of holdout rather than one; n=285 cannot resolve an edge of
+  the size being looked for.
 
 ## Rate limits
 

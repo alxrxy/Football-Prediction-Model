@@ -29,7 +29,9 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import build_training, config, db
-from .features import FeatureContext, MARGIN_SIGMA, normal_cdf, parse_dt
+from .features import (
+    FeatureContext, MARGIN_SIGMA, normal_cdf, parse_dt, qb_availability_loss,
+)
 from .predict_baseline import slate_window
 
 MODEL_VERSION = "ml-v1"
@@ -73,6 +75,14 @@ def build_live_features(sport: str, games: list[dict], ctx: FeatureContext,
             epa_diff = (epa.rating(home) - epa.rating(away)) * build_training.PLAYS_PER_GAME
             wind = weather.get("wind_mph")
             temp = weather.get("temp_f") if weather.get("temp_f") is not None else 60.0
+            # Scored by the same features.score_injuries the training set used.
+            home_inj, _, _ = ctx.injury_adjustment(home)
+            away_inj, _, _ = ctx.injury_adjustment(away)
+            injury_diff = home_inj - away_inj
+            qb_loss_diff = (
+                qb_availability_loss([i for i in ctx.injuries if i.get("team") == away])
+                - qb_availability_loss([i for i in ctx.injuries if i.get("team") == home])
+            )
         else:
             # Held at the training-time constants. College training rows carry
             # no rest, no EPA and no weather, so supplying them live would feed
@@ -81,6 +91,10 @@ def build_live_features(sport: str, games: list[dict], ctx: FeatureContext,
             epa_diff = 0.0
             wind = float("nan")
             temp = 60.0
+            # College training rows have no injury history to score, so these
+            # stay at the constant the model was trained on.
+            injury_diff = 0.0
+            qb_loss_diff = 0.0
 
         rows.append(
             {
@@ -97,6 +111,8 @@ def build_live_features(sport: str, games: list[dict], ctx: FeatureContext,
                 "is_neutral": int(neutral),
                 "is_division": int(bool(g.get("is_conference"))),
                 "is_indoor": int(bool(weather.get("is_dome"))),
+                "injury_diff": injury_diff,
+                "qb_loss_diff": qb_loss_diff,
                 "wind": wind if wind is not None else float("nan"),
                 "temp": temp,
             }

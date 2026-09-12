@@ -36,8 +36,16 @@ from . import config
 FUNDAMENTAL_FEATURES = [
     "elo_diff", "epa_diff", "rest_diff", "travel_away", "travel_diff",
     "is_neutral", "is_division", "is_indoor", "wind", "temp",
+    # Injury features. qb_loss_diff is kept separate from the aggregate points
+    # because losing a quarterback is a different kind of event, not simply a
+    # larger quantity of damage, and the isolated signal is easier to use.
+    "injury_diff", "qb_loss_diff",
 ]
 MARKET_FEATURES = FUNDAMENTAL_FEATURES + ["market_spread", "market_total"]
+
+# 5 edge thresholds x 2 models tested per run. Used to Bonferroni-correct the
+# ATS p-values so a lucky bucket is not mistaken for a real edge.
+N_COMPARISONS = 10
 
 
 def load(sport: str):
@@ -65,11 +73,20 @@ def train(sport: str, holdout_season: int | None = None):
     df = load(sport)
     seasons = sorted(df["season"].unique())
     holdout_season = holdout_season or seasons[-1]
-    train_df = df[df["season"] < holdout_season]
+
+    # Early stopping picks the number of trees, which makes the set it watches
+    # part of fitting. Pointing it at the holdout would quietly tune the model
+    # on the very season used to judge it and inflate every number below, so
+    # the season before the holdout is carved out as a validation set and the
+    # holdout is touched exactly once, at scoring time.
+    valid_season = holdout_season - 1
+    train_df = df[df["season"] < valid_season]
+    valid_df = df[df["season"] == valid_season]
     test_df = df[df["season"] == holdout_season]
 
     print(f"[train] {sport}: {len(train_df)} training games "
-          f"({seasons[0]}-{holdout_season - 1}), {len(test_df)} holdout ({holdout_season})")
+          f"({seasons[0]}-{valid_season - 1}), {len(valid_df)} validation ({valid_season}), "
+          f"{len(test_df)} holdout ({holdout_season}, never seen during fitting)")
 
     results = {}
     models = {}
@@ -82,6 +99,7 @@ def train(sport: str, holdout_season: int | None = None):
         # set rather than let XGBoost treat it as missing.
         required = ["target_margin"] + (["market_spread"] if "market_spread" in feats else [])
         sub_train = train_df.dropna(subset=required)
+        sub_valid = valid_df.dropna(subset=required)
         sub_test = test_df.dropna(subset=required)
         if len(sub_train) < 200:
             print(f"  [skip] {name}: only {len(sub_train)} usable rows")
@@ -101,7 +119,7 @@ def train(sport: str, holdout_season: int | None = None):
         )
         model.fit(
             sub_train[feats], sub_train["target_margin"],
-            eval_set=[(sub_test[feats], sub_test["target_margin"])],
+            eval_set=[(sub_valid[feats], sub_valid["target_margin"])],
             verbose=False,
         )
         pred = model.predict(sub_test[feats])
@@ -125,16 +143,25 @@ def train(sport: str, holdout_season: int | None = None):
         verdict = "beats the line" if delta < 0 else "worse than the line"
         print(f"    {name:<16} {r['mae']:6.3f}   {delta:+.3f} vs line  ({verdict})")
 
-    ats = None
-    if "fundamentals" in models:
-        ats = _ats_report(models["fundamentals"], sport)
+    # Both models get an ATS test. The with_market model was originally
+    # assumed useless for value because it merely copies the line - true while
+    # it had nothing to add. Once it beats the line it is no longer copying it,
+    # it is correcting it, and its disagreement becomes a candidate signal that
+    # has to be measured rather than assumed away.
+    ats_by_model = {}
+    for name in ("fundamentals", "with_market"):
+        if name in models:
+            print(f"\n  [{name}]")
+            ats_by_model[name] = _ats_report(models[name], sport)
+    ats = ats_by_model.get("fundamentals")
 
     # The fundamentals model is the one that ships: it is the only one that
     # can disagree with the market, which is what a value signal requires.
     if "fundamentals" in models:
         model, feats, _, _ = models["fundamentals"]
-        _save(sport, model, feats, results, market_mae, ats, holdout_season)
-    return results, market_mae, ats
+        _save(sport, model, feats, results, market_mae, ats, holdout_season,
+              ats_by_model)
+    return results, market_mae, ats_by_model
 
 
 def _ats_report(bundle, sport: str):
@@ -167,7 +194,12 @@ def _ats_report(bundle, sport: str):
         pushes = int(np.sum((actual[picked] - market_margin[picked]) == 0))
         n = int(picked.sum())
         win_pct = wins / n if n else 0.0
-        z, p = _significance(wins, n)
+        z, p_raw = _significance(wins, n)
+        # Five thresholds are tried per model and two models are tried, so ten
+        # chances to clear p<0.05 by luck alone -- roughly one expected false
+        # positive per run. Bonferroni is conservative but it is the right
+        # direction of conservative when the output is a betting signal.
+        p = min(1.0, p_raw * N_COMPARISONS)
         out["buckets"].append(
             {
                 "threshold": threshold,
@@ -177,6 +209,7 @@ def _ats_report(bundle, sport: str):
                 "win_pct": win_pct,
                 "z": z,
                 "p_value": p,
+                "p_uncorrected": p_raw,
                 "significant": bool(p < 0.05),
             }
         )
@@ -191,7 +224,7 @@ def _ats_report(bundle, sport: str):
         verdict = "SIGNIFICANT" if b["significant"] else "not distinguishable from chance"
         print(f"    edge >= {b['threshold']:>3.1f} pts : "
               f"{b['wins']:>4}/{b['n']:<4} = {b['win_pct'] * 100:5.1f}%   "
-              f"p={b['p_value']:.3f}  {verdict}")
+              f"p={b['p_uncorrected']:.3f} raw / {b['p_value']:.3f} corrected  {verdict}")
 
     best = max(out["buckets"], key=lambda b: b["win_pct"]) if out["buckets"] else None
     out["any_significant"] = any(b["significant"] for b in out["buckets"])
@@ -210,7 +243,8 @@ def _significance(wins: int, n: int, break_even: float = 0.524):
     return float(z), float(p)
 
 
-def _save(sport, model, feats, results, market_mae, ats, holdout_season) -> None:
+def _save(sport, model, feats, results, market_mae, ats, holdout_season,
+          ats_by_model=None) -> None:
     models_dir = Path(config.ROOT) / "models"
     models_dir.mkdir(exist_ok=True)
     model_path = models_dir / f"{sport}_margin.json"
@@ -225,6 +259,7 @@ def _save(sport, model, feats, results, market_mae, ats, holdout_season) -> None
         "market_mae": market_mae,
         "residual_sd": residual_sd,
         "ats": ats,
+        "ats_by_model": ats_by_model or {},
         "trained_at": __import__("datetime").datetime.now(
             __import__("datetime").timezone.utc
         ).isoformat(),

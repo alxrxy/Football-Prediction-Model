@@ -114,6 +114,89 @@ def normal_cdf(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
 
+def score_injuries(rows: list[dict], sport: str) -> tuple[float, list[dict]]:
+    """Cost of one team's injury report, in points. Negative = weakened.
+
+    Deliberately a free function rather than a method: the ML training set
+    scores historical reports with this exact code. If training scored injuries
+    even slightly differently from the live pipeline, the model would be fed a
+    feature at prediction time that it never actually learned.
+
+    Each player contributes:
+
+        position weight  x  snap share  x  (1 - play probability)  x  scale
+    """
+    scale = INJURY_POINTS_SCALE.get(sport, 6.5)
+
+    # Keep only the players who could actually be on the field at each
+    # position, highest snap share first. Without this a team listing three
+    # hurt quarterbacks would be charged three times for one job.
+    by_position: dict[str, list[dict]] = {}
+    for row in rows:
+        by_position.setdefault((row.get("position") or "").upper(), []).append(row)
+    eligible = []
+    for position, group in by_position.items():
+        group.sort(key=lambda r: -(r.get("snap_share") or DEFAULT_SNAP_SHARE))
+        eligible.extend(group[: STARTER_SLOTS.get(position, DEFAULT_STARTER_SLOTS)])
+
+    penalty = 0.0
+    breakdown = []
+    for row in eligible:
+        weight = row.get("position_weight")
+        if weight is None:
+            weight = POSITION_WEIGHTS.get(
+                (row.get("position") or "").upper(), DEFAULT_POSITION_WEIGHT
+            )
+        play_prob = row.get("play_probability")
+        if play_prob is None:
+            play_prob = PLAY_PROBABILITY.get((row.get("status") or "").lower(), 0.5)
+        snap_share = row.get("snap_share")
+        if snap_share is None:
+            snap_share = DEFAULT_SNAP_SHARE
+
+        cost = weight * snap_share * (1.0 - play_prob) * scale
+        if cost < 0.05:
+            continue  # immaterial; keeps the breakdown readable
+        penalty += cost
+        breakdown.append(
+            {
+                "player": row.get("player"),
+                "position": row.get("position"),
+                "status": row.get("status"),
+                "practice": row.get("practice_trend"),
+                "snap_share": round(float(snap_share), 3),
+                "play_prob": round(float(play_prob), 2),
+                "points": round(cost, 2),
+            }
+        )
+
+    penalty = min(penalty, INJURY_MAX_POINTS)
+    breakdown.sort(key=lambda b: -b["points"])
+    return -penalty, breakdown
+
+
+def qb_availability_loss(rows: list[dict]) -> float:
+    """How much of a starting quarterback a team is missing, from 0 to 1.
+
+    Split out as its own feature because a QB injury is categorically unlike
+    any other: it is not four cornerbacks' worth of damage, it is a different
+    kind of event, and a tree model can use the isolated signal far better than
+    it can recover it from an aggregate points total.
+    """
+    qbs = [r for r in rows if (r.get("position") or "").upper() == "QB"]
+    if not qbs:
+        return 0.0
+    qbs.sort(key=lambda r: -(r.get("snap_share") or DEFAULT_SNAP_SHARE))
+    starter = qbs[0]
+    play_prob = starter.get("play_probability")
+    if play_prob is None:
+        play_prob = PLAY_PROBABILITY.get((starter.get("status") or "").lower(), 0.5)
+    share = starter.get("snap_share")
+    if share is None:
+        share = DEFAULT_SNAP_SHARE
+    return float(share) * (1.0 - float(play_prob))
+
+
 class FeatureContext:
     """Pre-loaded lookups so building N games' features costs one DB read each."""
 
@@ -251,54 +334,8 @@ class FeatureContext:
         rows = [i for i in self.injuries if i.get("team") == team]
         if not rows:
             return 0.0, False, []
-
-        scale = INJURY_POINTS_SCALE.get(self.sport, 6.5)
-
-        # Keep only the players who could actually be on the field at each
-        # position, highest snap share first. Without this a team listing three
-        # hurt quarterbacks would be charged three times for one job.
-        by_position: dict[str, list[dict]] = {}
-        for row in rows:
-            by_position.setdefault((row.get("position") or "").upper(), []).append(row)
-        eligible = []
-        for position, group in by_position.items():
-            group.sort(key=lambda r: -(r.get("snap_share") or DEFAULT_SNAP_SHARE))
-            eligible.extend(group[: STARTER_SLOTS.get(position, DEFAULT_STARTER_SLOTS)])
-
-        penalty = 0.0
-        breakdown = []
-        for row in eligible:
-            weight = row.get("position_weight")
-            if weight is None:
-                weight = POSITION_WEIGHTS.get(
-                    (row.get("position") or "").upper(), DEFAULT_POSITION_WEIGHT
-                )
-            play_prob = row.get("play_probability")
-            if play_prob is None:
-                play_prob = PLAY_PROBABILITY.get((row.get("status") or "").lower(), 0.5)
-            snap_share = row.get("snap_share")
-            if snap_share is None:
-                snap_share = DEFAULT_SNAP_SHARE
-
-            cost = weight * snap_share * (1.0 - play_prob) * scale
-            if cost < 0.05:
-                continue  # immaterial; keeps the breakdown readable
-            penalty += cost
-            breakdown.append(
-                {
-                    "player": row.get("player"),
-                    "position": row.get("position"),
-                    "status": row.get("status"),
-                    "practice": row.get("practice_trend"),
-                    "snap_share": round(float(snap_share), 3),
-                    "play_prob": round(float(play_prob), 2),
-                    "points": round(cost, 2),
-                }
-            )
-
-        penalty = min(penalty, INJURY_MAX_POINTS)
-        breakdown.sort(key=lambda b: -b["points"])
-        return -penalty, True, breakdown
+        points, breakdown = score_injuries(rows, self.sport)
+        return points, True, breakdown
 
     # --- assembly ---------------------------------------------------------
 
