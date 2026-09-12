@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import SlateTable from './SlateTable.jsx'
 import BacktestPanel from './BacktestPanel.jsx'
+import ResultsPanel from './ResultsPanel.jsx'
 import { dateLabel } from './format.js'
 
 export default function App() {
@@ -106,6 +107,7 @@ export default function App() {
         </main>
 
         <aside>
+          <ResultsPanel results={sport.results} />
           <BacktestPanel
             backtest={sport.backtest}
             calibration={sport.calibration}
