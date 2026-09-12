@@ -119,6 +119,8 @@ def build(sport: str) -> dict:
             }
         )
 
+    results = _results(store, sport)
+
     store.close()
     meta = _model_meta(sport)
     return {
@@ -126,6 +128,7 @@ def build(sport: str) -> dict:
         "label": SPORTS[sport],
         "slate_date": slate_date,
         "games": out_games,
+        "results": results,
         "backtest": _backtest_summary(meta),
         "calibration": _calibration(out_games),
         "injury_coverage": {
@@ -191,6 +194,43 @@ def _backtest_summary(meta: dict | None) -> dict | None:
         },
         "trained_at": meta.get("trained_at"),
     }
+
+
+def _results(store, sport: str) -> dict:
+    """The accumulated track record: every prediction that has been graded.
+
+    Covers all graded games, not just the slate on screen — a record is only
+    worth anything cumulatively, and showing one weekend of it would invite
+    exactly the over-reading this project keeps trying to avoid.
+    """
+    from .grade import evaluate
+
+    graded = []
+    for row in store.select("predictions", {"sport": sport}):
+        if row.get("actual_home_points") is None or row.get("actual_away_points") is None:
+            continue
+        row = dict(row)
+        row["actual_margin"] = int(row["actual_home_points"]) - int(row["actual_away_points"])
+        graded.append(row)
+
+    by_model: dict[str, list] = {}
+    for row in graded:
+        by_model.setdefault(row["model_version"], []).append(row)
+
+    out = {}
+    for version, rows in sorted(by_model.items()):
+        stats = evaluate(rows)
+        out[version] = {
+            "n": stats["n"],
+            "su": stats["su"],
+            "ats": stats["ats"],
+            "mae": stats["mae"],
+            "market_mae": stats["market_mae"],
+            "brier": stats["brier"],
+            "by_edge": {str(k): v for k, v in stats["by_edge"].items()},
+            "by_conf": stats["by_conf"],
+        }
+    return {"total_graded": len(graded), "models": out}
 
 
 def _calibration(games: list[dict]) -> dict:

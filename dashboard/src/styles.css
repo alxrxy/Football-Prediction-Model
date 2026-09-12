@@ -204,4 +204,11 @@ ul.books li { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; pa
 .bar-fill.current { opacity: 1; }
 .bar-value { font-family: var(--mono); color: var(--text-dim); white-space: nowrap; }
 
+/* --- track record --- */
+.record + .record { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.record h4 { margin-bottom: 4px; }
+.record .stat-row { gap: 16px; }
+.record table.micro { margin-top: 10px; }
+.record .stat.good { color: var(--good); }
+
 footer { margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--border); }
