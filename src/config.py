@@ -58,7 +58,7 @@ SQLITE_PATH = ROOT / os.getenv("SQLITE_PATH", "data/football.db")
 DATA_DIR = ROOT / "data"
 CACHE_DIR = DATA_DIR / "cache"
 SCHEMA_SQLITE = ROOT / "db" / "schema_sqlite.sql"
-SCHEMA_SUPABASE = ROOT / "db" / "schema_supabase.sql"
+SCHEMA_SUPABASE = ROOT / "db" / "PASTE_INTO_SUPABASE.sql"
 
 # --- Tuning ---
 ODDS_CACHE_MINUTES = int(os.getenv("ODDS_CACHE_MINUTES", "180"))

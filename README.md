@@ -104,9 +104,9 @@ prior season is still carrying.
 Both schema files use `create table if not exists`, which does **not** add a
 column to a table that already exists. The SQLite mirror handles this itself by
 diffing declared columns against live ones and ALTERing in the gaps on connect.
-For Supabase, any column added later is also appended to the bottom of
-`db/schema_supabase.sql` as `alter table ... add column if not exists`, so
-re-running that whole file stays safe and additive.
+For Supabase, any column added later is also repeated in the migrations section
+of `db/PASTE_INTO_SUPABASE.sql` as `alter table ... add column if not exists`,
+so re-running that whole file stays safe and additive.
 
 ## Storage
 
@@ -118,8 +118,10 @@ and primary keys, so switching requires no code change.
 
 To move onto Supabase:
 
-1. Open the project's **SQL Editor**, paste all of `db/schema_supabase.sql`, Run.
-   PostgREST cannot execute DDL, so this one step is manual.
+1. Open the project's **SQL Editor**, paste all of `db/PASTE_INTO_SUPABASE.sql`,
+   Run. PostgREST cannot execute DDL, so this one step is manual. The script is
+   idempotent, ends by printing what it created, and enables row level security
+   so a leaked anon key cannot read or write your data.
 2. `python -m src.sync_to_supabase --check` to confirm all tables exist.
 3. `python -m src.sync_to_supabase` to push the local data up.
 4. Set `STORAGE_BACKEND=supabase` in `.env`.
