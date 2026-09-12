@@ -3,7 +3,7 @@
     python -m src.sync_to_supabase --check    verify the schema is applied
     python -m src.sync_to_supabase            push all tables
 
-Needed once, after pasting db/schema_supabase.sql into the Supabase SQL Editor.
+Needed once, after pasting db/PASTE_INTO_SUPABASE.sql into the Supabase SQL Editor.
 PostgREST cannot run DDL, so table creation stays a manual paste; everything
 after that is automated.
 

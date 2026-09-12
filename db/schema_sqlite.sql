@@ -1,4 +1,4 @@
--- Football Predictor — local SQLite mirror of schema_supabase.sql
+-- Football Predictor — local SQLite mirror of db/PASTE_INTO_SUPABASE.sql
 -- Same tables, same keys, same column names. Applied automatically by
 -- src/db.py when STORAGE_BACKEND=sqlite. Keep in sync with the Postgres file.
 
