@@ -92,6 +92,8 @@ create table if not exists injuries (
     practice_trend  text,                     -- dnp|limited|full|dnp->limited etc
     position_weight double precision,
     play_probability double precision,
+    snap_share      double precision,        -- starter signal; see ingest_injuries
+    source          text,
     pulled_at       timestamptz not null default now(),
     primary key (player, team, sport, season, week)
 );
@@ -196,3 +198,5 @@ alter table team_ratings add column if not exists power_rating double precision;
 alter table games       add column if not exists home_rest_days double precision;
 alter table games       add column if not exists away_rest_days double precision;
 alter table teams       add column if not exists full_name text;
+alter table injuries    add column if not exists snap_share double precision;
+alter table injuries    add column if not exists source text;

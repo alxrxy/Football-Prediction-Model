@@ -21,6 +21,7 @@ from src import (
     config,
     db,
     ingest_cfbd,
+    ingest_injuries,
     ingest_nflverse,
     ingest_odds,
     ingest_weather,
@@ -70,6 +71,7 @@ def run_sport(sport: str, target: date | None, args) -> list[dict]:
         for name, fn in (
             ("weather", lambda: ingest_weather.run(sport=sport)),
             ("odds", lambda: ingest_odds.run(sport, cache_minutes=0 if args.fresh_odds else None)),
+            ("injuries", lambda: ingest_injuries.run(sport=sport)),
         ):
             try:
                 fn()

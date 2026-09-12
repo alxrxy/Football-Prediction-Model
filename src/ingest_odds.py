@@ -12,85 +12,15 @@ prices on top and is the only market source NFL will have in step 5.
 from __future__ import annotations
 
 import argparse
-import re
-import unicodedata
 from datetime import datetime, timedelta, timezone
-from difflib import SequenceMatcher
 
 from . import config, db
 from .http import get_json
+from .names import MATCH_THRESHOLD, norm, similarity
 
-SPORT_KEYS = {"ncaaf": "americanfootball_ncaaf", "nfl": "americanfootball_nfl"}
-
-# Odds API names carry mascots ("Oklahoma State Cowboys"); CFBD does not.
-_NOISE = re.compile(r"[^a-z0-9 ]+")
-_APOSTROPHE = re.compile(r"[‘’'`´]")
-_MATCH_THRESHOLD = 0.72
 _KICKOFF_WINDOW_HOURS = 26
 
-# Confirmed divergences between Odds API and CFBD naming, normalized form.
-# Keyed by the Odds API side, valued by the CFBD side.
-_ALIASES = {
-    "appalachian state": "app state",
-    "umass": "massachusetts",
-    "fiu": "florida international",
-    "southern mississippi": "southern miss",
-    "louisiana lafayette": "louisiana",
-    "louisiana ragin cajuns": "louisiana",
-    "louisiana monroe": "ul monroe",
-    "miami fl": "miami",
-    "miami florida": "miami",
-    "miami oh": "miami oh",
-    "miami ohio": "miami oh",
-    "connecticut": "uconn",
-    "middle tennessee state": "middle tennessee",
-    "sam houston state": "sam houston",
-    "texas san antonio": "utsa",
-    "texas el paso": "utep",
-    "nevada las vegas": "unlv",
-}
-
-
-def _norm(name: str) -> str:
-    """Casefold, strip diacritics and apostrophes, drop filler words.
-
-    Apostrophes are deleted rather than replaced with a space so CFBD's
-    "Hawai'i" collapses to "hawaii" and matches the Odds API spelling.
-    """
-    name = unicodedata.normalize("NFKD", name or "")
-    name = "".join(c for c in name if not unicodedata.combining(c))
-    name = _APOSTROPHE.sub("", name.lower())
-    name = _NOISE.sub(" ", name)
-    name = re.sub(r"\b(university|univ|of|the)\b", " ", name)
-    return re.sub(r"\s+", " ", name).strip()
-
-
-def _similarity(odds_name: str, cfbd_name: str) -> float:
-    """Score an Odds API name against a CFBD name.
-
-    The CFBD side is expanded into every Odds-API spelling that aliases to it,
-    then each variant is tested as a prefix of the Odds name (which carries a
-    mascot the CFBD name lacks).
-    """
-    a, b = _norm(odds_name), _norm(cfbd_name)
-    if not a or not b:
-        return 0.0
-
-    variants = {b} | {k for k, v in _ALIASES.items() if v == b}
-    best = 0.0
-    for variant in variants:
-        if a == variant:
-            return 1.0
-        if a.startswith(variant + " "):
-            # Score by how much of the Odds name the CFBD name accounts for.
-            # A bare "Texas" covers little of "Texas Tech Red Raiders" and must
-            # not outscore the real "Texas Tech" — coverage separates them
-            # where a flat prefix bonus does not.
-            best = max(best, 0.80 + 0.20 * (len(variant) / len(a)))
-        else:
-            best = max(best, SequenceMatcher(None, a, variant).ratio())
-    return best
-
+SPORT_KEYS = {"ncaaf": "americanfootball_ncaaf", "nfl": "americanfootball_nfl"}
 
 def _parse_dt(value):
     if not value:
@@ -121,11 +51,11 @@ def match_events(events: list[dict], games: list[dict]) -> tuple[dict, list, lis
                 if abs((commence - kickoff).total_seconds()) > _KICKOFF_WINDOW_HOURS * 3600:
                     continue
             candidates_for[i] += 1
-            home = _similarity(event.get("home_team", ""), game["_match_home"])
-            away = _similarity(event.get("away_team", ""), game["_match_away"])
+            home = similarity(event.get("home_team", ""), game["_match_home"])
+            away = similarity(event.get("away_team", ""), game["_match_away"])
             score = (home + away) / 2
             best_any[i] = max(best_any.get(i, 0.0), score)
-            if score >= _MATCH_THRESHOLD:
+            if score >= MATCH_THRESHOLD:
                 pairs.append((score, i, j))
 
     pairs.sort(reverse=True)
@@ -194,7 +124,7 @@ def _dedupe(events: list[dict]) -> list[dict]:
     """
     merged: dict[tuple, dict] = {}
     for event in events:
-        key = (_norm(event.get("home_team", "")), _norm(event.get("away_team", "")))
+        key = (norm(event.get("home_team", "")), norm(event.get("away_team", "")))
         incumbent = merged.get(key)
         if incumbent is None:
             merged[key] = dict(event)
