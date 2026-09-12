@@ -16,7 +16,10 @@ from datetime import datetime, timedelta, timezone
 
 # --- tunable priors --------------------------------------------------------
 
-HOME_FIELD_POINTS = 2.4          # CFB home edge, neutral sites get 0
+HOME_FIELD_POINTS = {            # neutral sites get 0
+    "ncaaf": 2.4,                # college crowds/travel make this larger
+    "nfl": 1.9,                  # modern NFL home edge has compressed
+}
 REST_POINTS_PER_DAY = 0.12       # per day of rest differential
 REST_CAP_POINTS = 1.5            # cap so a bye week can't dominate
 TRAVEL_POINTS_PER_1000MI = 0.45  # penalty to the travelling side
@@ -136,43 +139,57 @@ class FeatureContext:
     def market(self, game_id: str) -> tuple[float | None, float | None, str | None, int]:
         """Consensus market line for a game.
 
-        Prefers The Odds API consensus (live, multiple US books) and falls back
-        to CFBD's consensus, which is free and does not touch the quota.
+        Preference order is liveness: The Odds API consensus (current, several
+        US books), then CFBD's consensus (free, no quota), then the nflverse
+        line, which is a stored closing/opening number rather than a live one.
         Returns (spread, total, source, n_books).
         """
         books = self.odds.get(game_id, {})
-        for key, label in (("oddsapi_consensus", "the_odds_api"), ("cfbd_consensus", "cfbd")):
+        sources = (
+            ("oddsapi_consensus", "the_odds_api", "oddsapi:"),
+            ("cfbd_consensus", "cfbd", "cfbd:"),
+            ("nflverse_close", "nflverse", None),
+        )
+        for key, label, prefix in sources:
             row = books.get(key)
             if row and row.get("spread") is not None:
-                prefix = "oddsapi:" if label == "the_odds_api" else "cfbd:"
-                n_books = sum(1 for b in books if b.startswith(prefix))
+                n_books = sum(1 for b in books if b.startswith(prefix)) if prefix else 1
                 return float(row["spread"]), row.get("total"), label, n_books
         return None, None, None, 0
 
     def baseline_margin(self, home: str, away: str) -> tuple[float | None, str, dict]:
         """Layer 1: expected neutral-field margin from power ratings.
 
-        SP+ is already expressed in points, so the raw difference is the
-        prediction. Elo is the fallback, converted at 25 Elo per point.
+        `power_rating` is the sport-neutral input — points above average,
+        filled from SP+ for NCAAF and from the EPA-derived rating for the NFL.
+        Its difference is the prediction directly. Elo is the fallback,
+        converted at 25 Elo per point.
         """
         h, a = self.ratings.get(home, {}), self.ratings.get(away, {})
-        h_sp, a_sp = h.get("sp_plus"), a.get("sp_plus")
+        h_pr, a_pr = h.get("power_rating"), a.get("power_rating")
         detail = {
-            "home_sp_plus": h_sp, "away_sp_plus": a_sp,
+            "home_power_rating": h_pr, "away_power_rating": a_pr,
+            "home_sp_plus": h.get("sp_plus"), "away_sp_plus": a.get("sp_plus"),
             "home_elo": h.get("elo"), "away_elo": a.get("elo"),
         }
 
-        # Fill an unrated (FCS) side with a replacement-level proxy.
-        proxied = []
-        if h_sp is None and a_sp is not None:
-            h_sp, _ = FCS_PROXY_SP_PLUS, proxied.append(home)
-        elif a_sp is None and h_sp is not None:
-            a_sp, _ = FCS_PROXY_SP_PLUS, proxied.append(away)
+        # Fill an unrated side with a replacement-level proxy. This only ever
+        # applies to college, where FBS teams routinely play unrated FCS
+        # opponents; every NFL team is rated, so an NFL gap is a real fault
+        # and must not be papered over with a fabricated rating.
+        proxied: list[str] = []
+        if self.sport == "ncaaf":
+            if h_pr is None and a_pr is not None:
+                h_pr = FCS_PROXY_SP_PLUS
+                proxied.append(home)
+            elif a_pr is None and h_pr is not None:
+                a_pr = FCS_PROXY_SP_PLUS
+                proxied.append(away)
 
-        if h_sp is not None and a_sp is not None:
+        if h_pr is not None and a_pr is not None:
             detail["fcs_proxy_applied_to"] = proxied or None
-            source = "sp_plus_fcs_proxy" if proxied else "sp_plus"
-            return h_sp - a_sp, source, detail
+            source = "sp_plus_fcs_proxy" if proxied else "power_rating"
+            return h_pr - a_pr, source, detail
 
         h_elo, a_elo = h.get("elo"), a.get("elo")
         if h_elo is not None and a_elo is not None:
@@ -211,8 +228,14 @@ class FeatureContext:
 
         margin, source, rating_detail = self.baseline_margin(home, away)
 
-        home_rest = self.rest_days(home, kickoff) if kickoff else None
-        away_rest = self.rest_days(away, kickoff) if kickoff else None
+        # nflverse supplies rest days directly; for CFB they are derived from
+        # the loaded schedule, which needs the previous week ingested.
+        home_rest = game.get("home_rest_days")
+        away_rest = game.get("away_rest_days")
+        if home_rest is None and kickoff:
+            home_rest = self.rest_days(home, kickoff)
+        if away_rest is None and kickoff:
+            away_rest = self.rest_days(away, kickoff)
         rest_adj = 0.0
         if home_rest is not None and away_rest is not None:
             rest_adj = max(
@@ -231,7 +254,8 @@ class FeatureContext:
                 home_pen = min(TRAVEL_CAP_POINTS, home_travel / 1000.0 * TRAVEL_POINTS_PER_1000MI)
             travel_adj = away_pen - home_pen
 
-        hfa = 0.0 if neutral else HOME_FIELD_POINTS
+        sport = game.get("sport", self.sport)
+        hfa = 0.0 if neutral else HOME_FIELD_POINTS.get(sport, 2.4)
 
         weather = self.weather.get(game["game_id"]) or {}
         wind = weather.get("wind_mph")
@@ -250,7 +274,7 @@ class FeatureContext:
 
         return {
             "game_id": game["game_id"],
-            "sport": game.get("sport", self.sport),
+            "sport": sport,
             "home_team": home,
             "away_team": away,
             "kickoff_time": game.get("kickoff_time"),

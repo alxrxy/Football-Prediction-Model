@@ -99,6 +99,7 @@ def ingest_teams(store: db.Store, season: int) -> int:
             {
                 "team": t["school"],
                 "sport": "ncaaf",
+                "full_name": t["school"],
                 "conference": t.get("conference"),
                 "classification": t.get("classification"),
                 "abbreviation": t.get("abbreviation"),
@@ -172,6 +173,9 @@ def ingest_ratings(store: db.Store, season: int, week: int) -> int:
             "season": season,
             "week": week,
             "conference": r.get("conference"),
+            # power_rating is the sport-neutral baseline the model reads.
+            # For NCAAF that is SP+ directly, already expressed in points.
+            "power_rating": _as_float(r.get("rating")),
             "sp_plus": _as_float(r.get("rating")),
             "sp_plus_off": _as_float((r.get("offense") or {}).get("rating")),
             "sp_plus_def": _as_float((r.get("defense") or {}).get("rating")),

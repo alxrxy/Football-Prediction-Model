@@ -35,6 +35,8 @@ create table if not exists games (
     home_points      integer,
     away_points      integer,
     completed        integer default 0,
+    home_rest_days   real,
+    away_rest_days   real,
     pulled_at        text not null
 );
 create index if not exists games_kickoff_idx on games (sport, kickoff_time);
@@ -46,6 +48,7 @@ create table if not exists team_ratings (
     season        integer not null,
     week          integer not null,
     conference    text,
+    power_rating  real,
     elo           real,
     sp_plus       real,
     sp_plus_off   real,
@@ -129,6 +132,7 @@ create index if not exists predictions_generated_idx on predictions (generated_a
 create table if not exists teams (
     team           text not null,
     sport          text not null,
+    full_name      text,
     conference     text,
     classification text,
     abbreviation   text,

@@ -3,8 +3,8 @@
 Free-data-only prediction system for NFL and NCAAF. Produces a win probability,
 a predicted spread, and a value-vs-market flag per game.
 
-Built against `football-predictor-architecture.md`. Currently through **step 4**
-of the section 7 build order.
+Built against `football-predictor-architecture.md`. Currently through **step 5**
+of the section 7 build order: both sports run end to end.
 
 ## Status
 
@@ -14,7 +14,7 @@ of the section 7 build order.
 | 2 | CFBD ingestion (games, SP+/Elo, lines, venues, teams) | done |
 | 3 | Odds API + Open-Meteo ingestion | done |
 | 4 | Baseline prediction, Layers 1+2+4 | done |
-| 5 | nflverse ingestion + NFL Elo | not started |
+| 5 | nflverse ingestion + NFL Elo | done |
 | 6 | ESPN injury / depth-chart pipeline | not started |
 | 7 | XGBoost Layer 3 | not started |
 | 8 | React dashboard | not started |
@@ -34,20 +34,52 @@ Secrets live in `.env` (git-ignored, as is `Lock.txt`). See `.env.example`.
 ## Running
 
 ```bash
-python run_cfb_today.py                 # full pipeline for today's slate
-python run_cfb_today.py --date 2026-09-19
-python run_cfb_today.py --skip-ingest   # re-predict from stored data
-python run_cfb_today.py --fresh-odds    # bypass odds cache (costs quota)
+python run_pipeline.py                    # today's CFB slate
+python run_pipeline.py --sport nfl        # next NFL slate with games
+python run_pipeline.py --sport both
+python run_pipeline.py --date 2026-09-19
+python run_pipeline.py --skip-ingest      # re-predict from stored data
+python run_pipeline.py --fresh-odds       # bypass odds cache (costs quota)
 ```
 
-Each ingestion module also runs standalone:
+With no `--date`, the runner picks the next date that actually has unplayed
+games, so `--sport nfl` on a Tuesday still shows Sunday's slate.
+
+Each module also runs standalone:
 
 ```bash
 python -m src.ingest_cfbd
-python -m src.ingest_weather
-python -m src.ingest_odds --sport ncaaf
-python -m src.predict_baseline --date 2026-09-12
+python -m src.ingest_nflverse
+python -m src.ingest_weather --sport nfl
+python -m src.ingest_odds --sport nfl
+python -m src.predict_baseline --sport nfl --date 2026-09-13
 ```
+
+## Ratings
+
+`team_ratings.power_rating` is the sport-neutral Layer 1 input: points above an
+average team. The modeling layer reads only this column, so both sports share
+one code path.
+
+- **NCAAF** — CFBD's SP+, which is already a points figure, used directly.
+- **NFL** — built from play-by-play: offensive EPA per play minus defensive EPA
+  per play allowed, scaled by 63 plays a game and centred on the league. A
+  conventional margin-aware Elo is computed alongside as a cross-check and as
+  the fallback when a team has no pbp.
+
+Early-season shrinkage is the part that matters. In week 1 the current season
+has almost no plays, so prior-season EPA is carried forward and the current
+season blended in as volume accumulates; the run prints how much weight the
+prior season is still carrying.
+
+## Schema changes
+
+Both schema files use `create table if not exists`, which does **not** add a
+column to a table that already exists. The SQLite mirror handles this itself by
+diffing declared columns against live ones and ALTERing in the gaps on connect.
+For Supabase, any column added later is also appended to the bottom of
+`db/schema_supabase.sql` as `alter table ... add column if not exists`, so
+re-running that whole file stays safe and additive.
 
 ## Storage
 
@@ -75,6 +107,7 @@ To move onto Supabase:
   and venues are cached for hours to days.
 - **ESPN** — unofficial, so every call is wrapped and failure degrades the
   pipeline instead of stopping it.
+- **nflverse** — no key, no rate limit; reads GitHub releases.
 - **Open-Meteo** — no key. Coordinates are batched, so a full slate is ~2 calls.
 
 ## Conventions that matter
@@ -96,6 +129,9 @@ To move onto Supabase:
   flags most of the slate. Every run prints a calibration block with a threshold
   sensitivity table. Treat the flags as unvalidated until step 7 and a real
   backtest.
+- **NFL week-1 ratings lean ~99% on last season.** That is the correct thing to
+  do with 7 plays of current-season data, but it means the NFL numbers are a
+  prior-season model until a few weeks accumulate.
 - **Layer 2 coefficients are priors, not fitted values** — home field, rest,
   travel and wind magnitudes are conservative guesses documented in
   `src/features.py`. Backtesting should replace them.
