@@ -71,6 +71,8 @@ create table if not exists injuries (
     practice_trend   text,
     position_weight  real,
     play_probability real,
+    snap_share       real,
+    source           text,
     pulled_at        text not null,
     primary key (player, team, sport, season, week)
 );

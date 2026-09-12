@@ -3,8 +3,8 @@
 Free-data-only prediction system for NFL and NCAAF. Produces a win probability,
 a predicted spread, and a value-vs-market flag per game.
 
-Built against `football-predictor-architecture.md`. Currently through **step 5**
-of the section 7 build order: both sports run end to end.
+Built against `football-predictor-architecture.md`. Currently through **step 6**
+of the section 7 build order: both sports run end to end with injuries live.
 
 ## Status
 
@@ -15,13 +15,36 @@ of the section 7 build order: both sports run end to end.
 | 3 | Odds API + Open-Meteo ingestion | done |
 | 4 | Baseline prediction, Layers 1+2+4 | done |
 | 5 | nflverse ingestion + NFL Elo | done |
-| 6 | ESPN injury / depth-chart pipeline | not started |
+| 6 | Injury / depth pipeline (nflverse + ESPN) | done |
 | 7 | XGBoost Layer 3 | not started |
 | 8 | React dashboard | not started |
 
-The injury term in Layer 2 is wired up but **inactive** — it reads an empty
-`injuries` table and contributes exactly 0 until step 6. The report says so on
-every run rather than implying injuries were priced in.
+## Injuries
+
+Each injured player costs his team:
+
+    position weight  x  snap share  x  (1 - play probability)  x  scale
+
+The **snap-share** term is what makes this safe rather than harmful. An injury
+report lists third-stringers next to starters, so without it a backup being
+ruled out would cost a full starter's penalty. Snap share comes from nflverse
+snap counts, joined on a normalized player name — PFR drops generational
+suffixes ("Michael Penix") where the injury feeds keep them ("Michael Penix
+Jr."), and unjoined stars silently look like unknown reserves.
+
+Only the top few players per position are charged, since if the starting QB is
+out the backup plays and charging for both double-counts one job. Play
+probability comes from the practice trend: a Questionable player who practised
+fully is priced at 0.80 to play, one who sat out all week at 0.25.
+
+Coverage differs enormously by sport, and the report says which applies:
+
+- **NFL** — nflverse's mandated weekly report covers all 32 teams, with ESPN
+  filling in same-day changes. Genuinely useful.
+- **NCAAF** — no mandated report exists. ESPN's feed is editorially curated and
+  typically lists a handful of teams out of 138, so college injury coverage is
+  inherently partial. Teams with no data get no adjustment rather than being
+  assumed healthy.
 
 ## Setup
 

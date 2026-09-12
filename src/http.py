@@ -35,6 +35,7 @@ def get_json(
     cache_minutes: int = 0,
     cache_tag: str = "",
     capture_meta: dict | None = None,
+    transport: str = "requests",
 ) -> Any:
     """GET returning parsed JSON, with optional disk caching and backoff.
 
@@ -51,6 +52,13 @@ def get_json(
     last_error: Exception | None = None
     for attempt in range(retries):
         try:
+            if transport == "urllib":
+                data = _get_urllib(url, params, headers, timeout)
+                if capture_meta is not None:
+                    capture_meta["from_cache"] = False
+                if cache_path is not None:
+                    _write_cache(cache_path, data, {})
+                return data
             resp = requests.get(
                 url,
                 params=params,
@@ -102,6 +110,27 @@ def safe_get_json(url: str, **kwargs) -> Any | None:
     except Exception as exc:  # noqa: BLE001
         print(f"  [warn] {url} unavailable: {type(exc).__name__}")
         return None
+
+
+def _get_urllib(url: str, params: dict | None, headers: dict | None, timeout: int) -> Any:
+    """Fetch via urllib instead of requests.
+
+    ESPN's edge rejects requests-issued calls with a 403 no matter what
+    User-Agent is set, while the identical urllib call succeeds. Rather than
+    guess at which default header trips the filter, ESPN is simply fetched
+    over urllib.
+    """
+    import json as _json
+    import urllib.parse
+    import urllib.request
+
+    if params:
+        url = f"{url}?{urllib.parse.urlencode(params)}"
+    request = urllib.request.Request(
+        url, headers={"User-Agent": USER_AGENT, **(headers or {})}
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return _json.loads(response.read().decode("utf-8"))
 
 
 # --- cache internals -------------------------------------------------------

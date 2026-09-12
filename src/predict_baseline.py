@@ -92,6 +92,11 @@ def _components(features: dict, baseline: float, margin: float) -> dict:
             if features["away_travel_miles"] is not None else None,
             "injury": round(features["injury_adj"], 2),
             "injury_data_available": features["injury_data_available"],
+            "injury_coverage": features["injury_coverage"],
+            "home_injury_points": features["home_injury_points"],
+            "away_injury_points": features["away_injury_points"],
+            "home_injuries": features["home_injury_detail"][:6],
+            "away_injuries": features["away_injury_detail"][:6],
             "wind_factor": round(features["wind_factor"], 4),
             "wind_mph": features["wind_mph"],
             "temp_f": features["temp_f"],
@@ -223,10 +228,23 @@ def format_report(predictions: list[dict]) -> str:
     note = (
         "\n\nSpreads are home-team lines (negative = home favored). Edge is positive "
         "when the model prefers the home side."
-        "\nInjury adjustment is INACTIVE until step 6 populates the injuries table."
+        f"\nInjury adjustment: {_injury_note(predictions)}"
         "\nPAPER TRADING ONLY — one slate is not enough signal to trust the value flags."
     )
     return table + "\n" + summary + "\n" + calibration_block(rated) + note
+
+
+def _injury_note(predictions: list[dict]) -> str:
+    """State plainly how much of the slate the injury layer actually touched."""
+    covered = sum(1 for p in predictions if p["_features"]["injury_coverage"] == "both")
+    partial = sum(1 for p in predictions if p["_features"]["injury_coverage"] in ("home", "away"))
+    moved = sum(1 for p in predictions if abs(p["_features"]["injury_adj"]) >= 0.5)
+    if not covered and not partial:
+        return "NO DATA for this slate - contributed 0 to every game."
+    return (
+        f"{covered} game(s) with both sides reported, {partial} with one side only; "
+        f"moved the line by 0.5+ pts in {moved}."
+    )
 
 
 def calibration_block(rated: list[dict]) -> str:
