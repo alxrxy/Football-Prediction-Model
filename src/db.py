@@ -172,11 +172,25 @@ class SupabaseStore(Store):
             written += len(chunk)
         return written
 
+    # PostgREST caps every response at a server-side maximum (1000 rows by
+    # default) and reports no error when it truncates. Paging is therefore not
+    # an optimization here but a correctness requirement: odds and depth_charts
+    # both exceed it, and a silently short read degrades features rather than
+    # failing, which is far harder to notice.
+    PAGE_SIZE = 1000
+
     def select(self, table: str, where: dict[str, Any] | None = None) -> list[dict]:
-        query = self.client.table(table).select("*")
-        for k, v in (where or {}).items():
-            query = query.in_(k, list(v)) if isinstance(v, (list, tuple)) else query.eq(k, v)
-        return query.execute().data
+        rows: list[dict] = []
+        offset = 0
+        while True:
+            query = self.client.table(table).select("*")
+            for k, v in (where or {}).items():
+                query = query.in_(k, list(v)) if isinstance(v, (list, tuple)) else query.eq(k, v)
+            page = query.range(offset, offset + self.PAGE_SIZE - 1).execute().data
+            rows.extend(page)
+            if len(page) < self.PAGE_SIZE:
+                return rows
+            offset += self.PAGE_SIZE
 
 
 def get_store() -> Store:
