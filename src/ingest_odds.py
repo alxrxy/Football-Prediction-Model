@@ -121,8 +121,8 @@ def match_events(events: list[dict], games: list[dict]) -> tuple[dict, list, lis
                 if abs((commence - kickoff).total_seconds()) > _KICKOFF_WINDOW_HOURS * 3600:
                     continue
             candidates_for[i] += 1
-            home = _similarity(event.get("home_team", ""), game["home_team"])
-            away = _similarity(event.get("away_team", ""), game["away_team"])
+            home = _similarity(event.get("home_team", ""), game["_match_home"])
+            away = _similarity(event.get("away_team", ""), game["_match_away"])
             score = (home + away) / 2
             best_any[i] = max(best_any.get(i, 0.0), score)
             if score >= _MATCH_THRESHOLD:
@@ -246,6 +246,18 @@ def run(sport: str = "ncaaf", cache_minutes: int | None = None) -> int:
         for g in store.select("games", {"sport": sport})
         if (_parse_dt(g.get("kickoff_time")) or now) > now - timedelta(days=1)
     ]
+
+    # The Odds API always names teams in full ("Kansas City Chiefs"), but the
+    # games table stores whatever the ingest source uses — school names for
+    # CFBD, bare abbreviations ("KC") for nflverse. Resolve each side to its
+    # full name for matching only; the stored rows keep the canonical key.
+    full_names = {
+        t["team"]: (t.get("full_name") or t["team"])
+        for t in store.select("teams", {"sport": sport})
+    }
+    for game in games:
+        game["_match_home"] = full_names.get(game["home_team"], game["home_team"])
+        game["_match_away"] = full_names.get(game["away_team"], game["away_team"])
 
     rows: list[dict] = []
     matches, name_misses, out_of_slate = match_events(events, games)

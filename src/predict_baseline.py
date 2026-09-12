@@ -205,7 +205,7 @@ def format_report(predictions: list[dict]) -> str:
     with_market = [p for p in predictions if p["market_spread"] is not None]
     values = [p for p in predictions if p["is_value"]]
     proxy = [p for p in predictions if p["baseline_source"] == "sp_plus_fcs_proxy"]
-    rated = [p for p in with_market if p["baseline_source"] == "sp_plus"]
+    rated = [p for p in with_market if p["baseline_source"] == "power_rating"]
     errors = [abs(p["edge"]) for p in rated]
     mean_gap = sum(errors) / len(errors) if errors else 0.0
 

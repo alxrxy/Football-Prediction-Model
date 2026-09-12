@@ -9,6 +9,7 @@ is a one-line .env change with no code edits.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Iterable
@@ -58,8 +59,41 @@ class SqliteStore(Store):
         self.path = path or config.SQLITE_PATH
         self.conn = sqlite3.connect(self.path)
         self.conn.row_factory = sqlite3.Row
-        self.conn.executescript(config.SCHEMA_SQLITE.read_text(encoding="utf-8"))
+        schema = config.SCHEMA_SQLITE.read_text(encoding="utf-8")
+        self.conn.executescript(schema)
+        self._add_missing_columns(schema)
         self.conn.commit()
+
+    def _add_missing_columns(self, schema: str) -> None:
+        """Bring an existing file up to date with the schema.
+
+        `create table if not exists` is a no-op on a table that already exists,
+        so a column added to the schema after the mirror was created would
+        never appear. Rather than making the developer delete the file, diff
+        the declared columns against the live ones and ALTER in the gaps.
+        """
+        for match in re.finditer(
+            r"create table if not exists\s+(\w+)\s*\((.*?)\n\);", schema,
+            re.DOTALL | re.IGNORECASE,
+        ):
+            table, body = match.group(1), match.group(2)
+            existing = {
+                r["name"] for r in self.conn.execute(f"pragma table_info({table})")
+            }
+            if not existing:
+                continue
+            for line in body.split("\n"):
+                line = line.strip().rstrip(",")
+                if not line or line.startswith("primary key") or line.startswith("--"):
+                    continue
+                parts = line.split()
+                name, decl = parts[0], " ".join(parts[1:])
+                if name in existing or name.lower() in ("primary", "unique", "foreign"):
+                    continue
+                # SQLite cannot ADD COLUMN with a NOT NULL and no default.
+                decl = decl.replace("not null", "").strip()
+                self.conn.execute(f"alter table {table} add column {name} {decl}")
+                print(f"  [migrate] {table}.{name} added to local mirror")
 
     @staticmethod
     def _encode(row: dict[str, Any]) -> dict[str, Any]:

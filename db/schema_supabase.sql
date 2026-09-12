@@ -45,6 +45,8 @@ create table if not exists games (
     home_points      integer,                 -- filled in post-game for scoring
     away_points      integer,
     completed        boolean default false,
+    home_rest_days   double precision,        -- supplied by nflverse for NFL
+    away_rest_days   double precision,
     pulled_at        timestamptz not null default now()
 );
 create index if not exists games_kickoff_idx on games (sport, kickoff_time);
@@ -60,6 +62,10 @@ create table if not exists team_ratings (
     season        integer not null,
     week          integer not null,
     conference    text,
+    -- power_rating is the sport-neutral baseline: a team's strength expressed
+    -- in points above average. NCAAF fills it from SP+, NFL from the
+    -- EPA-derived rating. The modeling layer reads this, not the raw columns.
+    power_rating  double precision,
     elo           double precision,
     sp_plus       double precision,           -- net SP+, already in points
     sp_plus_off   double precision,
@@ -167,6 +173,7 @@ create index if not exists predictions_generated_idx on predictions (generated_a
 create table if not exists teams (
     team           text not null,
     sport          text not null,
+    full_name      text,
     conference     text,
     classification text,
     abbreviation   text,
@@ -179,3 +186,13 @@ create table if not exists teams (
     pulled_at      timestamptz not null default now(),
     primary key (team, sport)
 );
+
+-- ---------------------------------------------------------------------------
+-- Additive migrations. `create table if not exists` above will not add a
+-- column to a table that already exists, so every column introduced after the
+-- first run is repeated here. Re-running this whole file is always safe.
+-- ---------------------------------------------------------------------------
+alter table team_ratings add column if not exists power_rating double precision;
+alter table games       add column if not exists home_rest_days double precision;
+alter table games       add column if not exists away_rest_days double precision;
+alter table teams       add column if not exists full_name text;
