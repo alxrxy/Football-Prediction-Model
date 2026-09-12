@@ -1,0 +1,38 @@
+# --- Secrets: never commit ---
+Lock.txt
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# --- Local data / caches ---
+data/
+*.db
+*.sqlite
+*.sqlite3
+.cache/
+*.parquet
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- Node / dashboard (step 8) ---
+node_modules/
+dist/
+build/
+.next/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
