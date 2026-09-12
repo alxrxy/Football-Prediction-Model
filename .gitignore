@@ -38,3 +38,7 @@ desktop.ini
 .idea/
 models/*.json
 !models/.gitkeep
+
+# --- dashboard build output ---
+dashboard/dist/
+dashboard/public/data.json
