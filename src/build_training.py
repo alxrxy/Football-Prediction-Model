@@ -131,6 +131,8 @@ def build_nfl(seasons: list[int]) -> tuple[list[dict], RollingElo, RollingEpa]:
         for (gid, team), r in agg.iterrows()
     }
 
+    injury_by_team_week = _nfl_injury_features(seasons)
+
     home_coords = _nfl_home_coords(schedules, venue_lookup)
     elo, epa = RollingElo("nfl"), RollingEpa()
     rows = []
@@ -145,6 +147,9 @@ def build_nfl(seasons: list[int]) -> tuple[list[dict], RollingElo, RollingEpa]:
         venue = venue_lookup(g.get("stadium"))
         travel_away = _travel(home_coords.get(away), venue)
         travel_home = _travel(home_coords.get(home), venue)
+
+        home_inj, home_qb = injury_by_team_week.get((season, week, home), (0.0, 0.0))
+        away_inj, away_qb = injury_by_team_week.get((season, week, away), (0.0, 0.0))
 
         rows.append(
             {
@@ -162,6 +167,9 @@ def build_nfl(seasons: list[int]) -> tuple[list[dict], RollingElo, RollingEpa]:
                 "is_neutral": int(neutral),
                 "is_division": int(bool(g.get("div_game"))),
                 "is_indoor": int(str(g.get("roof", "")).lower() in ("dome", "closed")),
+                # Positive when the away side is the more banged-up team.
+                "injury_diff": home_inj - away_inj,
+                "qb_loss_diff": away_qb - home_qb,
                 "wind": _num(g.get("wind")),
                 "temp": _num(g.get("temp"), default=60.0),
                 # nflverse spread_line is positive when home is favored; this
@@ -184,6 +192,94 @@ def build_nfl(seasons: list[int]) -> tuple[list[dict], RollingElo, RollingEpa]:
     # reuse the exact same end state. Rebuilding ratings by a second, separate
     # code path is how train/serve skew gets in.
     return rows, elo, epa
+
+
+def _nfl_injury_features(seasons: list[int]) -> dict[tuple[int, int, str], tuple[float, float]]:
+    """(season, week, team) -> (injury points, starting-QB availability loss).
+
+    Two lookahead traps here, both easy to miss:
+
+    1. Snap share. A player's season-long snap share includes the games that
+       come *after* the one being predicted, so using it would leak. Shares are
+       therefore accumulated week by week — only weeks already played count —
+       falling back to the prior season, which is entirely in the past.
+
+    2. The injury report itself is published before kickoff, so the report is
+       legitimate; it is only the usage weighting attached to it that can leak.
+
+    Scoring uses features.score_injuries, the same function the live pipeline
+    calls, so the model is trained on exactly the feature it will be served.
+    """
+    import bisect
+
+    import nfl_data_py as nfl
+
+    from .features import score_injuries, qb_availability_loss
+    from .ingest_injuries import _practice, _status, play_probability, player_key
+
+    try:
+        injuries = nfl.import_injuries(seasons)
+        snaps = nfl.import_snap_counts(seasons)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [warn] historical injuries unavailable ({exc}); injury features will be 0")
+        return {}
+
+    # --- walk-forward snap share -------------------------------------------
+    snaps = snaps.copy()
+    snaps["share"] = snaps[["offense_pct", "defense_pct"]].max(axis=1)
+    history: dict[tuple, list] = {}
+    for row in snaps[["season", "week", "team", "player", "share"]].itertuples(index=False):
+        if row.share != row.share:  # NaN
+            continue
+        key = (int(row.season),) + player_key(row.team, row.player)
+        history.setdefault(key, []).append((int(row.week), float(row.share)))
+
+    prefix: dict[tuple, tuple[list, list]] = {}
+    season_mean: dict[tuple, float] = {}
+    for key, entries in history.items():
+        entries.sort()
+        weeks, running, total = [], [], 0.0
+        for week, share in entries:
+            total += share
+            weeks.append(week)
+            running.append(total)
+        prefix[key] = (weeks, running)
+        season_mean[key] = total / len(entries)
+
+    def share_before(season: int, week: int, team, player) -> float | None:
+        key = (season,) + player_key(team, player)
+        weeks, running = prefix.get(key, ([], []))
+        idx = bisect.bisect_left(weeks, week)
+        if idx > 0:
+            return running[idx - 1] / idx
+        prior = (season - 1,) + player_key(team, player)
+        return season_mean.get(prior)
+
+    # --- score each team-week ----------------------------------------------
+    grouped: dict[tuple[int, int, str], list[dict]] = {}
+    for row in injuries.itertuples(index=False):
+        status = _status(getattr(row, "report_status", None))
+        practice = _practice(getattr(row, "practice_status", None))
+        if status is None and practice in (None, "full"):
+            continue
+        season, week, team = int(row.season), int(row.week), str(row.team)
+        grouped.setdefault((season, week, team), []).append(
+            {
+                "player": str(row.full_name),
+                "position": str(getattr(row, "position", "") or "").upper(),
+                "status": status,
+                "practice_trend": practice,
+                "play_probability": play_probability(status, practice),
+                "snap_share": share_before(season, week, team, row.full_name),
+            }
+        )
+
+    out = {}
+    for key, rows in grouped.items():
+        points, _ = score_injuries(rows, "nfl")
+        out[key] = (points, qb_availability_loss(rows))
+    print(f"  injury reports scored for {len(out)} team-weeks")
+    return out
 
 
 def _nfl_home_coords(schedules, venue_lookup) -> dict[str, tuple]:
@@ -251,6 +347,10 @@ def build_ncaaf(seasons: list[int]) -> tuple[list[dict], RollingElo, RollingEpa]
                     "is_neutral": int(neutral),
                     "is_division": int(bool(g.get("conferenceGame"))),
                     "is_indoor": int(bool(venue and venue.get("is_dome"))),
+                    # College has no historical injury feed at all, so these
+                    # stay constant here and are held at 0 live to match.
+                    "injury_diff": 0.0,
+                    "qb_loss_diff": 0.0,
                     "wind": float("nan"),
                     "temp": 60.0,
                     "market_spread": lines_by_game.get(str(g["id"]), float("nan")),
@@ -310,6 +410,7 @@ FIELDS = [
     "game_id", "sport", "season", "week", "home_team", "away_team",
     "elo_diff", "epa_diff", "rest_diff", "travel_away", "travel_diff",
     "is_neutral", "is_division", "is_indoor", "wind", "temp",
+    "injury_diff", "qb_loss_diff",
     "market_spread", "market_total", "target_margin", "both_fbs",
 ]
 
