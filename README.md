@@ -3,8 +3,12 @@
 Free-data-only prediction system for NFL and NCAAF. Produces a win probability,
 a predicted spread, and a value-vs-market flag per game.
 
-Built against `football-predictor-architecture.md`. Currently through **step 6**
-of the section 7 build order: both sports run end to end with injuries live.
+Built against `football-predictor-architecture.md`. Currently through **step 7**
+of the section 7 build order. Only the dashboard remains.
+
+**Read the backtest section before trusting any value flag.** The honest finding
+is that neither model beats the closing line, so value flagging is switched off
+by the model's own gate.
 
 ## Status
 
@@ -16,7 +20,7 @@ of the section 7 build order: both sports run end to end with injuries live.
 | 4 | Baseline prediction, Layers 1+2+4 | done |
 | 5 | nflverse ingestion + NFL Elo | done |
 | 6 | Injury / depth pipeline (nflverse + ESPN) | done |
-| 7 | XGBoost Layer 3 | not started |
+| 7 | XGBoost Layer 3 + backtest | done |
 | 8 | React dashboard | not started |
 
 ## Injuries
@@ -120,6 +124,85 @@ To move onto Supabase:
 3. `python -m src.sync_to_supabase` to push the local data up.
 4. Set `STORAGE_BACKEND=supabase` in `.env`.
 
+## The ML layer, and what the backtest says
+
+```bash
+python -m src.build_training --sport nfl --start 2016    # historical features
+python -m src.train_model --sport nfl                    # train + backtest
+python run_pipeline.py --sport nfl --model both          # baseline and ML
+```
+
+### Lookahead was the main design constraint
+
+The quickest way to build this training set would be to join each historical
+game to CFBD's SP+ ratings. It is also the quickest way to get a model that
+looks superb and is worthless: a season's SP+ is computed from that whole
+season, including the game being predicted, so the model learns to read the
+answer. Every rating used as a feature here is therefore built **walk-forward** —
+games are replayed in order, features are recorded from the state *before* each
+game, and only then is the result folded in. Live prediction replays the same
+history rather than reading `team_ratings`, because that table holds SP+ and a
+differently-shrunk EPA that the model never saw.
+
+Where a training column was constant, the live column is held at that same
+constant. College training rows carry no rest, EPA or weather, so the live
+college model is fed zeros there too. Supplying a real value to a column the
+model only ever saw as zero is a silent skew, not an upgrade.
+
+### Two models, and why both are reported
+
+| Model | Market as a feature | Use |
+|---|---|---|
+| `fundamentals` | no | the only one that can disagree with the market, so the only one that can find value |
+| `with_market` | yes | more accurate, and useless for value — the cheapest way to predict a margin is to copy the line |
+
+### Results: holdout is the most recent season, never trained on
+
+Mean absolute error in points of margin:
+
+| | NFL (285 games) | NCAAF (762 games) |
+|---|---|---|
+| **Closing line** | **9.67** | **11.85** |
+| `fundamentals` | 10.15 (+0.48) | 12.97 (+1.13) |
+| `with_market` | 9.67 (+0.00) | 11.88 (+0.03) |
+
+Neither model beats the line. `with_market` matching the line almost exactly is
+confirmation it simply learned to copy it.
+
+Against the spread, break-even at -110 juice is 52.4%:
+
+| Edge threshold | NFL | NCAAF |
+|---|---|---|
+| >= 2.0 pts | 52.4% (n=147) | 52.8% (n=587) |
+| >= 3.0 pts | 48.0% (n=98) | 52.7% (n=490) |
+| >= 4.0 pts | 47.8% (n=67) | 53.9% (n=423) |
+| >= 6.0 pts | 31.2% (n=16) | 53.6% (n=295) |
+
+The college numbers sit above break-even, and it would be easy to call them
+profitable. They are not significant — one-sided p ranges from 0.27 to 0.46, so
+a season of results this good happens by chance roughly a third of the time. The
+NFL numbers are worse: the win rate *falls* as the model's disagreement with the
+line grows, which is the opposite of a real edge.
+
+### The value gate
+
+Because of the above, `predict_ml` reads its own backtest and refuses to label
+anything a value pick unless some threshold beat the line significantly. Edges
+are still computed, stored and displayed — none is called value. The point of
+running a backtest is to be allowed to change the answer.
+
+A useful side observation: the ML model's largest college edge is 3.3 points
+where the baseline claimed 10.5. The trained model converges toward the market,
+which is itself evidence the baseline's big "edges" were its own error rather
+than the market's.
+
+### The obvious next improvement
+
+The ML layer does not use injuries — the training set has no injury features,
+though nflverse publishes reports back to 2009. Adding them is the most
+promising upgrade available, and is a prerequisite for the value flag ever
+passing its own gate.
+
 ## Rate limits
 
 - **The Odds API** — ~500 requests/month shared across both sports. One request
@@ -147,11 +230,12 @@ To move onto Supabase:
 
 ## Known limitations
 
-- **The value threshold is not yet meaningful.** The baseline's mean absolute
+- **Neither model beats the closing line.** See the backtest section. The ML
+  layer's value flags are gated off as a result; the baseline's flags are still
+  shown but are unvalidated and fire on ~77% of rated games.
+- **The baseline's value threshold is not meaningful.** Its mean absolute
   disagreement with the market is ~4 points, so the spec'd 2.0-point threshold
-  flags most of the slate. Every run prints a calibration block with a threshold
-  sensitivity table. Treat the flags as unvalidated until step 7 and a real
-  backtest.
+  flags most of the slate. Every run prints a threshold sensitivity table.
 - **NFL week-1 ratings lean ~99% on last season.** That is the correct thing to
   do with 7 plays of current-season data, but it means the NFL numbers are a
   prior-season model until a few weeks accumulate.
