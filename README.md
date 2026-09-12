@@ -150,6 +150,33 @@ baseline's fixed threshold are labelled `unvalidated` rather than `value` — th
 trained model's value gate is separate, reported in the backtest panel, and
 currently shut.
 
+## Grading
+
+```bash
+python -m src.grade --refresh              # re-pull finals, then score
+python -m src.grade --sport nfl
+python -m src.grade --model ml-v1 --since 2026-09-01
+python run_pipeline.py --sport both --grade   # grade, then predict the next slate
+```
+
+Fills `actual_home_points`, `actual_away_points` and `graded_at`, then reports
+straight-up record, against-the-spread record, margin error against the closing
+line, and a Brier score for the win probabilities — broken out by edge size and
+confidence tier, each with its sample size and a significance test.
+
+**It grades against the line stored with the prediction**, which is the line as
+it stood when the prediction was made. Grading against a line pulled afterwards
+would score the model against a number it never saw, and would flatter it,
+since lines drift toward the result as information arrives.
+
+The report states sample size prominently and refuses to draw conclusions below
+200 graded spread results. A weekend is about 90 games, which sounds
+substantial and cannot separate a genuine 55% edge from a coin flip. This is the
+piece that will eventually let the value gate open honestly — or confirm it
+should stay shut.
+
+Run `python -m tests.test_grade` for the grading maths (20 hand-computed cases).
+
 ## The ML layer, and what the backtest says
 
 ```bash

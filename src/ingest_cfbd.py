@@ -117,16 +117,21 @@ def ingest_teams(store: db.Store, season: int) -> int:
 
 # --- games -----------------------------------------------------------------
 
-def ingest_games(store: db.Store, season: int, week: int, season_type: str) -> list[dict]:
+def ingest_games(store: db.Store, season: int, week: int, season_type: str,
+                 cache_minutes: int = 30) -> list[dict]:
     """Pull the week's slate.
 
     Note: CFBD ignores the `division` param on this endpoint (Division II games
     come back regardless), so FBS filtering happens here, client-side.
+
+    `cache_minutes` is overridable because grading needs fresh final scores,
+    where a half-hour-old cached response would report games as still in
+    progress.
     """
     raw = _get(
         "/games",
         {"year": season, "week": week, "seasonType": season_type},
-        cache_minutes=30,
+        cache_minutes=cache_minutes,
     )
     rows = []
     for g in raw:

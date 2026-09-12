@@ -20,6 +20,7 @@ from datetime import date, datetime, timedelta, timezone
 from src import (
     config,
     db,
+    grade,
     ingest_cfbd,
     ingest_injuries,
     ingest_nflverse,
@@ -81,6 +82,12 @@ def run_sport(sport: str, target: date | None, args) -> list[dict]:
                 traceback.print_exc(limit=2)
             print()
 
+    if args.grade:
+        # Grade before predicting: finished games are scored while their stored
+        # pre-kickoff line is still the one they were predicted against.
+        grade.run(sport=sport, refresh=True)
+        print()
+
     slate = target or next_slate_date(sport)
     predictions = []
 
@@ -113,6 +120,8 @@ def main() -> int:
     parser.add_argument("--date", help="slate date, YYYY-MM-DD (default: next slate with games)")
     parser.add_argument("--fresh-odds", action="store_true", help="bypass odds cache")
     parser.add_argument("--skip-ingest", action="store_true", help="predict from stored data only")
+    parser.add_argument("--grade", action="store_true",
+                        help="score finished games before predicting the next slate")
     parser.add_argument("--model", default="baseline", choices=["baseline", "ml", "both"],
                         help="which modeling layer to run")
     args = parser.parse_args()
