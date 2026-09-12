@@ -3,8 +3,8 @@
 Free-data-only prediction system for NFL and NCAAF. Produces a win probability,
 a predicted spread, and a value-vs-market flag per game.
 
-Built against `football-predictor-architecture.md`. Currently through **step 7**
-of the section 7 build order. Only the dashboard remains.
+Built against `football-predictor-architecture.md`. **All eight steps of the
+section 7 build order are complete.**
 
 **Read the backtest section before trusting any value flag.** The honest finding
 is that neither model beats the closing line, so value flagging is switched off
@@ -21,7 +21,7 @@ by the model's own gate.
 | 5 | nflverse ingestion + NFL Elo | done |
 | 6 | Injury / depth pipeline (nflverse + ESPN) | done |
 | 7 | XGBoost Layer 3 + backtest | done |
-| 8 | React dashboard | not started |
+| 8 | React dashboard | done |
 
 ## Injuries
 
@@ -123,6 +123,30 @@ To move onto Supabase:
 2. `python -m src.sync_to_supabase --check` to confirm all tables exist.
 3. `python -m src.sync_to_supabase` to push the local data up.
 4. Set `STORAGE_BACKEND=supabase` in `.env`.
+
+## Dashboard
+
+```bash
+cd dashboard && npm install && npm run dev     # http://localhost:5173
+python -m src.export_dashboard                 # refresh its data
+```
+
+Slate table (market line vs both models, edge, lean, confidence), a
+click-through per-game breakdown showing the layer-by-layer path to the number
+plus the injury report behind it, and the backtest panel. See
+`dashboard/README.md`.
+
+For a single self-contained file with the snapshot inlined:
+
+```bash
+cd dashboard && npm run build
+python -m src.export_static_dashboard
+```
+
+The backtest sits beside the picks rather than behind a tab, and games past the
+baseline's fixed threshold are labelled `unvalidated` rather than `value` — the
+trained model's value gate is separate, reported in the backtest panel, and
+currently shut.
 
 ## The ML layer, and what the backtest says
 
