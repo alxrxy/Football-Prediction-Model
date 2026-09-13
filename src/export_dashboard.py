@@ -15,12 +15,12 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import config, db
 from .features import latest_injury_report, parse_dt
-from .predict_baseline import slate_window
+from .predict_baseline import SLATE_START_UTC_HOUR, slate_window
 
 SPORTS = {"ncaaf": "College Football", "nfl": "NFL"}
 
@@ -45,8 +45,6 @@ def _slate_for(store, sport: str) -> tuple[str, list[dict]]:
     first = min(upcoming, key=lambda pair: pair[0])[0]
     # Mirror the predictors' slate window: a kickoff before 11:00Z belongs to
     # the previous calendar day's slate.
-    from datetime import timedelta
-
     target = (first - timedelta(hours=slate_window(first.date())[0].hour)).date()
     for candidate in (target, first.date(), first.date() - timedelta(days=1)):
         start, end = slate_window(candidate)
@@ -203,7 +201,12 @@ def _results(store, sport: str) -> dict:
     worth anything cumulatively, and showing one weekend of it would invite
     exactly the over-reading this project keeps trying to avoid.
     """
-    from .grade import evaluate
+    from .grade import correctness_score, evaluate
+
+    kickoffs = {
+        g["game_id"]: parse_dt(g.get("kickoff_time"))
+        for g in store.select("games", {"sport": sport})
+    }
 
     graded = []
     for row in store.select("predictions", {"sport": sport}):
@@ -220,13 +223,38 @@ def _results(store, sport: str) -> dict:
     out = {}
     for version, rows in sorted(by_model.items()):
         stats = evaluate(rows)
+
+        # Per-slate breakdown, newest first, so the score can be watched week
+        # over week. Same slate-day convention as the predictors: a kickoff
+        # before 11:00Z belongs to the previous day's slate.
+        slates: dict[str, list] = {}
+        for row in rows:
+            kickoff = kickoffs.get(row["game_id"])
+            if kickoff:
+                day = (kickoff - timedelta(hours=SLATE_START_UTC_HOUR)).date().isoformat()
+                slates.setdefault(day, []).append(row)
+        by_slate = []
+        for day, day_rows in sorted(slates.items(), reverse=True):
+            day_stats = evaluate(day_rows)
+            day_score = correctness_score(day_stats)
+            by_slate.append({
+                "date": day,
+                "n": day_stats["n"],
+                "score": day_score["score"] if day_score else None,
+                "su": day_stats["su"],
+                "ats": day_stats["ats"],
+            })
+
         out[version] = {
             "n": stats["n"],
             "su": stats["su"],
+            "market_su": stats["market_su"],
             "ats": stats["ats"],
             "mae": stats["mae"],
             "market_mae": stats["market_mae"],
             "brier": stats["brier"],
+            "score": correctness_score(stats),
+            "by_slate": by_slate,
             "by_edge": {str(k): v for k, v in stats["by_edge"].items()},
             "by_conf": stats["by_conf"],
         }

@@ -211,4 +211,23 @@ ul.books li { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; pa
 .record table.micro { margin-top: 10px; }
 .record .stat.good { color: var(--good); }
 
+/* --- correctness score --- */
+.score-card { margin: 6px 0 14px; padding: 12px; border-radius: 8px; background: var(--surface-2); }
+.score-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.score-head .score { font-family: var(--mono); font-size: 34px; font-weight: 700; line-height: 1; }
+.score-verdict { margin-left: 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.score-card .bars { gap: 2px; margin-top: 12px; }
+.bar-row.score-row { grid-template-columns: 118px 1fr 26px; row-gap: 1px; }
+.score-row .bar-label { font-family: inherit; }
+.score-row .bar-value { text-align: right; }
+.score-row .bar-note { grid-column: 1 / -1; font-size: 11px; color: var(--text-dim); margin-bottom: 6px; }
+.score-track { position: relative; background: var(--surface); }
+.score-track::after {
+  content: ''; position: absolute; left: 50%; top: 0; bottom: 0;
+  width: 2px; background: var(--text-dim); opacity: 0.6;
+}
+.bar-fill.is-good { background: var(--good); }
+.bar-fill.is-bad { background: var(--bad); }
+.score-card p { margin-bottom: 0; }
+
 footer { margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--border); }
