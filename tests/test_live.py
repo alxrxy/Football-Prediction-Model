@@ -18,7 +18,7 @@ import numpy as np
 from src import db
 from src.live_tracker import (
     LiveState, Pregame, elapsed_minutes, evaluate, new_alerts, parse_scoreboard,
-    percentile, quantile, recent_scoring, scoring_path,
+    parse_event, percentile, quantile, recent_scoring, scoring_path, yardline_100,
 )
 from src.simulate import CHECKPOINTS, SimResult, pace_distribution
 
@@ -66,6 +66,26 @@ def test_team_aliases():
                                              event(home=("LAR", "14", "0"), away=("SF", "25", "0"))]})
     check("WSH -> WAS", states[0].away, "WAS")
     check("LAR -> LA", states[1].home, "LA")
+
+
+def test_field_position():
+    # Cases read off the live scoreboard on 2026-09-13.
+    check("home side, own 12 (LAC 12)", yardline_100("LAC 12", "LAC", "ARI", 12, 0), 88)
+    check("home side, opponent's 12 (MIA 12)", yardline_100("MIA 12", "LV", "MIA", 88, 0), 12)
+    check("away side, own 47 (WSH 47)", yardline_100("WSH 47", "WSH", "PHI", 53, 1), 53)
+    check("midfield", yardline_100("50", "GB", "MIN", 50, 1), 50)
+    check("unknown code falls back: away at own 35", yardline_100("ARZ 35", "ARI", "LAC", 65, 1), 65)
+    check("no text: home side counts from its own goal line", yardline_100(None, "LAC", "ARI", 30, 0), 70)
+    check("nothing usable", yardline_100(None, "LAC", "ARI", 0, 0), None)
+
+
+def test_home_possession_from_scoreboard():
+    e = event(home=("LAC", "24", "14"), away=("ARI", "22", "16"), possession="24")
+    e["competitions"][0]["situation"].update(
+        {"down": 1, "distance": 10, "yardLine": 12, "possessionText": "LAC 12"})
+    s = parse_event(e)
+    check("LAC ball at its own 12 is 88 yards from scoring",
+          s.situation, {"possession": 0, "down": 1, "togo": 10, "yardline_100": 88})
 
 
 def test_unusable_payloads():
@@ -243,7 +263,8 @@ def test_storage_roundtrip():
 
 if __name__ == "__main__":
     for fn in [
-        test_parse_scoreboard, test_team_aliases, test_unusable_payloads, test_elapsed_minutes,
+        test_parse_scoreboard, test_team_aliases, test_field_position, test_home_possession_from_scoreboard,
+        test_unusable_payloads, test_elapsed_minutes,
         test_recent_scoring, test_scoring_path, test_percentiles_are_mid_ranked, test_underdog_flag,
         test_pace_and_margin_flags, test_alert_dedupe, test_startup_survives_database_errors,
         test_storage_roundtrip,

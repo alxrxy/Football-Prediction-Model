@@ -29,9 +29,11 @@ TABLE_KEYS: dict[str, list[str]] = {
     "predictions": ["game_id", "model_version"],
     "game_simulations": ["game_id", "sim_version"],
     "live_tracking": ["game_id", "polled_at"],
+    "live_simulations": ["game_id", "polled_at"],
 }
 
-JSON_COLUMNS = {"components", "distributions", "td_scorers", "flags", "recent_scoring", "pregame"}
+JSON_COLUMNS = {"components", "distributions", "td_scorers", "flags", "recent_scoring", "pregame",
+                "start_state", "scorers"}
 
 
 def utcnow() -> str:

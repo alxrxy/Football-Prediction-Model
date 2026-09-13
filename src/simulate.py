@@ -66,6 +66,29 @@ class Offense:
 
 
 @dataclass
+class LiveStart:
+    """A game already under way, for resuming the simulation mid-game.
+
+    Every simulated game starts from this one state. With `possession` and a
+    down set, the first event is that snap; otherwise it is a kickoff to
+    `kickoff_receiver` (a coin flip if unknown). Scoring counted in the
+    result (TDs, FGs, TD events) is only what happens from here on; `points`
+    carry the real score forward.
+    """
+
+    elapsed_seconds: float
+    home_points: int
+    away_points: int
+    possession: int | None = None        # 0 home, 1 away
+    yardline_100: int | None = None
+    down: int | None = None
+    togo: int | None = None
+    kickoff_receiver: int | None = None
+    second_half_receiver: int | None = None
+    pending_conversion: int | None = None   # side whose PAT / two-point try is still to come
+
+
+@dataclass
 class SimResult:
     points: np.ndarray        # (n, 2) home, away
     tds: np.ndarray           # (n, 2) all touchdowns
@@ -97,6 +120,22 @@ def solve_tilt(epa: np.ndarray, base: np.ndarray, target: float) -> float:
     return lam
 
 
+_SAMPLER_CACHE: dict = {}
+
+
+def _sampler(tables: SimTables, offense: Offense) -> "_Sampler":
+    """Samplers are pure functions of the library and the offence, and cost
+    a tilt solve over 112k plays to build. The live tracker re-simulates the
+    same matchups every poll, so they are kept rather than rebuilt."""
+    key = (id(tables), round(offense.target_epa, 7), round(offense.pass_rate_oe, 7))
+    sampler = _SAMPLER_CACHE.get(key)
+    if sampler is None:
+        if len(_SAMPLER_CACHE) >= 64:
+            _SAMPLER_CACHE.clear()
+        sampler = _SAMPLER_CACHE[key] = _Sampler(tables, offense)
+    return sampler
+
+
 class _Sampler:
     def __init__(self, tables: SimTables, offense: Offense):
         base = tables.base_weights(offense.pass_rate_oe)
@@ -114,7 +153,7 @@ class _Game:
                  n: int, seed: int, wind_mph: float):
         self.t = tables
         self.rng = np.random.default_rng(seed)
-        self.samplers = (_Sampler(tables, home), _Sampler(tables, away))
+        self.samplers = (_sampler(tables, home), _sampler(tables, away))
         self.wind = wind_mph
         self.n = n
         z = lambda *shape: np.zeros(shape, dtype=np.int32)  # noqa: E731
@@ -156,9 +195,13 @@ class _Game:
         self.ot_poss[ot, self.off[ot]] += 1
 
     def _touchdown(self, ix, side):
-        rng = self.rng
         self.points[ix, side] += 6
         self.tds[ix, side] += 1
+        self._convert(ix, side)
+
+    def _convert(self, ix, side):
+        """The PAT or two-point try after a touchdown."""
+        rng = self.rng
         k = len(ix)
         go_for_two = rng.random(k) < self.t.two_pt_rate
         extra = np.where(go_for_two,
@@ -355,10 +398,48 @@ class _Game:
             & (self.points[:, 0] != self.points[:, 1])
         self.done |= m
 
-    def run(self) -> SimResult:
-        receiver = self.rng.integers(0, 2, self.n).astype(np.int32)
-        self.second_half_receiver = 1 - receiver
-        self._kickoff(np.arange(self.n), receiver)
+    def _resume(self, s: LiveStart) -> None:
+        """Put every simulated game at the live state instead of kickoff."""
+        n, everyone, rng = self.n, np.arange(self.n), self.rng
+        t = float(s.elapsed_seconds)
+        self.clock[:] = t
+        self.period[:] = 1 if t < 1800 else (2 if t < 3600 else 3)
+        self.overtime[:] = t >= 3600
+        self.points[:, 0], self.points[:, 1] = s.home_points, s.away_points
+        if s.second_half_receiver is None:
+            self.second_half_receiver = rng.integers(0, 2, n).astype(np.int32)
+        else:
+            self.second_half_receiver[:] = s.second_half_receiver
+        # Checkpoints already passed hold the real score.
+        past = CHECKPOINTS <= t
+        self.cp_points[:, past] = self.points[:, None, :]
+        self.cp_next[:] = int(past.sum())
+
+        if s.pending_conversion is not None:
+            self._convert(everyone, s.pending_conversion)
+        if s.possession is not None and s.yardline_100 and s.down in (1, 2, 3, 4):
+            yl = int(np.clip(s.yardline_100, 1, 99))
+            self.off[:] = s.possession
+            self.yl[:] = yl
+            self.down[:] = s.down
+            self.togo[:] = int(np.clip(s.togo or 10, 1, yl))
+            self.possessions[:, s.possession] += 1
+            return
+        if s.kickoff_receiver is not None:
+            receiver = np.full(n, s.kickoff_receiver, dtype=np.int32)
+        elif self.period[0] == 2 and t == 1800:
+            receiver = self.second_half_receiver.copy()
+        else:
+            receiver = rng.integers(0, 2, n).astype(np.int32)
+        self._kickoff(everyone, receiver)
+
+    def run(self, start: LiveStart | None = None) -> SimResult:
+        if start is not None:
+            self._resume(start)
+        else:
+            receiver = self.rng.integers(0, 2, self.n).astype(np.int32)
+            self.second_half_receiver = 1 - receiver
+            self._kickoff(np.arange(self.n), receiver)
         for _ in range(MAX_SNAPS):
             self._transitions()
             live = np.flatnonzero(~self.done)
@@ -382,8 +463,11 @@ class _Game:
 
 
 def simulate_game(tables: SimTables, home: Offense, away: Offense,
-                  n: int = 10_000, seed: int = 0, wind_mph: float = 0.0) -> SimResult:
-    return _Game(tables, home, away, n, seed, wind_mph).run()
+                  n: int = 10_000, seed: int = 0, wind_mph: float = 0.0,
+                  start: LiveStart | None = None) -> SimResult:
+    """Simulate from kickoff, or with `start` from a game already under way
+    (same engine, same team strengths; only the initial state differs)."""
+    return _Game(tables, home, away, n, seed, wind_mph).run(start)
 
 
 # --- summaries -------------------------------------------------------------

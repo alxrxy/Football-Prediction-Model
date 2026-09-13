@@ -22,6 +22,7 @@
     --axis: #c3c2b7;
     --border: rgba(11, 11, 11, 0.10);
     --series-1: #2a78d6;
+    --series-2: #eb6834;
     --band-outer: #eeede8;
     --band-inner: #dcdbd3;
     --critical: #d03b3b;
@@ -40,6 +41,7 @@
       --axis: #383835;
       --border: rgba(255, 255, 255, 0.10);
       --series-1: #3987e5;
+    --series-2: #d95926;
       --band-outer: #262624;
       --band-inner: #363632;
       --tip-bg: #232322;
@@ -56,6 +58,7 @@
     --axis: #383835;
     --border: rgba(255, 255, 255, 0.10);
     --series-1: #3987e5;
+    --series-2: #d95926;
     --band-outer: #262624;
     --band-inner: #363632;
     --tip-bg: #232322;
@@ -117,6 +120,22 @@
   .end { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
   .end-label { fill: var(--ink); font-size: 11px; font-weight: 600; }
   .crosshair { stroke: var(--ink-2); stroke-width: 1; }
+  .trend { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .trend.s1 { stroke: var(--series-1); }
+  .trend.s2 { stroke: var(--series-2); }
+  .end.s2 { fill: var(--series-2); }
+  .ref { stroke: var(--muted); stroke-width: 1; }
+  .ref-label { fill: var(--muted); font-size: 10px; }
+  .band-trend { fill: var(--band-inner); }
+  .key-s2 { width: 14px; height: 2px; background: var(--series-2); display: inline-block; }
+  .key-ref { width: 14px; height: 1px; background: var(--muted); display: inline-block; }
+  .key-band-trend { width: 14px; height: 10px; background: var(--band-inner); display: inline-block; border-radius: 2px; }
+  .versus { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .versus h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin: 0 0 2px; }
+  .versus .sub { color: var(--muted); font-size: 12px; margin: 0 0 6px; }
+  .versus table td { white-space: normal; }
+  .versus th.now, .versus td.now { font-weight: 600; color: var(--ink); }
+  .lowconf { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
   .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--ink-2); margin-top: 2px; }
   .legend span { display: inline-flex; align-items: center; gap: 4px; }
   .key-line { width: 14px; height: 2px; background: var(--series-1); display: inline-block; }
@@ -372,6 +391,14 @@ function gameCard(g) {
     chart({ title: `Margin (${g.home} minus ${g.away})`, signed: true, fmt: v => (v > 0 ? "+" : "") + Math.round(v),
             band: b && { minutes: b.minutes, ...b.margin }, points: path.map(p => ({ t: p.t, v: p.home - p.away, at: p.at })) })));
 
+  if (!final) {
+    card.append(versusBlock(g) || el("p", { class: "stats", text: "No live projection this poll." }));
+    const lc = liveCharts(g);
+    if (lc) card.append(lc);
+    const ls = liveScorers(g);
+    if (ls) card.append(ls);
+  }
+
   if (g.recent_scoring && g.recent_scoring.length) {
     card.append(el("ul", { class: "scoring" }, g.recent_scoring.map(s =>
       el("li", {}, el("b", { text: `Q${s.period} ${s.clock} ${s.team}` }), ` ${s.text || s.type || ""} `,
@@ -379,15 +406,189 @@ function gameCard(g) {
   }
 
   // Table view: every snapshot, reachable without hovering.
-  const rows = traj.slice().reverse().map(p => el("tr", {},
-    el("td", { text: clock(p.at) }), el("td", { text: p.t.toFixed(1) }),
-    el("td", { text: `${p.away}–${p.home}` }), el("td", { text: String(p.home + p.away) }),
-    el("td", { text: (p.home - p.away > 0 ? "+" : "") + (p.home - p.away) })));
+  const liveAt = new Map((g.live_history || []).map(p => [p.at, p]));
+  const rows = traj.slice().reverse().map(p => {
+    const lp = liveAt.get(p.at);
+    return el("tr", {},
+      el("td", { text: clock(p.at) }), el("td", { text: p.t.toFixed(1) }),
+      el("td", { text: `${p.away}–${p.home}` }), el("td", { text: String(p.home + p.away) }),
+      el("td", { text: (p.home - p.away > 0 ? "+" : "") + (p.home - p.away) }),
+      el("td", { text: lp ? pct0(lp.wp_home) : "—" }),
+      el("td", { text: lp && lp.margin_proj != null ? signedFmt(lp.margin_proj) : "—" }));
+  });
   card.append(el("details", {}, el("summary", { text: `Snapshots (${traj.length})` }),
     el("div", { class: "table-scroll" }, el("table", {},
-      el("thead", {}, el("tr", {}, ["Polled", "Game min", `${g.away}–${g.home}`, "Total", `${g.home} margin`].map(h => el("th", { text: h })))),
+      el("thead", {}, el("tr", {}, ["Polled", "Game min", `${g.away}–${g.home}`, "Total", `${g.home} margin`, `Live win prob (${g.home})`, "Live proj. margin"].map(h => el("th", { text: h })))),
       el("tbody", {}, rows)))));
   return card;
+}
+
+// --- live model ---------------------------------------------------------
+
+// A projection that evolves through the game: series over game minutes, an
+// optional per-snapshot band, and an optional flat reference line for the
+// pregame value. One measure, one axis.
+function trendChart({ title, series, band, bandLabel, ref, domain, signed, fmt }) {
+  const W = 340, H = 170, m = { l: 36, r: 46, t: 10, b: 24 };
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const all = series.flatMap(s => s.points);
+  const tMax = Math.max(60, ...all.map(p => p.t));
+  let lo, hi, step;
+  if (domain) { [lo, hi] = domain; step = (hi - lo) / 4; }
+  else {
+    const vals = all.map(p => p.v).concat(band ? [...band.lo, ...band.hi] : [], ref && ref.value != null ? [ref.value] : []);
+    lo = Math.min(0, ...vals); hi = Math.max(7, ...vals);
+    if (signed) { const a = Math.max(Math.abs(lo), Math.abs(hi)); lo = -a; hi = a; }
+    step = niceStep(hi - lo);
+    lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  }
+  const x = t => m.l + (t / tMax) * pw;
+  const y = v => m.t + (1 - (v - lo) / (hi - lo)) * ph;
+  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", tabindex: "0", role: "img",
+    "aria-label": `${title}. Use arrow keys to step through polls.` });
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    svg.append(sv("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), class: signed && Math.abs(v) < 1e-9 ? "zero" : "gridline" }));
+    svg.append(sv("text", { x: m.l - 6, y: y(v) + 3, "text-anchor": "end", class: "tick" }, fmt(v)));
+  }
+  for (const t of [0, 15, 30, 45, 60]) {
+    svg.append(sv("text", { x: x(t), y: H - 8, "text-anchor": "middle", class: "tick" }, t === 60 ? "60 min" : String(t)));
+  }
+  if (band && band.t.length > 1) {
+    const top = band.t.map((t, i) => `${x(t)},${y(band.hi[i])}`);
+    const bot = band.t.map((t, i) => `${x(t)},${y(band.lo[i])}`).reverse();
+    svg.append(sv("path", { d: `M${top.join("L")}L${bot.join("L")}Z`, class: "band-trend" }));
+  }
+  if (ref && ref.value != null) {
+    svg.append(sv("line", { x1: m.l, x2: W - m.r, y1: y(ref.value), y2: y(ref.value), class: "ref" }));
+    svg.append(sv("text", { x: W - m.r + 4, y: y(ref.value) + 3, class: "ref-label" }, ref.label));
+  }
+  const labelYs = [];
+  for (const s of series) {
+    if (!s.points.length) continue;
+    svg.append(sv("polyline", { points: s.points.map(p => `${x(p.t)},${y(p.v)}`).join(" "), class: `trend ${s.cls}` }));
+    const last = s.points[s.points.length - 1];
+    svg.append(sv("circle", { cx: x(last.t), cy: y(last.v), r: 4, class: `end ${s.cls}` }));
+    let ly = y(last.v) + 4;
+    while (labelYs.some(o => Math.abs(o - ly) < 11)) ly += 11;   // keep end labels apart
+    labelYs.push(ly);
+    // With several lines the label names its line, since two end values can
+    // sit a point apart; near the right edge it flips to the dot's left.
+    const text = series.length > 1 ? `${s.short || s.name} ${fmt(last.v)}` : fmt(last.v);
+    const flip = x(last.t) > W - m.r - 56;
+    svg.append(sv("text", { x: flip ? x(last.t) - 7 : x(last.t) + 7, y: ly,
+      "text-anchor": flip ? "end" : "start", class: "end-label" }, text));
+  }
+  const wrap = el("div", { class: "chart-wrap" }, el("p", { class: "chart-title", text: title }), svg);
+  wrap.append(el("div", { class: "legend" },
+    series.map(s => el("span", {}, el("i", { class: s.cls === "s2" ? "key-s2" : "key-line" }), s.name)),
+    band ? el("span", {}, el("i", { class: "key-band-trend" }), bandLabel) : null,
+    ref && ref.value != null ? el("span", {}, el("i", { class: "key-ref" }), `Pregame (${fmt(ref.value)})`) : null));
+
+  const base = series[0].points;
+  if (!base.length) return wrap;
+  const cross = sv("line", { y1: m.t, y2: m.t + ph, class: "crosshair", visibility: "hidden" });
+  svg.append(cross);
+  const tip = el("div", { class: "tip", hidden: "" });
+  wrap.append(tip);
+  svg.append(sv("rect", { x: m.l, y: m.t, width: pw, height: ph, fill: "transparent" }));
+  let idx = base.length - 1;
+  const nearest = (pts, t) => pts.reduce((b, p) => (Math.abs(p.t - t) <= Math.abs(b.t - t) ? p : b), pts[0]);
+  function show(i) {
+    idx = Math.max(0, Math.min(base.length - 1, i));
+    const t = base[idx].t;
+    cross.setAttribute("x1", x(t)); cross.setAttribute("x2", x(t)); cross.setAttribute("visibility", "visible");
+    tip.replaceChildren(el("div", { class: "l", text: `after ${t.toFixed(1)} game min${base[idx].at ? " · " + clock(base[idx].at) : ""}` }));
+    for (const s of series) {
+      if (!s.points.length) continue;
+      tip.append(el("div", {}, el("span", { class: "v", text: fmt(nearest(s.points, t).v) }), el("span", { class: "l", text: ` ${s.name}` })));
+    }
+    if (band && band.t[idx] != null) tip.append(el("div", { class: "l", text: `${bandLabel}: ${fmt(band.lo[idx])} to ${fmt(band.hi[idx])}` }));
+    if (ref && ref.value != null) tip.append(el("div", { class: "l", text: `pregame ${fmt(ref.value)}` }));
+    tip.hidden = false;
+    const box = svg.getBoundingClientRect(), scale = box.width / W;
+    const left = x(t) * scale + 10;
+    tip.style.left = `${left + tip.offsetWidth > box.width ? x(t) * scale - tip.offsetWidth - 10 : left}px`;
+    tip.style.top = `${m.t * scale + 18}px`;
+  }
+  const hide = () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; };
+  svg.addEventListener("pointermove", (e) => {
+    const box = svg.getBoundingClientRect();
+    const t = ((e.clientX - box.left) / (box.width / W) - m.l) / pw * tMax;
+    let best = 0;
+    base.forEach((p, i) => { if (Math.abs(p.t - t) <= Math.abs(base[best].t - t)) best = i; });
+    show(best);
+  });
+  svg.addEventListener("pointerleave", hide);
+  svg.addEventListener("focus", () => show(base.length - 1));
+  svg.addEventListener("blur", hide);
+  svg.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft") { show(idx - 1); e.preventDefault(); }
+    if (e.key === "ArrowRight") { show(idx + 1); e.preventDefault(); }
+  });
+  return wrap;
+}
+
+const signedFmt = v => (v > 0 ? "+" : "") + Math.round(v);
+const pct0 = v => v == null ? "—" : `${Math.round(v * 100)}%`;
+
+// "What we thought before kickoff" beside "what the model thinks now". The
+// pregame column is fixed at kickoff; the live column is re-simulated from the
+// current game state every poll with the same engine and team strengths.
+function versusBlock(g) {
+  const pg = g.pregame || {}, ls = g.live_sim;
+  if (!ls) return null;
+  const h = g.home, a = g.away;
+  const score = (away, home) => (away == null || home == null) ? "—" : `${a} ${Math.round(away)}–${Math.round(home)} ${h}`;
+  const rows = [
+    [`${h} win probability`, pct0(pg.win_prob_home), pct0(ls.home_win_prob)],
+    ["Projected margin", by(pg.margin_home, h, a),
+     `${by(ls.mean_margin_home, h, a)} · 80% range ${h} ${signedFmt(ls.margin_80_low)} to ${signedFmt(ls.margin_80_high)}`],
+    ["Final score, median", score(pg.sim_median_away, pg.sim_median_home), score(ls.median_away_points, ls.median_home_points)],
+    ["Most likely exact final", pg.sim_modal ? score(pg.sim_modal[1], pg.sim_modal[0]) : "—",
+     `${score(ls.modal_away_points, ls.modal_home_points)} (${(ls.modal_score_prob * 100).toFixed(1)}%${ls.scores_tied_with_mode ? `, within noise of ${ls.scores_tied_with_mode} others` : ""})`],
+    ["Total points, median", pg.sim_total_p50 ?? "—", `${ls.total_median} (80%: ${ls.total_80_low}–${ls.total_80_high})`],
+  ];
+  const state = (ls.start_state || {});
+  const minutes = ls.minutes_left != null ? `${Math.round(ls.minutes_left)} min left` : "";
+  return el("section", { class: "versus" },
+    el("h3", { text: "Before kickoff vs. live model now" }),
+    el("p", { class: "sub", text: `Live model re-simulated ${ls.n_sims.toLocaleString()} times from ${state.description || "the current state"} (${g.detail}, ${minutes}; from ${state.source || "?"}), same engine and team strengths as pregame. The pregame column never changes after kickoff.` }),
+    el("div", { class: "table-scroll" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", { text: "" }),
+        el("th", { text: `Pregame · locked ${pg.generated_at ? clock(pg.generated_at) : "before kickoff"}` }),
+        el("th", { class: "now", text: `Live model · ${g.detail}` }))),
+      el("tbody", {}, rows.map(r => el("tr", {}, el("td", { text: r[0] }), el("td", { text: String(r[1]) }), el("td", { class: "now", text: String(r[2]) })))))));
+}
+
+function liveCharts(g) {
+  const lh = (g.live_history || []).filter(p => p.t != null && p.wp_home != null);
+  if (!lh.length) return null;
+  const pg = g.pregame || {};
+  return el("div", { class: "charts" },
+    trendChart({ title: `Win probability, ${g.home}`, domain: [0, 1], fmt: pct0,
+      series: [{ name: "Live model", short: "Model", cls: "s1", points: lh.map(p => ({ t: p.t, v: p.wp_home, at: p.at })) },
+               { name: "ESPN", short: "ESPN", cls: "s2", points: lh.filter(p => p.espn_wp != null).map(p => ({ t: p.t, v: p.espn_wp, at: p.at })) }],
+      ref: { value: pg.win_prob_home, label: "pregame" } }),
+    trendChart({ title: `Projected final margin (${g.home} minus ${g.away})`, signed: true, fmt: signedFmt,
+      series: [{ name: "Live projection (mean)", cls: "s1", points: lh.map(p => ({ t: p.t, v: p.margin_proj, at: p.at })) }],
+      band: { t: lh.map(p => p.t), lo: lh.map(p => p.margin_lo), hi: lh.map(p => p.margin_hi) }, bandLabel: "80% range",
+      ref: { value: pg.margin_home, label: "pregame" } }));
+}
+
+function liveScorers(g) {
+  const sc = g.live_sim && g.live_sim.scorers;
+  if (!sc) return null;
+  const column = (team, list) => el("div", {},
+    el("p", { class: "chart-title", text: `${team}: touchdown from here` }),
+    el("ul", { class: "scoring" }, (list || []).map(p => el("li", {},
+      el("b", { text: `${p.player}${p.position ? ` (${p.position}${p.depth_rank || ""})` : ""}` }),
+      ` ${Math.round(p.td_from_here * 100)}% to score from here`,
+      p.tds_so_far ? ` · ${p.tds_so_far} TD so far` : "",
+      (p.game_carries || p.game_targets) ? ` · ${p.game_carries} car, ${p.game_targets} tgt today` : ""))));
+  return el("section", { class: "versus" },
+    el("h3", {}, "Live TD scorer projections ", el("span", { class: "lowconf", text: "· low confidence" })),
+    el("p", { class: "sub", text: sc.note }),
+    el("div", { class: "charts" }, column(g.home, sc.home), column(g.away, sc.away)));
 }
 
 // --- page --------------------------------------------------------------
