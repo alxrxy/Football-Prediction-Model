@@ -128,6 +128,35 @@ class LiveState:
     red_zone: bool = False
     espn_home_wp: float | None = None
     postseason: bool = False
+    home_id: str = ""
+    away_id: str = ""
+    situation: dict = field(default_factory=dict)   # possession side, down, togo, yardline_100
+
+
+def yardline_100(possession_text, offense_code, defense_code, yard_line, side: int) -> int | None:
+    """The offence's distance to score, from the scoreboard's situation.
+
+    possessionText names the half of the field the ball is in ("LAC 12" is
+    the Chargers' 12), which is unambiguous once matched to the offence's or
+    the defence's own ESPN code. When it matches neither (ESPN's play text
+    sometimes uses other codes, e.g. ARZ for ARI), fall back to yardLine,
+    which counts from the HOME side's goal line: the Chargers (home) at their
+    own 12 read 12, the Raiders (home) at the Dolphins' 12 read 88, and
+    Washington (away) at its own 47 reads 53.
+    """
+    parts = str(possession_text or "").strip().upper().split()
+    if len(parts) == 1 and parts[0] == "50":
+        return 50
+    if len(parts) == 2 and parts[1].isdigit():
+        n = int(parts[1])
+        if parts[0] == str(offense_code).upper() and 0 < n < 100:
+            return 100 - n
+        if parts[0] == str(defense_code).upper() and 0 < n < 100:
+            return n
+    n = _int(yard_line)
+    if not 0 < n < 100:
+        return None
+    return 100 - n if side == 0 else n
 
 
 def parse_event(event: dict, postseason: bool = False) -> LiveState:
@@ -140,6 +169,17 @@ def parse_event(event: dict, postseason: bool = False) -> LiveState:
     situation = comp.get("situation") or {}
     prob = ((situation.get("lastPlay") or {}).get("probability") or {}).get("homeWinPercentage")
     possession = situation.get("possession")
+    side_by_id = {str(home["team"]["id"]): 0, str(away["team"]["id"]): 1}
+    down = _int(situation.get("down"))
+    spot = {}
+    if possession and str(possession) in side_by_id and down in (1, 2, 3, 4):
+        side = side_by_id[str(possession)]
+        offense, defense = (home, away) if side == 0 else (away, home)
+        spot = {"possession": side, "down": down,
+                "togo": _int(situation.get("distance")) or 10,
+                "yardline_100": yardline_100(situation.get("possessionText"),
+                                             offense["team"]["abbreviation"], defense["team"]["abbreviation"],
+                                             situation.get("yardLine"), side)}
     return LiveState(
         espn_id=str(event["id"]),
         state=str(status["type"]["state"]),
@@ -158,6 +198,9 @@ def parse_event(event: dict, postseason: bool = False) -> LiveState:
         red_zone=bool(situation.get("isRedZone")),
         espn_home_wp=float(prob) if prob is not None else None,
         postseason=postseason,
+        home_id=str(home["team"]["id"]),
+        away_id=str(away["team"]["id"]),
+        situation=spot,
     )
 
 
@@ -328,6 +371,20 @@ def _json(value):
     return value
 
 
+def _offense(row: dict) -> dict | None:
+    """The pregame simulation's team strengths (anchored EPA targets and
+    run/pass tendencies), which the live-resume simulation reuses unchanged."""
+    comp = _json(row.get("components")) or {}
+    home, away = comp.get("home_offense") or {}, comp.get("away_offense") or {}
+    if home.get("target_epa") is None or away.get("target_epa") is None:
+        return None
+    return {
+        "home": {"target_epa": home["target_epa"], "pass_rate_oe": home.get("pass_rate_oe") or 0.0},
+        "away": {"target_epa": away["target_epa"], "pass_rate_oe": away.get("pass_rate_oe") or 0.0},
+        "wind_mph": comp.get("wind_mph") or 0.0,
+    }
+
+
 def _sim_view(row: dict, dist: dict) -> dict:
     return {
         "median_home": row.get("median_home_points"),
@@ -335,6 +392,7 @@ def _sim_view(row: dict, dist: dict) -> dict:
         "modal": [row.get("modal_home_points"), row.get("modal_away_points")],
         "total_p50": (dist.get("total") or {}).get("p50"),
         "pace": dist.get("pace"),
+        "offense": _offense(row),
     }
 
 
@@ -455,7 +513,7 @@ def _now() -> datetime:
 
 
 class Tracker:
-    def __init__(self, notify: bool = True):
+    def __init__(self, notify: bool = True, live_sims: int | None = None):
         self.store = db.get_store()
         self.fallback: db.Store | None = None
         self.ctx = self._load_context()
@@ -464,6 +522,11 @@ class Tracker:
             self.index.setdefault((g["home_team"], g["away_team"]), []).append(g)
         self.notify = notify
         self.sim_inputs = None
+        self.live = None                     # LiveSimulator, built on first use
+        self.live_sims = live_sims
+        self.live_history: dict[str, list[dict]] = {}
+        self.local_tables: set[str] = set()  # tables written to the local mirror this session
+        self.cycle_seconds = 0.0
         self.pregame: dict[str, Pregame] = {}
         self.seen_flags: dict[str, dict[str, str]] = {}
         self.history: dict[str, list[dict]] = {}
@@ -602,15 +665,7 @@ class Tracker:
     def _load_history(self, gid: str) -> None:
         """Earlier snapshots of this game, so a restarted tracker keeps the
         trajectory and does not re-announce flags it already raised."""
-        rows = []
-        for store in (self.fallback or self.store, None):
-            try:
-                store = store or db.SqliteStore()
-                rows = store.select("live_tracking", {"game_id": gid})
-                if rows:
-                    break
-            except Exception:  # noqa: BLE001
-                continue
+        rows = self._select_any("live_tracking", {"game_id": gid})
         rows.sort(key=lambda r: str(r["polled_at"]))
         self.history[gid] = [
             {"t": r.get("elapsed_minutes"), "home": r.get("home_score"), "away": r.get("away_score"),
@@ -621,6 +676,37 @@ class Tracker:
             seen = self.seen_flags.setdefault(gid, {})
             for f in _json(rows[-1].get("flags")) or []:
                 new_alerts(seen, [f])
+
+        espn = {str(r["polled_at"]): r.get("espn_home_win_prob") for r in rows}
+        from .live_sim import LIVE_SIM_VERSION
+
+        sims = sorted((r for r in self._select_any("live_simulations", {"game_id": gid})
+                       if r.get("sim_version") == LIVE_SIM_VERSION),   # earlier versions are superseded
+                      key=lambda r: str(r["polled_at"]))
+        self.live_history[gid] = [
+            {"t": r.get("elapsed_minutes"), "at": r.get("polled_at"), "wp_home": r.get("home_win_prob"),
+             "espn_wp": espn.get(str(r["polled_at"])), "margin_proj": r.get("mean_margin_home"),
+             "margin_lo": r.get("margin_80_low"), "margin_hi": r.get("margin_80_high"),
+             "total_median": r.get("total_median")}
+            for r in sims if r.get("elapsed_minutes") is not None
+        ]
+
+    def _select_any(self, table: str, where: dict) -> list[dict]:
+        """Rows from the hosted store, else from the local mirror, where a
+        session whose hosted table was missing will have written them."""
+        try:
+            rows = self.store.select(table, where)
+            if rows or self.store.backend == "sqlite":
+                return rows
+        except Exception:  # noqa: BLE001 - table not created yet
+            if self.store.backend == "sqlite":
+                return []
+        try:
+            if self.fallback is None:
+                self.fallback = db.SqliteStore()
+            return self.fallback.select(table, where)
+        except Exception:  # noqa: BLE001
+            return []
 
     # --- one cycle ------------------------------------------------------
 
@@ -640,34 +726,40 @@ class Tracker:
         if skipped:
             print(f"  [warn] {skipped} scoreboard event(s) malformed, skipped")
 
-        rows = []
+        rows, live_rows = [], []
+        started = time.perf_counter()
         for s in states:
             try:
-                row = self._process(s)
+                row, live_row = self._process(s)
                 if row:
                     rows.append(row)
+                if live_row:
+                    live_rows.append(live_row)
             except Exception as exc:  # noqa: BLE001 - one odd game must not stop the rest
                 print(f"  [warn] {s.away} @ {s.home}: {type(exc).__name__}: {exc}")
                 traceback.print_exc(limit=2)
+        self.cycle_seconds = time.perf_counter() - started
 
-        self._write(rows)
+        self._write("live_tracking", rows)
+        self._write("live_simulations", live_rows)
         self._export()
         self._status_line(states)
 
-    def _process(self, s: LiveState) -> dict | None:
+    def _process(self, s: LiveState) -> tuple[dict | None, dict | None]:
+        """(live_tracking row, live_simulations row) for one game."""
         if s.state == "pre":
-            return None
+            return None, None
         game = self.match(s)
         if game is None:
             if s.state == "in":
                 print(f"  [warn] ESPN game {s.away} @ {s.home} ({s.espn_id}) matches no game in the games table")
-            return None
+            return None, None
         gid = game["game_id"]
         if s.state == "post" and (gid not in self.live_seen or gid in self.finalized):
-            return None          # finished before this session, or already closed out
+            return None, None    # finished before this session, or already closed out
 
         pg = self.load_pregame(game)
-        scoring = path = None
+        scoring = path = summary = None
         if s.state == "in":
             self.live_seen.add(gid)
             summary = _espn("summary", {"event": s.espn_id})
@@ -681,6 +773,9 @@ class Tracker:
 
         ev = evaluate(s, pg)
         polled_at = db.utcnow()
+        live_row = live_view = None
+        if s.state == "in":
+            live_row, live_view = self._live_simulation(s, game, pg, summary, ev, polled_at)
         fresh = []
         if s.state == "in":
             fresh = new_alerts(self.seen_flags.setdefault(gid, {}), ev["flags"])
@@ -704,9 +799,10 @@ class Tracker:
             "sim_total_median_now": ev["sim_total_median_now"], "projected_total": ev["projected_total"],
             "recent_scoring": scoring, "score_path": path, "pregame": pg.summary(),
             "trajectory": self.history[gid], "bands": self.bands.get(gid),
+            "live_sim": live_view, "live_history": self.live_history.get(gid, []),
             "polled_at": polled_at,
         }
-        return {
+        row = {
             "game_id": gid, "polled_at": polled_at, "espn_event_id": s.espn_id, "state": s.state,
             "period": s.period, "display_clock": s.display_clock, "elapsed_minutes": ev["elapsed"],
             "home_team": s.home, "away_team": s.away,
@@ -723,6 +819,63 @@ class Tracker:
             "recent_scoring": scoring,
             "pregame": {k: v for k, v in pg.summary().items() if v not in (None, [])},
         }
+        return row, live_row
+
+    def _live_simulation(self, s: LiveState, game: dict, pg: Pregame, summary, ev: dict,
+                         polled_at: str) -> tuple[dict | None, dict | None]:
+        """Re-simulate the rest of this game from where it stands now.
+
+        The same engine and the same (pregame, anchored) team strengths as the
+        pregame simulation; only the starting state is live. A failure costs
+        this game's live projection for this poll and nothing else.
+        """
+        offense = (pg.sim or {}).get("offense")
+        if offense is None:
+            return None, None
+        elapsed = ev["elapsed"] * 60
+        if s.period <= 4 and elapsed >= 3600 and s.home_score != s.away_score:
+            return None, None            # regulation is over and someone won
+        gid = game["game_id"]
+        try:
+            from .live_sim import LIVE_SIM_VERSION, LiveSimulator, describe, live_start
+
+            if self.live is None:
+                if self.sim_inputs is None:
+                    from .simulate_nfl import load_inputs
+
+                    print("  [live] loading the simulator for live projections (once per session)")
+                    self.sim_inputs = load_inputs(int(game["season"]))
+                self.live = LiveSimulator(self.sim_inputs.tables, self.sim_inputs.roles,
+                                          self.ctx.injuries, n=self.live_sims)
+            side_by_id = {s.home_id: 0, s.away_id: 1}
+            halftime = s.status == "STATUS_HALFTIME" or (s.period == 2 and s.clock_seconds <= 0)
+            start, source = live_start(elapsed, halftime, s.home_score, s.away_score,
+                                       s.situation, summary, side_by_id)
+            fields, extra = self.live.run(game_id=gid, home=s.home, away=s.away, offense=offense,
+                                          start=start, summary=summary, side_by_id=side_by_id)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [warn] live simulation for {gid} failed: {type(exc).__name__}: {exc}")
+            traceback.print_exc(limit=2)
+            return None, None
+
+        start_state = {"description": describe(start, s.home, s.away), "source": source,
+                       **{k: v for k, v in vars(start).items() if v is not None}}
+        row = {
+            "game_id": gid, "polled_at": polled_at, "sim_version": LIVE_SIM_VERSION,
+            "elapsed_minutes": ev["elapsed"], "home_team": s.home, "away_team": s.away,
+            "home_score": s.home_score, "away_score": s.away_score, **fields,
+            "pregame_margin_home": pg.margin_home, "pregame_win_prob_home": pg.win_prob_home,
+            "start_state": start_state,
+        }
+        self.live_history.setdefault(gid, []).append({
+            "t": ev["elapsed"], "at": polled_at, "wp_home": fields["home_win_prob"],
+            "espn_wp": s.espn_home_wp, "margin_proj": fields["mean_margin_home"],
+            "margin_lo": fields["margin_80_low"], "margin_hi": fields["margin_80_high"],
+            "total_median": fields["total_median"],
+        })
+        regulation = 70 if s.period >= 5 else 60
+        view = {**row, **extra, "minutes_left": round(max(regulation - ev["elapsed"], 0.0), 1)}
+        return row, view
 
     # --- outputs --------------------------------------------------------
 
@@ -753,30 +906,34 @@ class Tracker:
             expect += f", simulated median {pg.away} {sim['median_away']:.0f}-{sim['median_home']:.0f} {pg.home}"
         print(f"  FINAL  {s.away} {s.away_score}-{s.home_score} {s.home}   ({expect})")
 
-    def _write(self, rows: list[dict]) -> None:
+    def _write(self, table: str, rows: list[dict]) -> None:
+        """Write to the configured store; a table it lacks goes to the local
+        SQLite mirror for the rest of the session instead of being lost."""
         if not rows:
             return
-        target = self.fallback or self.store
-        try:
-            target.upsert("live_tracking", rows)
-            return
-        except Exception as exc:  # noqa: BLE001
-            if self.fallback is not None or self.store.backend == "sqlite":
-                print(f"  [warn] live_tracking write failed ({type(exc).__name__}); "
-                      "this cycle is in live.json only")
+        if table not in self.local_tables:
+            try:
+                self.store.upsert(table, rows)
                 return
-            print(f"\n  [warn] cannot write live_tracking to {self.store.backend} ({type(exc).__name__}).")
-            print("         Snapshots go to the local SQLite mirror for the rest of this session.")
-            print("         Paste db/PASTE_INTO_SUPABASE.sql into the Supabase SQL Editor to create the table.\n")
+            except Exception as exc:  # noqa: BLE001
+                if self.store.backend == "sqlite":
+                    print(f"  [warn] {table} write failed ({type(exc).__name__}); this cycle is in live.json only")
+                    return
+                print(f"\n  [warn] cannot write {table} to {self.store.backend} ({type(exc).__name__}).")
+                print("         It goes to the local SQLite mirror for the rest of this session.")
+                print("         Paste db/PASTE_INTO_SUPABASE.sql into the Supabase SQL Editor to create it.\n")
+                self.local_tables.add(table)
         try:
-            self.fallback = db.SqliteStore()
-            self.fallback.upsert("live_tracking", rows)
+            if self.fallback is None:
+                self.fallback = db.SqliteStore()
+            self.fallback.upsert(table, rows)
         except Exception as exc:  # noqa: BLE001
-            print(f"  [warn] local fallback write failed too ({exc}); this cycle is in live.json only")
+            print(f"  [warn] local {table} write failed too ({exc}); this cycle is in live.json only")
 
     def storage_label(self) -> str:
-        if self.fallback is not None:
-            return f"sqlite (fallback: {self.store.backend} table missing)"
+        if self.local_tables:
+            return (f"{self.store.backend}, with {', '.join(sorted(self.local_tables))} in local sqlite "
+                    "(table missing upstream)")
         return self.store.backend
 
     def _export(self) -> None:
@@ -812,8 +969,11 @@ class Tracker:
             tp, mp = g["total_percentile"], g["margin_percentile"]
             pct = (f" pace p{tp * 100:.0f} margin p{mp * 100:.0f}" if tp is not None else "")
             mark = {"extreme": " !!", "notable": " !"}.get(g["flag_level"], "")
-            parts.append(f"{g['away']} {g['away_score']}-{g['home_score']} {g['home']} {g['detail']}{pct}{mark}")
-        print(f"[{_now():%H:%M:%S}Z] {len(live)} live" + ("  |  " + "  |  ".join(parts) if parts else ""))
+            ls = g.get("live_sim")
+            now = f" | now {g['home']} {ls['home_win_prob']:.0%}" if ls else ""
+            parts.append(f"{g['away']} {g['away_score']}-{g['home_score']} {g['home']} {g['detail']}{pct}{now}{mark}")
+        took = f" ({self.cycle_seconds:.1f}s)" if live else ""
+        print(f"[{_now():%H:%M:%S}Z] {len(live)} live{took}" + ("  |  " + "  |  ".join(parts) if parts else ""))
 
     def next_sleep(self, interval: float) -> float | None:
         """Seconds to the next poll, or None when there is nothing left to do."""
@@ -836,14 +996,15 @@ class Tracker:
                 pass
 
 
-def run(interval: float = POLL_SECONDS, once: bool = False, notify: bool = True) -> None:
+def run(interval: float = POLL_SECONDS, once: bool = False, notify: bool = True,
+        live_sims: int | None = None) -> None:
     # Line-buffered, so alerts reach a redirected log (or a scheduler's
     # capture) as they happen rather than when a block buffer fills.
     try:
         sys.stdout.reconfigure(line_buffering=True)
     except (AttributeError, ValueError):
         pass
-    tracker = Tracker(notify=notify)
+    tracker = Tracker(notify=notify, live_sims=live_sims)
     print(f"[live] tracking NFL games | poll every ~{interval:.0f}s | storage {tracker.store.backend}"
           f" | alerts -> console, {ALERT_LOG}{', desktop' if notify else ''} | page: dashboard /live.html")
     try:
@@ -875,5 +1036,6 @@ if __name__ == "__main__":
     parser.add_argument("--interval", type=float, default=POLL_SECONDS, help="seconds between polls")
     parser.add_argument("--once", action="store_true", help="one cycle, then exit")
     parser.add_argument("--no-notify", action="store_true", help="no desktop notifications")
+    parser.add_argument("--live-sims", type=int, help="live-resume simulations per game per poll (default 10,000)")
     args = parser.parse_args()
-    run(args.interval, args.once, notify=not args.no_notify)
+    run(args.interval, args.once, notify=not args.no_notify, live_sims=args.live_sims)

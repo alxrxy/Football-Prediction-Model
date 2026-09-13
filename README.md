@@ -314,6 +314,42 @@ still the pregame number. If `live_tracking` is missing from Supabase,
 snapshots go to the local SQLite mirror for the session, with a warning, rather
 than being lost.
 
+### Live projections (live-resume simulation)
+
+On every poll, each game in progress is simulated 10,000 more times from where
+it stands (score, clock, possession, down and distance). That takes about 0.2
+seconds a game. It uses the same engine and the same anchored team strengths
+as the pregame simulation, so any gap between the pregame numbers and the live
+ones comes from what has happened on the field, not from a different model.
+Each game keeps the same random seed from poll to poll, so the projection moves
+only when the game state changes. `--live-sims N` changes the number of
+simulations.
+
+- **Where the resumed games start.** The scoreboard's live situation is used
+  when it has one. During timeouts and quarter breaks the tracker falls back to
+  the last real snap in ESPN's summary. After a score the next event is the
+  kickoff, with any extra point still to come tried first. At halftime the
+  second-half kickoff goes to whichever side didn't take the opening one.
+- **Storage.** `live_simulations` gets one row per poll, keyed to the
+  `live_tracking` snapshot it ran from. Each row repeats the pregame margin and
+  win probability, so "before kickoff" and "now" sit side by side.
+- **Scorers from here.** These start from the pregame usage shares and are
+  pulled toward each player's share of his team's carries and targets so far
+  this game (ESPN's box score). The game's own usage gets weight
+  `opportunities / (opportunities + 30)`, about a third by halftime.
+  Red-zone and goal-line shares scale with the same shift, and a player the
+  depth chart missed joins with his live share. They remain low confidence.
+- **On the live page**, each game gets:
+  - a "Before kickoff vs. live model now" table,
+  - win probability through the game (the live model against ESPN's own, with
+    the pregame figure as a reference line),
+  - the projected final margin with its 80% range,
+  - the live scorer lists.
+
+Team strengths don't update from in-game performance. A side dominating on the
+field carries its lead forward but keeps its pregame strength for the plays
+still to come. Timeouts aren't modelled, so late-game clock use is approximate.
+
 ## The ML layer, and what the backtest says
 
 ```bash

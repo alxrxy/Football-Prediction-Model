@@ -215,6 +215,42 @@ create table if not exists live_tracking (
     primary key (game_id, polled_at)
 );
 
+-- Live-resume simulations (src/live_sim.py): the pregame engine and team
+-- strengths, restarted from the game state at each poll. Keyed to the
+-- live_tracking snapshot it was run from. The pregame_* columns repeat the
+-- fixed pre-kickoff numbers so "then vs now" sits in one row.
+create table if not exists live_simulations (
+    game_id               text not null,
+    polled_at             text not null,
+    sim_version           text,
+    n_sims                integer,
+    elapsed_minutes       real,
+    home_team             text,
+    away_team             text,
+    home_score            integer,
+    away_score            integer,
+    home_win_prob         real,
+    away_win_prob         real,
+    tie_prob              real,
+    modal_home_points     integer,
+    modal_away_points     integer,
+    modal_score_prob      real,
+    median_home_points    real,
+    median_away_points    real,
+    mean_margin_home      real,
+    margin_80_low         real,
+    margin_80_high        real,
+    total_median          real,
+    total_80_low          real,
+    total_80_high         real,
+    pregame_margin_home   real,
+    pregame_win_prob_home real,
+    start_state           text,
+    scorers               text,
+    runtime_ms            integer,
+    primary key (game_id, polled_at)
+);
+
 create table if not exists teams (
     team           text not null,
     sport          text not null,

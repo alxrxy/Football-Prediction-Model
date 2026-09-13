@@ -7,7 +7,7 @@
 --   3. Select this entire file, copy, paste into the editor
 --   4. Click Run (or press Ctrl+Enter)
 --   5. The last statement prints a table of what was created - check that all
---      eleven tables are listed with the expected column counts.
+--      twelve tables are listed with the expected column counts.
 --
 -- Then, back in the project folder:
 --   python -m src.sync_to_supabase --check    verify the tables are visible
@@ -278,6 +278,44 @@ create table if not exists live_tracking (
     primary key (game_id, polled_at)
 );
 
+-- Live-resume simulations (src/live_sim.py): the pregame engine and the same
+-- team strengths, restarted from the live game state at every poll. Keyed to
+-- the live_tracking snapshot it ran from, so the projection's evolution can
+-- be read beside the game's. The pregame_* columns repeat the numbers fixed
+-- before kickoff, so "what we thought then" and "what the model thinks now"
+-- sit in one row. Margins are home minus away; *_80_* bound the middle 80%.
+create table if not exists live_simulations (
+    game_id               text not null,
+    polled_at             timestamptz not null,
+    sim_version           text,                 -- 'live-v1'
+    n_sims                integer,
+    elapsed_minutes       double precision,
+    home_team             text,
+    away_team             text,
+    home_score            integer,
+    away_score            integer,
+    home_win_prob         double precision,
+    away_win_prob         double precision,
+    tie_prob              double precision,
+    modal_home_points     integer,
+    modal_away_points     integer,
+    modal_score_prob      double precision,
+    median_home_points    double precision,
+    median_away_points    double precision,
+    mean_margin_home      double precision,
+    margin_80_low         double precision,
+    margin_80_high        double precision,
+    total_median          double precision,
+    total_80_low          double precision,
+    total_80_high         double precision,
+    pregame_margin_home   double precision,
+    pregame_win_prob_home double precision,
+    start_state           jsonb,                -- where the resumed games started
+    scorers               jsonb,                -- low confidence, like the pregame list
+    runtime_ms            integer,
+    primary key (game_id, polled_at)
+);
+
 
 -- ---------------------------------------------------------------------------
 -- 2. INDEXES
@@ -342,18 +380,19 @@ alter table odds         enable row level security;
 alter table predictions  enable row level security;
 alter table game_simulations enable row level security;
 alter table live_tracking    enable row level security;
+alter table live_simulations enable row level security;
 
 
 -- ---------------------------------------------------------------------------
 -- 5. VERIFY
 --
--- Expected output: eleven rows, with these column counts.
+-- Expected output: twelve rows, with these column counts.
 --     depth_charts  6      predictions  17
 --     odds          8      games        20
 --     weather       7      injuries     13
 --     venues       12      teams        13
 --     team_ratings 14      game_simulations 41
---     live_tracking 28
+--     live_tracking 28     live_simulations 28
 -- ---------------------------------------------------------------------------
 
 select
@@ -373,7 +412,7 @@ where t.table_schema = 'public'
   and t.table_name in (
       'venues', 'teams', 'games', 'team_ratings', 'injuries',
       'depth_charts', 'weather', 'odds', 'predictions', 'game_simulations',
-      'live_tracking'
+      'live_tracking', 'live_simulations'
   )
 group by t.table_name
 order by t.table_name;

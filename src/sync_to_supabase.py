@@ -25,7 +25,7 @@ from . import config, db
 TABLES = [
     "venues", "teams", "games", "team_ratings",
     "weather", "odds", "injuries", "depth_charts", "predictions",
-    "game_simulations", "live_tracking",
+    "game_simulations", "live_tracking", "live_simulations",
 ]
 
 BOOLEAN_COLUMNS = {
@@ -39,6 +39,7 @@ JSON_COLUMNS = {
     "predictions": ["components"],
     "game_simulations": ["distributions", "td_scorers", "components"],
     "live_tracking": ["flags", "recent_scoring", "pregame"],
+    "live_simulations": ["start_state", "scorers"],
 }
 
 
