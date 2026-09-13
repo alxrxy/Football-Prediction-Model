@@ -197,6 +197,27 @@ def qb_availability_loss(rows: list[dict]) -> float:
     return float(share) * (1.0 - float(play_prob))
 
 
+def latest_injury_report(rows: list[dict]) -> list[dict]:
+    """Only the rows from each source's most recent pull.
+
+    Injury rows are upserted and never deleted, so a player who drops off the
+    report — cleared, or upgraded to a full practice with no game status, which
+    the NFL ingester skips — keeps his older, worse row, and so does every
+    earlier week's report. Reading every row keeps charging all of them. Each
+    ingest run stamps its rows with a single pulled_at, so the latest pull per
+    source is exactly the current report. Per source rather than overall, so a
+    run in which one feed failed falls back to that feed's previous report
+    instead of silently dropping it.
+    """
+    latest: dict = {}
+    for row in rows:
+        pulled = parse_dt(row.get("pulled_at"))
+        source = row.get("source")
+        if pulled and (source not in latest or pulled > latest[source]):
+            latest[source] = pulled
+    return [r for r in rows if parse_dt(r.get("pulled_at")) == latest.get(r.get("source"))]
+
+
 class FeatureContext:
     """Pre-loaded lookups so building N games' features costs one DB read each."""
 
@@ -206,7 +227,7 @@ class FeatureContext:
         self.teams = {t["team"]: t for t in store.select("teams", {"sport": sport})}
         self.venues = {v["venue_id"]: v for v in store.select("venues")}
         self.weather = {w["game_id"]: w for w in store.select("weather")}
-        self.injuries = store.select("injuries", {"sport": sport})
+        self.injuries = latest_injury_report(store.select("injuries", {"sport": sport}))
 
         ratings = store.select("team_ratings", {"sport": sport})
         # Keep the most recent week per team.
