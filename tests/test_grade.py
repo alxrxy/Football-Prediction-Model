@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import sys
 
-from src.grade import evaluate
+from src.grade import correctness_score, evaluate
 
 PASS, FAIL = 0, 0
 
@@ -134,6 +134,47 @@ def test_missing_market_skipped():
     check("market mae absent", stats["market_mae"], 0.0)
 
 
+def test_market_straight_up():
+    """The benchmark: did the favourite by the stored line win? Pick'em
+    lines and ties have no favourite result and are excluded."""
+    rows = [
+        p(margin=1.0, market=-3.0, edge=-2.0, actual=7),   # home fav, home won
+        p(margin=1.0, market=4.0, edge=5.0, actual=2),     # away fav, home won
+        p(margin=1.0, market=0.0, edge=1.0, actual=5),     # pick'em, excluded
+        p(margin=1.0, market=-2.0, edge=-1.0, actual=0),   # tie, excluded
+    ]
+    stats = evaluate(rows)
+    check("market su correct", stats["market_su"]["right"], 1)
+    check("market su graded", stats["market_su"]["n"], 2)
+
+
+def test_correctness_score():
+    """50 is parity with the market; each part is result / benchmark x 50."""
+    def stats(su, mkt_su, mae, market_mae, ats_win, ats_decided):
+        return {
+            "su": {"right": su[0], "n": su[1]},
+            "market_su": {"right": mkt_su[0], "n": mkt_su[1]},
+            "mae": mae, "market_mae": market_mae,
+            "ats": {"win": ats_win, "decided": ats_decided},
+        }
+
+    # Level with the market on all three counts: 90% vs 90%, equal MAE,
+    # exactly break-even ATS.
+    even = correctness_score(stats((9, 10), (9, 10), 10.0, 10.0, 524, 1000))
+    check("parity score", even["score"], 50.0)
+    check("parity verdict", even["verdict"], "roughly even with the market")
+
+    # winners 100%/40% -> 125, clamped to 100; margin 10/20 -> 25; ATS 0 -> 0.
+    mixed = correctness_score(stats((10, 10), (4, 10), 20.0, 10.0, 0, 10))
+    check("winners part clamped", mixed["parts"]["winners"]["value"], 100.0)
+    check("margin part", mixed["parts"]["margin"]["value"], 25.0)
+    check("mixed score", mixed["score"], 41.7)
+    check("mixed verdict", mixed["verdict"], "behind the market")
+
+    check("nothing graded -> None",
+          correctness_score(stats((0, 0), (0, 0), None, None, 0, 0)), None)
+
+
 if __name__ == "__main__":
     for fn in [
         test_ats_sides,
@@ -144,6 +185,8 @@ if __name__ == "__main__":
         test_brier,
         test_edge_buckets_are_cumulative,
         test_missing_market_skipped,
+        test_market_straight_up,
+        test_correctness_score,
     ]:
         print(f"\n{fn.__name__}")
         fn()

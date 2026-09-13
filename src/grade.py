@@ -124,6 +124,7 @@ def _significance(wins: int, n: int, base: float = BREAK_EVEN) -> tuple[float, f
 def evaluate(rows: list[dict]) -> dict:
     """Straight-up, against-the-spread, margin error and probability calibration."""
     su_right = su_n = 0
+    mkt_su_right = mkt_su_n = 0
     ats_win = ats_loss = ats_push = 0
     abs_err = market_abs_err = 0.0
     err_n = 0
@@ -154,6 +155,13 @@ def evaluate(rows: list[dict]) -> dict:
             err_n += 1
             if market is not None:
                 market_abs_err += abs(-float(market) - actual)
+
+        # The market's straight-up record: the favourite by the stored line.
+        # This is the benchmark for the model's own straight-up rate, which on
+        # its own flatters any model that mostly agrees with the favourite.
+        if market is not None and float(market) != 0 and actual != 0:
+            mkt_su_right += int((float(market) < 0) == (actual > 0))
+            mkt_su_n += 1
 
         edge = r.get("edge")
         if edge is None or market is None:
@@ -186,7 +194,63 @@ def evaluate(rows: list[dict]) -> dict:
         "brier": brier / brier_n if brier_n else None,
         "by_edge": by_edge,
         "by_conf": by_conf,
+        "market_su": {"right": mkt_su_right, "n": mkt_su_n},
     }
+
+
+def correctness_score(stats: dict) -> dict | None:
+    """One 0-100 number for how the model is doing, where 50 = the market.
+
+    Scored against the market rather than against zero, because a raw hit rate
+    flatters: picking every betting favourite wins most games, so a model can
+    be "80% correct" and still worse than doing nothing. Each part is the
+    model's result as a share of its benchmark, times 50, clamped to 0-100:
+
+        winners  model straight-up rate / market favourite's straight-up rate
+        margin   market MAE / model MAE        (lower error is better)
+        spread   ATS win rate / break-even at -110
+
+    The score is the mean of whichever parts have data. It is a summary for a
+    dashboard, not a significance test: it carries the same sample-size
+    problem as every number it is built from.
+    """
+    parts: dict[str, dict] = {}
+
+    su, market_su = stats.get("su") or {}, stats.get("market_su") or {}
+    if su.get("n") and market_su.get("n") and market_su.get("right"):
+        model_rate = su["right"] / su["n"]
+        market_rate = market_su["right"] / market_su["n"]
+        parts["winners"] = {
+            "value": 50 * model_rate / market_rate,
+            "detail": f"picked {model_rate:.0%} of winners; the betting favourite won {market_rate:.0%}",
+        }
+
+    mae, market_mae = stats.get("mae"), stats.get("market_mae")
+    if mae and market_mae:
+        parts["margin"] = {
+            "value": 50 * market_mae / mae,
+            "detail": f"missed the final margin by {mae:.1f} pts on average; the line missed by {market_mae:.1f}",
+        }
+
+    ats = stats.get("ats") or {}
+    if ats.get("decided"):
+        rate = ats["win"] / ats["decided"]
+        parts["spread"] = {
+            "value": 50 * rate / BREAK_EVEN,
+            "detail": f"covered {rate:.1%}; {BREAK_EVEN:.1%} breaks even at -110",
+        }
+
+    if not parts:
+        return None
+    for part in parts.values():
+        part["value"] = round(max(0.0, min(100.0, part["value"])), 1)
+    score = round(sum(p["value"] for p in parts.values()) / len(parts), 1)
+    verdict = (
+        "ahead of the market" if score >= 53
+        else "roughly even with the market" if score >= 47
+        else "behind the market"
+    )
+    return {"score": score, "verdict": verdict, "parts": parts}
 
 
 def format_report(by_model: dict[str, dict], rows_by_model: dict[str, list]) -> str:
@@ -230,6 +294,12 @@ def format_report(by_model: dict[str, dict], rows_by_model: dict[str, list]) -> 
             out.append(
                 f"  Brier score             {stats['brier']:.4f}"
                 "   (0 = perfect, 0.25 = a coin flip)"
+            )
+        score = correctness_score(stats)
+        if score:
+            out.append(
+                f"  correctness score       {score['score']:.0f}/100   "
+                f"{score['verdict']} (50 = as good as the market)"
             )
 
         buckets = [(t, w, n) for t, (w, n) in sorted(stats["by_edge"].items()) if n]
