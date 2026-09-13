@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NFL Live Tracker</title>
+<!--
+  Live in-game view. Reads live.json, which `python -m src.live_tracker`
+  rewrites every poll, and re-reads it every 20 seconds. Standalone on purpose:
+  no build step, served as-is by the dashboard's dev server at /live.html.
+  Every string from ESPN is inserted with textContent, never innerHTML.
+-->
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --series-1: #2a78d6;
+    --band-outer: #eeede8;
+    --band-inner: #dcdbd3;
+    --critical: #d03b3b;
+    --warning: #fab219;
+    --tip-bg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #ffffff;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --series-1: #3987e5;
+      --band-outer: #262624;
+      --band-inner: #363632;
+      --tip-bg: #232322;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --series-1: #3987e5;
+    --band-outer: #262624;
+    --band-inner: #363632;
+    --tip-bg: #232322;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding-block: 20px 40px;
+    padding-inline: max(16px, 3vw);
+    background: var(--page);
+    color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin: 24px 0 8px; }
+  .meta { color: var(--ink-2); margin: 0; }
+  .warn { color: var(--ink); margin: 8px 0 0; }
+  .warn::before { content: "▲ "; color: var(--critical); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); }
+
+  .alerts { list-style: none; margin: 0; padding: 0; }
+  .alerts li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  .alerts li:first-child { border-top: 0; }
+  .alerts time { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .chip { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .chip .mk { font-size: 11px; }
+  .chip.extreme .mk { color: var(--critical); }
+  .chip.notable .mk { color: var(--warning); }
+
+  .score { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .score .teams { font-size: 22px; font-weight: 650; }
+  .score .detail { color: var(--ink-2); }
+  .score .state { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .situation, .pregame, .stats { color: var(--ink-2); margin: 4px 0 0; }
+  .stats strong { color: var(--ink); font-weight: 600; }
+  .flags { list-style: none; margin: 10px 0 0; padding: 0; }
+  .flags li { display: flex; gap: 8px; align-items: baseline; margin-top: 4px; }
+  .charts { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-top: 12px; }
+  .chart-wrap { position: relative; }
+  .chart-title { font-size: 12px; color: var(--ink-2); margin: 0 0 2px; }
+  svg.chart { width: 100%; height: auto; display: block; outline: none; }
+  svg.chart:focus-visible { box-shadow: 0 0 0 2px var(--series-1); border-radius: 4px; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .zero { stroke: var(--axis); stroke-width: 1; }
+  .tick { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .band-outer { fill: var(--band-outer); }
+  .band-inner { fill: var(--band-inner); }
+  .median { fill: none; stroke: var(--ink-2); stroke-width: 1; }
+  .actual { fill: none; stroke: var(--series-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .end { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
+  .end-label { fill: var(--ink); font-size: 11px; font-weight: 600; }
+  .crosshair { stroke: var(--ink-2); stroke-width: 1; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--ink-2); margin-top: 2px; }
+  .legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .key-line { width: 14px; height: 2px; background: var(--series-1); display: inline-block; }
+  .key-median { width: 14px; height: 1px; background: var(--ink-2); display: inline-block; }
+  .key-band { width: 14px; height: 10px; display: inline-block; background: linear-gradient(var(--band-outer) 0 25%, var(--band-inner) 25% 75%, var(--band-outer) 75%); border-radius: 2px; }
+  .tip {
+    position: absolute; pointer-events: none; z-index: 2;
+    background: var(--tip-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; font-size: 12px; min-width: 150px; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+  }
+  .tip .v { font-weight: 650; font-size: 13px; }
+  .tip .l { color: var(--ink-2); }
+  .scoring { margin: 12px 0 0; padding: 0; list-style: none; }
+  .scoring li { color: var(--ink-2); margin-top: 3px; }
+  .scoring b { color: var(--ink); font-weight: 600; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
+  .table-scroll { overflow-x: auto; }
+  table { border-collapse: collapse; font-size: 12px; margin-top: 6px; width: 100%; }
+  th, td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--ink-2); font-weight: 600; }
+  .empty { color: var(--ink-2); }
+  code { font-size: 12px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>NFL live tracker</h1>
+    <p class="meta" id="meta">Loading…</p>
+    <div id="notices"></div>
+  </header>
+  <h2>Divergence alerts</h2>
+  <section class="card" id="alerts"></section>
+  <h2>Games</h2>
+  <main class="grid" id="games"></main>
+  <h2>Starting later</h2>
+  <section class="card" id="upcoming"></section>
+
+<script>
+"use strict";
+const REFRESH_MS = 20000;
+const STALE_MS = 6 * 60 * 1000;
+const SVGNS = "http://www.w3.org/2000/svg";
+let lastData = null;
+
+function el(tag, props = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else n.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    n.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return n;
+}
+function sv(tag, attrs = {}, text) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (text != null) n.textContent = text;
+  return n;
+}
+const clock = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+const pct = (p) => p == null ? "—" : `${Math.round(p * 100)}${ordinal(Math.round(p * 100))} pct`;
+function ordinal(n) { const s = ["th", "st", "nd", "rd"], v = n % 100; return s[(v - 20) % 10] || s[v] || s[0]; }
+const by = (m, home, away) => m == null ? "no prediction" : Math.abs(m) < 0.05 ? "pick'em" : `${m > 0 ? home : away} by ${Math.abs(m).toFixed(1)}`;
+
+function chip(level) {
+  const label = level === "extreme" ? "Extreme" : "Watch";
+  return el("span", { class: `chip ${level}` }, el("span", { class: "mk", "aria-hidden": "true", text: level === "extreme" ? "▲" : "●" }), label);
+}
+
+// --- charts ------------------------------------------------------------
+
+function interp(xs, ys, x) {
+  if (x <= xs[0]) return ys[0];
+  for (let i = 1; i < xs.length; i++) {
+    if (x <= xs[i]) { const w = (x - xs[i - 1]) / (xs[i] - xs[i - 1]); return ys[i - 1] + w * (ys[i] - ys[i - 1]); }
+  }
+  return ys[ys.length - 1];
+}
+function niceStep(range) {
+  for (const s of [1, 2, 5, 10, 14, 20, 25, 50]) if (range / s <= 5) return s;
+  return 100;
+}
+
+// One measure per chart: points (t, v), the simulated bands for the same
+// measure, and a crosshair tooltip. Totals and margins are never put on a
+// shared axis.
+function chart({ title, band, points, signed, fmt }) {
+  const W = 340, H = 170, m = { l: 32, r: 30, t: 10, b: 24 };
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const tMax = Math.max(60, ...points.map(p => p.t));
+  const vals = points.map(p => p.v).concat(band ? [...band.p05, ...band.p95] : []);
+  let lo = Math.min(0, ...vals), hi = Math.max(signed ? 7 : 10, ...vals);
+  if (signed) { const a = Math.max(Math.abs(lo), Math.abs(hi)); lo = -a; hi = a; }
+  const step = niceStep(hi - lo);
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const x = t => m.l + (t / tMax) * pw;
+  const y = v => m.t + (1 - (v - lo) / (hi - lo)) * ph;
+
+  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", tabindex: "0", role: "img",
+    "aria-label": `${title}: actual against the simulated range. Use arrow keys to step through snapshots.` });
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    svg.append(sv("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), class: signed && v === 0 ? "zero" : "gridline" }));
+    svg.append(sv("text", { x: m.l - 6, y: y(v) + 3, "text-anchor": "end", class: "tick" }, fmt(v)));
+  }
+  for (const t of [0, 15, 30, 45, 60]) {
+    svg.append(sv("text", { x: x(t), y: H - 8, "text-anchor": "middle", class: "tick" }, t === 60 ? "60 min" : String(t)));
+  }
+  if (band) {
+    const mins = band.minutes;
+    const area = (upper, lower, cls) => {
+      const top = mins.map((t, i) => `${x(t)},${y(upper[i])}`);
+      const bot = mins.map((t, i) => `${x(t)},${y(lower[i])}`).reverse();
+      svg.append(sv("path", { d: `M${top.join("L")}L${bot.join("L")}Z`, class: cls }));
+    };
+    area(band.p95, band.p05, "band-outer");
+    area(band.p75, band.p25, "band-inner");
+    svg.append(sv("polyline", { points: mins.map((t, i) => `${x(t)},${y(band.p50[i])}`).join(" "), class: "median" }));
+  }
+  if (points.length) {
+    svg.append(sv("polyline", { points: points.map(p => `${x(p.t)},${y(p.v)}`).join(" "), class: "actual" }));
+    const last = points[points.length - 1];
+    svg.append(sv("circle", { cx: x(last.t), cy: y(last.v), r: 4, class: "end" }));
+    svg.append(sv("text", { x: x(last.t) + 7, y: y(last.v) + 4, class: "end-label" }, fmt(last.v)));
+  }
+
+  const wrap = el("div", { class: "chart-wrap" }, el("p", { class: "chart-title", text: title }), svg);
+  const legend = el("div", { class: "legend" },
+    el("span", {}, el("i", { class: "key-line" }), "Actual"),
+    band ? el("span", {}, el("i", { class: "key-median" }), "Simulated median") : null,
+    band ? el("span", {}, el("i", { class: "key-band" }), "Simulated 50% / 90% range") : null);
+  wrap.append(legend);
+  if (!points.length) return wrap;
+
+  const cross = sv("line", { y1: m.t, y2: m.t + ph, class: "crosshair", visibility: "hidden" });
+  svg.append(cross);
+  const tip = el("div", { class: "tip", hidden: "" });
+  wrap.append(tip);
+  const hit = sv("rect", { x: m.l, y: m.t, width: pw, height: ph, fill: "transparent" });
+  svg.append(hit);
+  let idx = points.length - 1;
+
+  function show(i) {
+    idx = Math.max(0, Math.min(points.length - 1, i));
+    const p = points[idx];
+    cross.setAttribute("x1", x(p.t)); cross.setAttribute("x2", x(p.t));
+    cross.setAttribute("visibility", "visible");
+    tip.replaceChildren(
+      el("div", { class: "v", text: fmt(p.v) }),
+      el("div", { class: "l", text: `after ${p.t.toFixed(1)} game min${p.at ? " · " + clock(p.at) : ""}` }));
+    if (band) {
+      const at = Math.min(p.t, 60), q = k => Math.round(interp(band.minutes, band[k], at));
+      tip.append(el("div", { class: "l", text: `simulated median ${fmt(q("p50"))}` }),
+                 el("div", { class: "l", text: `50%: ${fmt(q("p25"))} to ${fmt(q("p75"))} · 90%: ${fmt(q("p05"))} to ${fmt(q("p95"))}` }));
+    }
+    tip.hidden = false;
+    const box = svg.getBoundingClientRect(), scale = box.width / W;
+    const left = x(p.t) * scale + 10, right = left + tip.offsetWidth > box.width;
+    tip.style.left = `${right ? x(p.t) * scale - tip.offsetWidth - 10 : left}px`;
+    tip.style.top = `${m.t * scale + 18}px`;
+  }
+  function hide() { cross.setAttribute("visibility", "hidden"); tip.hidden = true; }
+  svg.addEventListener("pointermove", (e) => {
+    const box = svg.getBoundingClientRect();
+    const t = ((e.clientX - box.left) / (box.width / W) - m.l) / pw * tMax;
+    let best = 0;
+    // <= so that at a scoring play the readout shows the score after it.
+    points.forEach((p, i) => { if (Math.abs(p.t - t) <= Math.abs(points[best].t - t)) best = i; });
+    show(best);
+  });
+  svg.addEventListener("pointerleave", hide);
+  svg.addEventListener("focus", () => show(points.length - 1));
+  svg.addEventListener("blur", hide);
+  svg.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft") { show(idx - 1); e.preventDefault(); }
+    if (e.key === "ArrowRight") { show(idx + 1); e.preventDefault(); }
+  });
+  return wrap;
+}
+
+// --- cards -------------------------------------------------------------
+
+// The actual score as a step line from kickoff, exact to each scoring play,
+// ending at the current game clock. Falls back to the polled snapshots when
+// the summary (and so the scoring plays) has not been fetched.
+function actualPath(g, traj) {
+  const plays = (g.score_path || []).filter(p => p.t != null).sort((a, b) => a.t - b.t);
+  const now = { t: g.elapsed, home: g.home_score, away: g.away_score, at: g.polled_at };
+  if (!plays.length) return traj.length ? traj : [now];
+  const out = [{ t: 0, home: 0, away: 0 }];
+  let prev = out[0];
+  for (const p of plays) {
+    out.push({ t: p.t, home: prev.home, away: prev.away });
+    out.push({ t: p.t, home: p.home, away: p.away });
+    prev = p;
+  }
+  if (now.t >= prev.t) out.push(now);
+  return out;
+}
+
+function gameCard(g) {
+  const pg = g.pregame || {};
+  const final = g.state === "post";
+  const card = el("article", { class: "card" });
+  card.append(el("div", { class: "score" },
+    el("span", { class: "teams", text: `${g.away} ${g.away_score} – ${g.home_score} ${g.home}` }),
+    el("span", { class: "detail", text: final ? "Final" : g.detail }),
+    el("span", { class: "state", text: `polled ${clock(g.polled_at)}` })));
+
+  if (!final) {
+    const bits = [];
+    if (g.possession) bits.push(`${g.possession} ball`);
+    if (g.down_distance) bits.push(g.down_distance);
+    if (g.red_zone) bits.push("red zone");
+    if (g.espn_home_wp != null) {
+      const home = g.espn_home_wp >= 0.5;
+      bits.push(`ESPN win prob ${home ? g.home : g.away} ${Math.round((home ? g.espn_home_wp : 1 - g.espn_home_wp) * 100)}%`);
+    }
+    if (bits.length) card.append(el("p", { class: "situation", text: bits.join(" · ") }));
+  }
+
+  if (g.flags && g.flags.length) {
+    card.append(el("ul", { class: "flags" }, g.flags.map(f => el("li", {}, chip(f.level), el("span", { text: f.message })))));
+  }
+
+  const pre = [`Pregame: ${by(pg.margin_home, g.home, g.away)}`];
+  if (pg.sim_median_home != null) pre.push(`simulated median ${g.away} ${Math.round(pg.sim_median_away)}–${Math.round(pg.sim_median_home)} ${g.home}`);
+  if (pg.market_spread != null) pre.push(`market ${by(-pg.market_spread, g.home, g.away)}${pg.market_total ? `, total ${pg.market_total}` : ""}`);
+  card.append(el("p", { class: "pregame", text: pre.join(" · ") }));
+
+  if (g.total_percentile != null) {
+    const total = g.home_score + g.away_score;
+    card.append(el("p", { class: "stats" },
+      "Points so far ", el("strong", { text: String(total) }),
+      ` vs ${g.sim_total_median_now} typical by now (${pct(g.total_percentile)}) · home margin ${pct(g.margin_percentile)} · on pregame pace for `,
+      el("strong", { text: `~${Math.round(g.projected_total)}` })));
+  } else if (!g.bands) {
+    card.append(el("p", { class: "stats", text: "No simulation for this game: only the underdog flag is active." }));
+  }
+
+  const traj = (g.trajectory || []).filter(p => p.t != null);
+  const path = actualPath(g, traj);
+  const b = g.bands;
+  card.append(el("div", { class: "charts" },
+    chart({ title: "Points scored, both teams", signed: false, fmt: v => String(Math.round(v)),
+            band: b && { minutes: b.minutes, ...b.total }, points: path.map(p => ({ t: p.t, v: p.home + p.away, at: p.at })) }),
+    chart({ title: `Margin (${g.home} minus ${g.away})`, signed: true, fmt: v => (v > 0 ? "+" : "") + Math.round(v),
+            band: b && { minutes: b.minutes, ...b.margin }, points: path.map(p => ({ t: p.t, v: p.home - p.away, at: p.at })) })));
+
+  if (g.recent_scoring && g.recent_scoring.length) {
+    card.append(el("ul", { class: "scoring" }, g.recent_scoring.map(s =>
+      el("li", {}, el("b", { text: `Q${s.period} ${s.clock} ${s.team}` }), ` ${s.text || s.type || ""} `,
+         el("span", { text: `(${g.away} ${s.away_score}–${s.home_score} ${g.home})` })))));
+  }
+
+  // Table view: every snapshot, reachable without hovering.
+  const rows = traj.slice().reverse().map(p => el("tr", {},
+    el("td", { text: clock(p.at) }), el("td", { text: p.t.toFixed(1) }),
+    el("td", { text: `${p.away}–${p.home}` }), el("td", { text: String(p.home + p.away) }),
+    el("td", { text: (p.home - p.away > 0 ? "+" : "") + (p.home - p.away) })));
+  card.append(el("details", {}, el("summary", { text: `Snapshots (${traj.length})` }),
+    el("div", { class: "table-scroll" }, el("table", {},
+      el("thead", {}, el("tr", {}, ["Polled", "Game min", `${g.away}–${g.home}`, "Total", `${g.home} margin`].map(h => el("th", { text: h })))),
+      el("tbody", {}, rows)))));
+  return card;
+}
+
+// --- page --------------------------------------------------------------
+
+function render(data, error) {
+  const meta = document.getElementById("meta"), notices = document.getElementById("notices");
+  notices.replaceChildren();
+  if (!data) {
+    meta.textContent = "";
+    notices.append(el("p", { class: "warn" }, "No live.json yet. Start the tracker: ", el("code", { text: "python -m src.live_tracker" })));
+    return;
+  }
+  const age = Date.now() - new Date(data.generated_at).getTime();
+  meta.textContent = `Tracker last wrote ${clock(data.generated_at)} · polls every ~${data.poll_seconds}s · storage: ${data.storage} · flags at the ${Math.round(data.thresholds.notable * 100)}/${Math.round(100 - data.thresholds.notable * 100)} (watch) and ${Math.round(data.thresholds.extreme * 100)}/${Math.round(100 - data.thresholds.extreme * 100)} (extreme) simulated percentiles`;
+  if (age > STALE_MS) notices.append(el("p", { class: "warn", text: `Nothing new for ${Math.round(age / 60000)} min. Is the tracker still running?` }));
+  if (error) notices.append(el("p", { class: "warn", text: "Couldn't reload live.json; showing the last copy." }));
+
+  const alerts = document.getElementById("alerts");
+  alerts.replaceChildren(data.alerts && data.alerts.length
+    ? el("ul", { class: "alerts" }, data.alerts.slice(0, 15).map(a =>
+        el("li", {}, el("time", { text: clock(a.at) }), chip(a.level), el("strong", { text: a.game }), el("span", { text: a.message }))))
+    : el("p", { class: "empty", text: "No divergences flagged this session." }));
+
+  const games = document.getElementById("games");
+  games.replaceChildren(...(data.games.length ? data.games.map(gameCard)
+    : [el("p", { class: "empty", text: "No games in progress." })]));
+
+  const up = document.getElementById("upcoming");
+  up.replaceChildren(data.upcoming && data.upcoming.length
+    ? el("ul", { class: "scoring" }, data.upcoming.map(u => el("li", {}, el("b", { text: `${u.away} @ ${u.home}` }), ` ${clock(u.kickoff)}`)))
+    : el("p", { class: "empty", text: "Nothing else scheduled in the next 12 hours." }));
+}
+
+async function refresh() {
+  try {
+    const res = await fetch(`live.json?ts=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    lastData = await res.json();
+    render(lastData, null);
+  } catch (err) {
+    render(lastData, err);
+  }
+}
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>

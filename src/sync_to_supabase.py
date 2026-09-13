@@ -25,6 +25,7 @@ from . import config, db
 TABLES = [
     "venues", "teams", "games", "team_ratings",
     "weather", "odds", "injuries", "depth_charts", "predictions",
+    "game_simulations", "live_tracking",
 ]
 
 BOOLEAN_COLUMNS = {
@@ -32,8 +33,13 @@ BOOLEAN_COLUMNS = {
     "games": ["is_neutral_site", "is_conference", "completed"],
     "weather": ["is_dome"],
     "predictions": ["is_value"],
+    "live_tracking": ["is_red_zone", "alerted"],
 }
-JSON_COLUMNS = {"predictions": ["components"]}
+JSON_COLUMNS = {
+    "predictions": ["components"],
+    "game_simulations": ["distributions", "td_scorers", "components"],
+    "live_tracking": ["flags", "recent_scoring", "pregame"],
+}
 
 
 def _headers() -> dict:

@@ -27,9 +27,11 @@ TABLE_KEYS: dict[str, list[str]] = {
     "weather": ["game_id"],
     "odds": ["game_id", "book"],
     "predictions": ["game_id", "model_version"],
+    "game_simulations": ["game_id", "sim_version"],
+    "live_tracking": ["game_id", "polled_at"],
 }
 
-JSON_COLUMNS = {"components"}
+JSON_COLUMNS = {"components", "distributions", "td_scorers", "flags", "recent_scoring", "pregame"}
 
 
 def utcnow() -> str:

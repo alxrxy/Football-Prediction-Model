@@ -7,7 +7,7 @@
 --   3. Select this entire file, copy, paste into the editor
 --   4. Click Run (or press Ctrl+Enter)
 --   5. The last statement prints a table of what was created - check that all
---      nine tables are listed with the expected column counts.
+--      eleven tables are listed with the expected column counts.
 --
 -- Then, back in the project folder:
 --   python -m src.sync_to_supabase --check    verify the tables are visible
@@ -191,6 +191,93 @@ create table if not exists predictions (
     primary key (game_id, model_version)
 );
 
+-- Monte Carlo game simulations (src/simulate_nfl.py), one row per
+-- (game, simulator version). Deliberately separate from predictions so the
+-- simpler pipeline output is never touched. Every margin is home minus away;
+-- the *_50_* / *_80_* columns bound the middle 50% / 80% of simulated games.
+-- td_scorers is flagged lower-confidence than the score and TD/FG counts: it
+-- extrapolates historical usage rather than simulating game plans.
+create table if not exists game_simulations (
+    game_id               text not null,
+    sim_version           text not null,        -- 'sim-v1'
+    sport                 text,
+    home_team             text,
+    away_team             text,
+    n_sims                integer,
+    modal_home_points     integer,              -- most frequent exact final score
+    modal_away_points     integer,
+    modal_score_prob      double precision,
+    median_home_points    double precision,
+    median_away_points    double precision,
+    mean_home_points      double precision,
+    mean_away_points      double precision,
+    home_win_prob         double precision,
+    tie_prob              double precision,
+    margin_50_low         double precision,
+    margin_50_high        double precision,
+    margin_80_low         double precision,
+    margin_80_high        double precision,
+    total_50_low          double precision,
+    total_50_high         double precision,
+    total_80_low          double precision,
+    total_80_high         double precision,
+    home_td_mode          integer,
+    away_td_mode          integer,
+    home_fg_mode          integer,
+    away_fg_mode          integer,
+    home_td_mean          double precision,
+    away_td_mean          double precision,
+    home_fg_mean          double precision,
+    away_fg_mean          double precision,
+    anchor_margin_home    double precision,     -- baseline margin the sim is pinned to
+    sim_margin_home       double precision,
+    market_spread         double precision,
+    market_total          double precision,
+    score_confidence      text,
+    td_scorer_confidence  text,                 -- always 'low'
+    distributions         jsonb,
+    td_scorers            jsonb,
+    components            jsonb,
+    generated_at          timestamptz not null default now(),
+    primary key (game_id, sim_version)
+);
+
+-- Live in-game snapshots (src/live_tracker.py): one row per game per poll,
+-- so a game's trajectory is kept, not just its latest state. The percentiles
+-- place the live total and home margin among the pregame simulations at the
+-- same elapsed game time; flags holds every divergence active at that poll.
+create table if not exists live_tracking (
+    game_id               text not null,
+    polled_at             timestamptz not null,
+    espn_event_id         text,
+    state                 text,                 -- 'in' | 'post'
+    period                integer,
+    display_clock         text,
+    elapsed_minutes       double precision,
+    home_team             text,
+    away_team             text,
+    home_score            integer,
+    away_score            integer,
+    possession            text,
+    down_distance         text,
+    is_red_zone           boolean default false,
+    espn_home_win_prob    double precision,     -- ESPN's own, for reference
+    predicted_margin_home double precision,     -- pregame baseline margin
+    predicted_winner      text,
+    sim_median_home       double precision,
+    sim_median_away       double precision,
+    sim_total_median_now  double precision,     -- simulated total by this point
+    total_percentile      double precision,
+    margin_percentile     double precision,
+    projected_total       double precision,
+    flag_level            text,                 -- null | 'notable' | 'extreme'
+    flags                 jsonb,
+    alerted               boolean default false,-- a new alert fired on this poll
+    recent_scoring        jsonb,
+    pregame               jsonb,
+    primary key (game_id, polled_at)
+);
+
 
 -- ---------------------------------------------------------------------------
 -- 2. INDEXES
@@ -253,17 +340,20 @@ alter table depth_charts enable row level security;
 alter table weather      enable row level security;
 alter table odds         enable row level security;
 alter table predictions  enable row level security;
+alter table game_simulations enable row level security;
+alter table live_tracking    enable row level security;
 
 
 -- ---------------------------------------------------------------------------
 -- 5. VERIFY
 --
--- Expected output: nine rows, with these column counts.
+-- Expected output: eleven rows, with these column counts.
 --     depth_charts  6      predictions  17
 --     odds          8      games        20
 --     weather       7      injuries     13
 --     venues       12      teams        13
---     team_ratings 14
+--     team_ratings 14      game_simulations 41
+--     live_tracking 28
 -- ---------------------------------------------------------------------------
 
 select
@@ -282,7 +372,8 @@ join pg_namespace ns
 where t.table_schema = 'public'
   and t.table_name in (
       'venues', 'teams', 'games', 'team_ratings', 'injuries',
-      'depth_charts', 'weather', 'odds', 'predictions'
+      'depth_charts', 'weather', 'odds', 'predictions', 'game_simulations',
+      'live_tracking'
   )
 group by t.table_name
 order by t.table_name;

@@ -1,0 +1,556 @@
+"""NFL game simulation: Monte Carlo on top of the prediction pipeline.
+
+    python -m src.simulate_nfl --game 2026_01_DEN_KC             one game, printed and stored
+    python -m src.simulate_nfl --game 2026_01_DEN_KC --no-store  printed only
+    python -m src.simulate_nfl --date 2026-09-13                 every game on a slate
+    python -m src.simulate_nfl --calibrate                       engine vs real NFL scoring
+
+A build phase of its own, deliberately not wired into run_pipeline.py. Output
+lands in `game_simulations`; the `predictions` table is never read or written.
+
+How it sits on the existing pipeline
+------------------------------------
+The simulator does not produce a rival margin. Each game's features come from
+the same FeatureContext the baseline uses, and the baseline's final margin
+(power rating plus home field, rest, travel, injuries and wind) is the anchor:
+a small symmetric EPA offset is solved so the simulated games average exactly
+that margin. What the simulator adds is everything around the centre: the
+spread of outcomes, the total, how the points arrive (touchdowns versus field
+goals), and who is likely to score them.
+
+Offence and defence are kept separate because the total depends on them
+individually. Each side's expected EPA per play is its offensive rating plus
+the opponent's defensive rating, with the injury report split by position: a
+missing quarterback lowers his own offence, a missing cornerback raises the
+opposing offence. Situational points are shared equally between the sides.
+"""
+
+from __future__ import annotations
+
+import argparse
+import zlib
+from dataclasses import dataclass
+from datetime import date
+
+import numpy as np
+import pandas as pd
+
+from . import db
+from .features import FeatureContext, latest_injury_report, parse_dt
+from .ingest_injuries import player_key
+from .ingest_nflverse import PLAYS_PER_GAME
+from .predict_baseline import predict_game, slate_window
+from .sim_data import (
+    USAGE_CATEGORIES, SimTables, build_tables, load_pbp, pass_rate_oe, player_roles,
+)
+from .simulate import Offense, SimResult, allocate_scorers, simulate_game, summarize
+
+SIM_VERSION = "sim-v1"
+N_SIMS = 10_000
+PILOT_SIMS = 4_000
+PROBE_EPA = 0.04          # size of the offset used to measure margin per EPA
+
+OFFENSE_POSITIONS = {"QB", "RB", "FB", "WR", "TE", "T", "OT", "LT", "RT",
+                     "G", "OG", "LG", "RG", "C", "OL"}
+SPECIAL_TEAMS = {"K", "P", "LS"}
+
+TOP_SCORERS = 8
+MIN_SCORER_PROB = 0.03
+MIN_SHIFT_SHARE = 0.03    # injury shifts smaller than this aren't worth listing
+
+TD_SCORER_CONFIDENCE = "low"
+TD_SCORER_NOTE = (
+    "Lower confidence than the score and TD/FG counts. Scorers are assigned from "
+    "each player's historical red-zone target share and goal-line / red-zone carry "
+    "share, with an injured player's share moved to the next man on the depth chart. "
+    "It knows nothing about this week's game plan, snap limits or matchup-specific usage."
+)
+
+
+@dataclass
+class SimInputs:
+    """Loaded once per run and shared by every game on it."""
+
+    tables: SimTables
+    roles: pd.DataFrame
+    depth_as_of: str
+    proe: dict[str, float]
+
+
+def load_inputs(season: int) -> SimInputs:
+    tables = build_tables()
+    pbp = load_pbp((season - 1, season))
+    roles, as_of = player_roles(season, pbp)
+    return SimInputs(tables, roles, as_of, pass_rate_oe(pbp, season))
+
+
+# --- per-side strength -----------------------------------------------------
+
+def injury_split(detail: list[dict], team_points: float) -> tuple[float, float]:
+    """(offence cost, defence cost) in points, both >= 0.
+
+    Scaled to the team's capped injury total so the split never charges more
+    than the baseline did. Specialists are left out: kicking is drawn from the
+    league table, so there is nothing of theirs to weaken.
+    """
+    raw = sum(d["points"] for d in detail)
+    if raw <= 0:
+        return 0.0, 0.0
+    scale = abs(team_points) / raw
+    pos = lambda d: (d.get("position") or "").upper()  # noqa: E731
+    off = sum(d["points"] for d in detail if pos(d) in OFFENSE_POSITIONS)
+    spec = sum(d["points"] for d in detail if pos(d) in SPECIAL_TEAMS)
+    return off * scale, (raw - off - spec) * scale
+
+
+def side_targets(features: dict, ctx: FeatureContext, league_epa: float) -> dict | None:
+    """Expected EPA per play for each offence against this defence."""
+    home, away = features["home_team"], features["away_team"]
+    h, a = ctx.ratings.get(home) or {}, ctx.ratings.get(away) or {}
+    if None in (h.get("off_epa"), h.get("def_epa"), a.get("off_epa"), a.get("def_epa")):
+        return None
+    rated = [r for r in ctx.ratings.values() if r.get("off_epa") is not None]
+    league_off = float(np.mean([r["off_epa"] for r in rated]))
+    league_def = float(np.mean([r["def_epa"] for r in rated]))
+
+    situational = features["hfa"] + features["rest_adj"] + features["travel_adj"]
+    h_off_inj, h_def_inj = injury_split(features["home_injury_detail"], features["home_injury_points"])
+    a_off_inj, a_def_inj = injury_split(features["away_injury_detail"], features["away_injury_points"])
+
+    def side(off_rating, opp_def, sit, own_off_inj, opp_def_inj):
+        points = sit / 2 - own_off_inj + opp_def_inj
+        return {
+            "target_epa": league_epa + (off_rating - league_off) + (opp_def - league_def)
+            + points / PLAYS_PER_GAME,
+            "off_epa": off_rating, "opp_def_epa": opp_def,
+            "situational_pts": round(sit / 2, 3),
+            "own_offense_injury_pts": round(-own_off_inj, 3),
+            "opp_defense_injury_pts": round(opp_def_inj, 3),
+        }
+
+    return {
+        "home": side(h["off_epa"], a["def_epa"], situational, h_off_inj, a_def_inj),
+        "away": side(a["off_epa"], h["def_epa"], -situational, a_off_inj, h_def_inj),
+    }
+
+
+def anchored_simulation(tables: SimTables, targets: dict, proe: tuple[float, float],
+                        anchor: float, wind: float, n: int, seed: int):
+    """Solve the EPA offset that makes the simulated margin average `anchor`.
+
+    Margin is close to linear in a small symmetric offset, so two pilot runs on
+    common random numbers give the slope, and the full run uses the solved
+    offset. Returns (result, offset, slope, unanchored pilot margin).
+    """
+    def run(delta, count, s):
+        return simulate_game(
+            tables,
+            Offense(targets["home"]["target_epa"] + delta, proe[0]),
+            Offense(targets["away"]["target_epa"] - delta, proe[1]),
+            n=count, seed=s, wind_mph=wind,
+        )
+
+    margin = lambda r: float((r.points[:, 0] - r.points[:, 1]).mean())  # noqa: E731
+    m0 = margin(run(0.0, PILOT_SIMS, seed))
+    m1 = margin(run(PROBE_EPA, PILOT_SIMS, seed))
+    slope = (m1 - m0) / PROBE_EPA
+    if slope <= 10:   # would mean the engine barely responds to strength; refuse to extrapolate
+        raise RuntimeError(f"margin barely responds to EPA offset (slope {slope:.1f})")
+    delta = (anchor - m0) / slope
+    return run(delta, n, seed + 1), delta, slope, m0
+
+
+# --- scorers ---------------------------------------------------------------
+
+def team_shares(roles: pd.DataFrame, team: str, injuries: list[dict]):
+    """Depth-chart skill players and each one's share of every opportunity
+    type, with injuries applied.
+
+    Within a position, players are walked in depth order. An injured player
+    keeps his share times his play probability; the rest passes to the next
+    man down, who is himself subject to his own play probability. So a ruled
+    out RB1's goal-line work goes to RB2 rather than being spread evenly
+    across the whole backfield.
+    """
+    squad = roles[roles["team"] == team].sort_values(["position", "rank"]).reset_index(drop=True)
+    report = {player_key(team, r["player"]): r for r in injuries if r.get("team") == team}
+    cats = list(USAGE_CATEGORIES)
+    base = squad[cats].to_numpy(float)
+    eff = np.zeros_like(base)
+    play_prob = np.ones(len(squad))
+    shifts = []
+
+    for _pos, idx in squad.groupby("position").groups.items():
+        idx = sorted(idx, key=lambda i: squad.at[i, "rank"])
+        carry = np.zeros(len(cats))
+        for n, i in enumerate(idx):
+            row = report.get(player_key(team, squad.at[i, "player"]))
+            q = 1.0 if row is None else float(row.get("play_probability") or 0.0)
+            total = base[i] + carry
+            eff[i], carry = total * q, total * (1 - q)
+            play_prob[i] = q
+            moved = total * (1 - q)
+            if q < 1 and (moved[0] + moved[2]) >= MIN_SHIFT_SHARE:
+                nxt = squad.at[idx[n + 1], "player"] if n + 1 < len(idx) else None
+                shifts.append({
+                    "player": squad.at[i, "player"],
+                    "position": f"{squad.at[i, 'position']}{squad.at[i, 'rank']}",
+                    "status": row.get("status"),
+                    "play_prob": round(q, 2),
+                    "to": nxt,
+                    "moved_target_share": round(float(moved[0]), 3),
+                    "moved_carry_share": round(float(moved[2]), 3),
+                })
+
+    totals = eff.sum(axis=0)
+    shares = {c: eff[:, k] / totals[k] if totals[k] > 0 else eff[:, k] for k, c in enumerate(cats)}
+    squad["play_prob"] = play_prob
+    return squad, shares, shifts
+
+
+def scorer_table(result: SimResult, side: int, squad: pd.DataFrame,
+                 shares: dict[str, np.ndarray], seed: int) -> list[dict]:
+    counts = allocate_scorers(result, side, shares, seed)
+    anytime = (counts >= 1).mean(axis=0)
+    out = []
+    for i in np.argsort(-anytime)[:TOP_SCORERS]:
+        if anytime[i] < MIN_SCORER_PROB:
+            break
+        entry = {
+            "player": squad.at[i, "player"],
+            "position": squad.at[i, "position"],
+            "depth_rank": int(squad.at[i, "rank"]),
+            "anytime_td": round(float(anytime[i]), 4),
+            "two_plus_td": round(float((counts[:, i] >= 2).mean()), 4),
+            "expected_tds": round(float(counts[:, i].mean()), 3),
+            "rz_target_share": round(float(shares["tgt_rz"][i]), 3),
+            "rz_carry_share": round(float(shares["car_rz"][i]), 3),
+            "gl_carry_share": round(float(shares["car_gl"][i]), 3),
+        }
+        if squad.at[i, "play_prob"] < 1:
+            entry["play_prob"] = round(float(squad.at[i, "play_prob"]), 2)
+        out.append(entry)
+    return out
+
+
+# --- one game --------------------------------------------------------------
+
+def simulate_one(game: dict, ctx: FeatureContext, inputs: SimInputs, n: int = N_SIMS,
+                 anchor: float | None = None, anchor_label: str | None = None) -> dict | None:
+    """Simulate one game. `anchor` overrides the margin the simulations are
+    pinned to; the live tracker passes the stored pregame prediction, so a
+    simulation built after kickoff still centres on the pregame number."""
+    features = ctx.build(game)
+    pred = predict_game(features)
+    if pred is None:
+        print(f"  [skip] {game['away_team']} @ {game['home_team']}: no power rating")
+        return None
+    tables = inputs.tables
+    targets = side_targets(features, ctx, tables.league_epa)
+    if targets is None:
+        print(f"  [skip] {game['away_team']} @ {game['home_team']}: no offensive/defensive EPA split")
+        return None
+
+    home, away = game["home_team"], game["away_team"]
+    proe = (inputs.proe.get(home, 0.0), inputs.proe.get(away, 0.0))
+    wind = 0.0 if features["is_dome"] else float(features["wind_mph"] or 0.0)
+    seed = zlib.crc32(game["game_id"].encode())
+    anchor = pred["model_margin_home"] if anchor is None else float(anchor)
+
+    result, delta, slope, unanchored = anchored_simulation(
+        tables, targets, proe, anchor, wind, n, seed
+    )
+    s = summarize(result)
+
+    scorers, injury_shifts = {}, {}
+    for side, team in ((0, home), (1, away)):
+        squad, shares, shifts = team_shares(inputs.roles, team, ctx.injuries)
+        scorers[team] = scorer_table(result, side, squad, shares, seed + 7 + side)
+        injury_shifts[team] = shifts
+
+    top = s["top_scores"][0]
+    r3 = lambda x: round(float(x), 3)  # noqa: E731
+    return {
+        "game_id": game["game_id"],
+        "sim_version": SIM_VERSION,
+        "sport": "nfl",
+        "home_team": home,
+        "away_team": away,
+        "n_sims": n,
+        "modal_home_points": top["home"],
+        "modal_away_points": top["away"],
+        "modal_score_prob": top["prob"],
+        "median_home_points": s["home_points"]["p50"],
+        "median_away_points": s["away_points"]["p50"],
+        "mean_home_points": r3(s["mean_home"]),
+        "mean_away_points": r3(s["mean_away"]),
+        "home_win_prob": r3(s["home_win"]),
+        "tie_prob": r3(s["tie"]),
+        "margin_50_low": s["margin"]["p25"], "margin_50_high": s["margin"]["p75"],
+        "margin_80_low": s["margin"]["p10"], "margin_80_high": s["margin"]["p90"],
+        "total_50_low": s["total"]["p25"], "total_50_high": s["total"]["p75"],
+        "total_80_low": s["total"]["p10"], "total_80_high": s["total"]["p90"],
+        "home_td_mode": s["td_mode"][0], "away_td_mode": s["td_mode"][1],
+        "home_fg_mode": s["fg_mode"][0], "away_fg_mode": s["fg_mode"][1],
+        "home_td_mean": r3(s["td_mean"][0]), "away_td_mean": r3(s["td_mean"][1]),
+        "home_fg_mean": r3(s["fg_mean"][0]), "away_fg_mean": r3(s["fg_mean"][1]),
+        "anchor_margin_home": anchor,
+        "sim_margin_home": r3(s["mean_home"] - s["mean_away"]),
+        "market_spread": features["market_spread"],
+        "market_total": features["market_total"],
+        # Score and TD/FG counts inherit the baseline's data-completeness tier;
+        # scorers are always a tier below it, whatever the inputs.
+        "score_confidence": pred["confidence"],
+        "td_scorer_confidence": TD_SCORER_CONFIDENCE,
+        "distributions": {
+            "top_scores": s["top_scores"],
+            "scores_tied_with_mode": s["scores_tied_with_mode"],
+            "home_points": s["home_points"], "away_points": s["away_points"],
+            "margin_home": s["margin"], "total": s["total"],
+            "home_td": s["td"][0], "away_td": s["td"][1],
+            "home_fg": s["fg"][0], "away_fg": s["fg"][1],
+            "overtime_prob": r3(s["overtime"]),
+            "pace": s["pace"],
+            "away_win_prob": r3(s["away_win"]),
+        },
+        "td_scorers": {
+            "confidence": TD_SCORER_CONFIDENCE,
+            "note": TD_SCORER_NOTE,
+            "depth_chart_as_of": inputs.depth_as_of,
+            "home": scorers[home],
+            "away": scorers[away],
+            "return_td_prob": {home: r3(s["return_td"][0]), away: r3(s["return_td"][1])},
+            "injury_shifts": injury_shifts,
+        },
+        "components": {
+            "anchor": {
+                "model": anchor_label or pred["model_version"],
+                "margin_home": anchor,
+                "unanchored_sim_margin": r3(unanchored),
+                "offset_epa_per_play": round(delta, 5),
+                "margin_per_epa": round(slope, 1),
+            },
+            "home_offense": {**{k: r3(v) for k, v in targets["home"].items()},
+                             "target_epa": round(targets["home"]["target_epa"] + delta, 5),
+                             "pass_rate_oe": r3(proe[0]), "tilt": round(result.tilt[0], 4)},
+            "away_offense": {**{k: r3(v) for k, v in targets["away"].items()},
+                             "target_epa": round(targets["away"]["target_epa"] - delta, 5),
+                             "pass_rate_oe": r3(proe[1]), "tilt": round(result.tilt[1], 4)},
+            "league_epa": round(tables.league_epa, 5),
+            "wind_mph": wind,
+            "possessions": [round(p, 2) for p in s["possessions"]],
+            "tables": tables.meta,
+        },
+        "generated_at": db.utcnow(),
+        "_kickoff": game.get("kickoff_time"),
+        "_baseline_components": pred["components"],
+    }
+
+
+# --- report ----------------------------------------------------------------
+
+def _pct(x: float) -> str:
+    return f"{x * 100:.0f}%"
+
+
+def _by(margin_home: float, home: str, away: str) -> str:
+    """A home-minus-away margin in words, so its sign can't be misread
+    against a spread, whose sign convention is the opposite."""
+    if abs(margin_home) < 0.05:
+        return "pick'em"
+    return f"{home if margin_home > 0 else away} by {abs(margin_home):.1f}"
+
+
+def _dist(d: dict, cap: int = 5) -> str:
+    keys = list(d)[:cap]
+    return "  ".join(f"{k}:{d[k] * 100:>3.0f}%" for k in keys)
+
+
+def format_report(row: dict) -> str:
+    h, a = row["home_team"], row["away_team"]
+    d, sc = row["distributions"], row["td_scorers"]
+    kick = parse_dt(row.get("_kickoff"))
+    comp = row["components"]
+    market = row["market_spread"]
+    lines = [
+        "=" * 78,
+        f"{a} @ {h}   kickoff {kick.strftime('%a %Y-%m-%d %H:%MZ') if kick else '?'}"
+        f"   {row['n_sims']:,} simulations ({row['sim_version']})",
+        "=" * 78,
+        f"Pipeline {comp['anchor']['model']}: {_by(row['anchor_margin_home'], h, a)}"
+        f"   -> simulations average {_by(row['sim_margin_home'], h, a)}"
+        f"  (engine before anchoring: {_by(comp['anchor']['unanchored_sim_margin'], h, a)})",
+        f"Market   {_by(-market, h, a)} (home line {market:+.1f}), total {row['market_total']}"
+        if market is not None else "Market   no line",
+        "",
+        f"SCORE, TD & FG COUNTS  [confidence: {row['score_confidence']} - completeness of the pipeline inputs]",
+        f"  Most likely exact    {a} {row['modal_away_points']} - {h} {row['modal_home_points']}"
+        f"   ({row['modal_score_prob'] * 100:.1f}% of sims"
+        + (f"; within sampling noise of the next {d['scores_tied_with_mode']})"
+           if d["scores_tied_with_mode"] else ")"),
+        f"  Next most likely     " + ",  ".join(
+            f"{a} {t['away']}-{t['home']} ({t['prob'] * 100:.1f}%)" for t in d["top_scores"][1:4]),
+        f"  Median               {a} {row['median_away_points']:.0f} - {h} {row['median_home_points']:.0f}",
+        f"  Mean                 {a} {row['mean_away_points']:.1f} - {h} {row['mean_home_points']:.1f}",
+        f"  Win probability      {h} {_pct(row['home_win_prob'])}   {a} {_pct(d['away_win_prob'])}"
+        f"   tie {row['tie_prob'] * 100:.1f}%   (overtime {_pct(d['overtime_prob'])})",
+        "",
+        f"  {'range covering':22} {'50% of sims':>14} {'80% of sims':>14}",
+    ]
+    for label, q in ((f"{h} points", d["home_points"]), (f"{a} points", d["away_points"]),
+                     (f"margin ({h})", d["margin_home"]), ("total", d["total"])):
+        signed = label.startswith("margin")
+        f = (lambda v: f"{v:+.0f}") if signed else (lambda v: f"{v:.0f}")
+        lines.append(f"  {label:22} {f(q['p25']):>6} to {f(q['p75']):<5} {f(q['p10']):>6} to {f(q['p90']):<5}")
+    lines += [
+        "",
+        f"  {'':10} {'most likely':>11} {'mean':>6}   distribution",
+        f"  {h + ' TDs':10} {row['home_td_mode']:>11} {row['home_td_mean']:>6.2f}   {_dist(d['home_td'])}",
+        f"  {a + ' TDs':10} {row['away_td_mode']:>11} {row['away_td_mean']:>6.2f}   {_dist(d['away_td'])}",
+        f"  {h + ' FGs':10} {row['home_fg_mode']:>11} {row['home_fg_mean']:>6.2f}   {_dist(d['home_fg'])}",
+        f"  {a + ' FGs':10} {row['away_fg_mode']:>11} {row['away_fg_mean']:>6.2f}   {_dist(d['away_fg'])}",
+        "",
+        "-" * 78,
+        f"TD SCORERS  [confidence: {sc['confidence'].upper()} - lower than the score and TD/FG counts]",
+        "-" * 78,
+    ]
+    import textwrap
+    lines += ["  " + ln for ln in textwrap.wrap(sc["note"], 74)]
+    lines.append(f"  Depth chart as of {sc['depth_chart_as_of']}.")
+    for team, key in ((h, "home"), (a, "away")):
+        lines.append("")
+        lines.append(f"  {team:26} {'anytime':>8} {'2+':>5} {'exp':>5}   RZ tgt  RZ car  GL car")
+        for p in sc[key]:
+            name = f"{p['player']} ({p['position']}{p['depth_rank']})"
+            flag = f"  [plays {p['play_prob']:.0%}]" if "play_prob" in p else ""
+            lines.append(
+                f"  {name:26} {_pct(p['anytime_td']):>8} {_pct(p['two_plus_td']):>5} "
+                f"{p['expected_tds']:>5.2f}   {_pct(p['rz_target_share']):>6} "
+                f"{_pct(p['rz_carry_share']):>7} {_pct(p['gl_carry_share']):>7}{flag}"
+            )
+        lines.append(f"  {'defence / return TD (team)':26} {_pct(sc['return_td_prob'][team]):>8}")
+        for sh in sc["injury_shifts"][team]:
+            lines.append(
+                f"  injury: {sh['player']} ({sh['position']}, {sh['status'] or 'on report'}, "
+                f"{sh['play_prob']:.0%} to play) -> {sh['to'] or 'rest of group'} "
+                f"(+{sh['moved_target_share']:.0%} targets, +{sh['moved_carry_share']:.0%} carries)"
+            )
+    ho, ao = comp["home_offense"], comp["away_offense"]
+    lines += [
+        "",
+        "-" * 78,
+        "Inputs (EPA per play, points)",
+        f"  {h} offence  target {ho['target_epa']:+.4f}  | off {ho['off_epa']:+.4f}  vs {a} def "
+        f"{ho['opp_def_epa']:+.4f} | situational {ho['situational_pts']:+.2f}  own inj "
+        f"{ho['own_offense_injury_pts']:+.2f}  opp def inj {ho['opp_defense_injury_pts']:+.2f} | "
+        f"PROE {ho['pass_rate_oe']:+.1%}",
+        f"  {a} offence  target {ao['target_epa']:+.4f}  | off {ao['off_epa']:+.4f}  vs {h} def "
+        f"{ao['opp_def_epa']:+.4f} | situational {ao['situational_pts']:+.2f}  own inj "
+        f"{ao['own_offense_injury_pts']:+.2f}  opp def inj {ao['opp_defense_injury_pts']:+.2f} | "
+        f"PROE {ao['pass_rate_oe']:+.1%}",
+        f"  anchor offset {comp['anchor']['offset_epa_per_play']:+.4f} EPA/play "
+        f"({comp['anchor']['margin_per_epa']:.0f} pts of margin per 1.0)  | wind {comp['wind_mph']:.0f} mph"
+        f"  | possessions {comp['possessions'][0]:.1f} / {comp['possessions'][1]:.1f}",
+    ]
+    return "\n".join(lines)
+
+
+# --- engine calibration ----------------------------------------------------
+
+def calibrate(n: int = 20_000) -> str:
+    """Two league-average teams on a neutral field, against what real NFL
+    teams actually scored over the library seasons. Nothing is anchored here,
+    so this is the honest test of whether the engine's scoring is realistic."""
+    import nfl_data_py as nfl
+
+    from .sim_data import POOL_SEASONS
+
+    tables = build_tables()
+    avg = Offense(tables.league_epa)
+    r = simulate_game(tables, avg, avg, n=n, seed=1)
+    s = summarize(r)
+    pbp = load_pbp(POOL_SEASONS)
+    games = pbp["game_id"].nunique()
+    real_td = float(((pbp["touchdown"] == 1) & pbp["td_team"].notna()).sum()) / (2 * games)
+    real_fg = float((pbp["field_goal_result"] == "made").sum()) / (2 * games)
+    sched = nfl.import_schedules(list(POOL_SEASONS)).dropna(subset=["home_score"])
+    hs, as_ = sched["home_score"], sched["away_score"]
+    # Real games are between unequal teams, so their margin spread includes
+    # the spread of team quality; two identical sim teams should come in under
+    # it. The total's spread has no such excuse and should match.
+    rows = [
+        ("points / team", (s["mean_home"] + s["mean_away"]) / 2, float(pd.concat([hs, as_]).mean())),
+        ("TDs / team", float(np.mean(s["td_mean"])), real_td),
+        ("FGs / team", float(np.mean(s["fg_mean"])), real_fg),
+        ("total sd", float(r.points.sum(axis=1).std()), float((hs + as_).std())),
+        ("margin sd", float((r.points[:, 0] - r.points[:, 1]).std()), float((hs - as_).std())),
+        ("overtime rate", s["overtime"], float((sched["overtime"] == 1).mean())),
+        ("tie rate", s["tie"], float((hs == as_).mean())),
+    ]
+    out = [f"League-average vs league-average, {n:,} sims, vs {list(POOL_SEASONS)} actuals ({len(sched)} games)",
+           f"  {'':16} {'sim':>8} {'real':>8}"]
+    out += [f"  {k:16} {a:>8.3f} {b:>8.3f}" for k, a, b in rows]
+    out.append(f"  sim possessions/team {np.mean(s['possessions']):.2f}")
+    return "\n".join(out)
+
+
+# --- entrypoint ------------------------------------------------------------
+
+def run(game_id: str | None = None, target: date | None = None, n: int = N_SIMS,
+        store_results: bool = True) -> list[dict]:
+    store = db.get_store()
+    ctx = FeatureContext(store, "nfl")
+    if game_id:
+        games = [g for g in ctx.games if g["game_id"] == game_id]
+        if not games:
+            raise SystemExit(f"no NFL game {game_id!r} in the games table")
+    else:
+        start, end = slate_window(target)
+        games = sorted(
+            (g for g in ctx.games if (k := parse_dt(g.get("kickoff_time"))) and start <= k < end),
+            key=lambda g: g["kickoff_time"],
+        )
+        if not games:
+            raise SystemExit(f"no NFL games on {target}")
+
+    print(f"[simulate] {len(games)} game(s), {n:,} sims each | loading tables, usage and depth charts")
+    inputs = load_inputs(int(games[0]["season"]))
+
+    rows = []
+    for game in games:
+        row = simulate_one(game, ctx, inputs, n)
+        if row is None:
+            continue
+        print()
+        print(format_report(row))
+        rows.append(row)
+
+    if store_results and rows:
+        clean = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
+        try:
+            store.upsert("game_simulations", clean)
+            print(f"\n[simulate] {len(clean)} row(s) written to game_simulations ({store.backend})")
+        except Exception as exc:  # noqa: BLE001
+            print(f"\n[simulate] could not write game_simulations ({store.backend}): {exc}")
+            if store.backend == "supabase":
+                print("  The table is new: paste db/PASTE_INTO_SUPABASE.sql into the Supabase SQL "
+                      "Editor once, then re-run.")
+    store.close()
+    return rows
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Monte Carlo NFL game simulation.")
+    which = parser.add_mutually_exclusive_group(required=True)
+    which.add_argument("--game", help="one game_id, e.g. 2026_01_DEN_KC")
+    which.add_argument("--date", help="every game on this slate date, YYYY-MM-DD")
+    which.add_argument("--calibrate", action="store_true", help="engine vs real NFL scoring")
+    parser.add_argument("--sims", type=int, default=N_SIMS)
+    parser.add_argument("--no-store", action="store_true", help="print only, write nothing")
+    args = parser.parse_args()
+
+    if args.calibrate:
+        print(calibrate())
+    else:
+        run(args.game, date.fromisoformat(args.date) if args.date else None,
+            args.sims, store_results=not args.no_store)
