@@ -42,3 +42,4 @@ models/*.json
 # --- dashboard build output ---
 dashboard/dist/
 dashboard/public/data.json
+dashboard/public/live.json

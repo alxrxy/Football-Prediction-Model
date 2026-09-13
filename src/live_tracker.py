@@ -1,0 +1,879 @@
+"""Live in-game tracking for NFL games.
+
+    python -m src.live_tracker                  poll every ~2.5 min until the day's games end
+    python -m src.live_tracker --once           one polling cycle, then exit
+    python -m src.live_tracker --interval 120   seconds between polls
+    python -m src.live_tracker --no-notify      console + log only, no desktop toasts
+
+A layer of its own. It reads the pregame prediction and simulation, never
+changes either, and writes only `live_tracking` (plus data/live.json for the
+live page and data/live/alerts.log).
+
+Each cycle makes one scoreboard call, which says which games are in progress,
+and one summary call per in-progress game for its scoring plays. Games that
+have not kicked off are never polled: when nothing is live the tracker sleeps
+until the next kickoff, and exits once nothing is scheduled within
+IDLE_EXIT_HOURS. A game that finishes gets one closing snapshot from the
+scoreboard already fetched, and is then left alone.
+
+ESPN's site API is unofficial and is being hit far more often here than
+anywhere else in the project. Every call goes through safe_get_json, and every
+parse is guarded per game, so a failed request, a malformed payload or one odd
+game costs that piece of that cycle and nothing more.
+
+What "diverging" means
+----------------------
+The pregame simulation records the score every five minutes of game clock in
+each of its 10,000 games, so for any moment there is a distribution of where
+the total and the margin would typically be. A live game is placed in the
+distribution for its own elapsed time:
+
+  pace      points scored so far, as a percentile of simulated totals by now
+  margin    the home margin so far, likewise
+  underdog  the pregame underdog leads by more than UNDERDOG_LEAD points
+
+Beyond the 5th/95th percentile is notable, beyond the 1st/99th extreme.
+Percentiles are mid-ranked: 0-0 after five minutes is the single most common
+state, and it sits mid-distribution rather than at the bottom of it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import random
+import shutil
+import subprocess
+import sys
+import time
+import traceback
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+
+import numpy as np
+
+from . import config, db
+from .features import FeatureContext, parse_dt
+from .http import safe_get_json
+
+POLL_SECONDS = 150
+POLL_JITTER = 15
+IDLE_EXIT_HOURS = 12
+MAX_IDLE_SLEEP = 1800         # re-check the scoreboard at least this often while waiting
+ESPN_TIMEOUT = 15
+ESPN_RETRIES = 2
+FAILED_CYCLES_WARNING = 3
+STARTUP_RETRY_SECONDS = (0, 10, 30, 60)   # waits before each attempt at the startup read
+
+MIN_ELAPSED_MINUTES = 5.0     # no pace/margin flags before this much game clock
+UNDERDOG_LEAD = 7             # flag when the pregame underdog leads by MORE than this
+UNDERDOG_EXTREME_LEAD = 14
+LATE_MINUTES = 45.0           # from the 4th quarter an underdog lead is extreme
+PICKEM_MARGIN = 0.5           # a game predicted this close has no underdog
+NOTABLE, EXTREME = 0.05, 0.01
+RECENT_SCORING = 3
+MAX_ALERTS_EXPORTED = 50
+
+ESPN_ALIASES = {"WSH": "WAS", "LAR": "LA"}   # ESPN code -> nflverse code
+BROWSER_UA = {"User-Agent": "Mozilla/5.0"}    # see ingest_injuries.BROWSER_UA
+
+LIVE_DIR = config.DATA_DIR / "live"
+ALERT_LOG = LIVE_DIR / "alerts.log"          # human-readable
+ALERT_JSONL = LIVE_DIR / "alerts.jsonl"      # the same alerts, reloaded by a restarted tracker
+LIVE_JSON = config.DATA_DIR / "live.json"
+PUBLIC_LIVE_JSON = config.ROOT / "dashboard" / "public" / "live.json"
+
+LEVEL_RANK = {None: 0, "notable": 1, "extreme": 2}
+
+
+# --- ESPN ------------------------------------------------------------------
+
+def _espn(path: str, params: dict | None = None):
+    """One ESPN call. Returns None on any failure; never raises."""
+    return safe_get_json(
+        f"{config.ESPN_NFL}/{path}", params=params, headers=BROWSER_UA,
+        transport="urllib", timeout=ESPN_TIMEOUT, retries=ESPN_RETRIES,
+    )
+
+
+def _abbr(code) -> str:
+    code = str(code or "").upper()
+    return ESPN_ALIASES.get(code, code)
+
+
+def _int(value) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+@dataclass
+class LiveState:
+    espn_id: str
+    state: str                    # pre | in | post
+    status: str                   # STATUS_IN_PROGRESS, STATUS_HALFTIME, ...
+    period: int
+    clock_seconds: float
+    display_clock: str
+    detail: str
+    start: datetime | None
+    home: str
+    away: str
+    home_score: int
+    away_score: int
+    possession: str | None = None
+    down_distance: str | None = None
+    red_zone: bool = False
+    espn_home_wp: float | None = None
+    postseason: bool = False
+
+
+def parse_event(event: dict, postseason: bool = False) -> LiveState:
+    """One scoreboard event. Raises KeyError/IndexError if it is malformed."""
+    comp = event["competitions"][0]
+    status = comp["status"]
+    sides = {c["homeAway"]: c for c in comp["competitors"]}
+    home, away = sides["home"], sides["away"]
+    team_by_id = {str(c["team"]["id"]): _abbr(c["team"]["abbreviation"]) for c in comp["competitors"]}
+    situation = comp.get("situation") or {}
+    prob = ((situation.get("lastPlay") or {}).get("probability") or {}).get("homeWinPercentage")
+    possession = situation.get("possession")
+    return LiveState(
+        espn_id=str(event["id"]),
+        state=str(status["type"]["state"]),
+        status=str(status["type"].get("name") or ""),
+        period=_int(status.get("period")),
+        clock_seconds=float(status.get("clock") or 0.0),
+        display_clock=str(status.get("displayClock") or ""),
+        detail=str(status["type"].get("shortDetail") or status["type"].get("detail") or ""),
+        start=parse_dt(event.get("date")),
+        home=_abbr(home["team"]["abbreviation"]),
+        away=_abbr(away["team"]["abbreviation"]),
+        home_score=_int(home.get("score")),
+        away_score=_int(away.get("score")),
+        possession=team_by_id.get(str(possession)) if possession else None,
+        down_distance=situation.get("downDistanceText"),
+        red_zone=bool(situation.get("isRedZone")),
+        espn_home_wp=float(prob) if prob is not None else None,
+        postseason=postseason,
+    )
+
+
+def parse_scoreboard(payload) -> tuple[list[LiveState], int]:
+    """Every parseable event, and how many were skipped as malformed."""
+    if not isinstance(payload, dict):
+        return [], 0
+    postseason = (payload.get("season") or {}).get("type") == 3
+    states, skipped = [], 0
+    for event in payload.get("events") or []:
+        try:
+            states.append(parse_event(event, postseason))
+        except (KeyError, IndexError, TypeError, ValueError):
+            skipped += 1
+    return states, skipped
+
+
+def recent_scoring(summary) -> list[dict] | None:
+    """The latest scoring plays, newest first. None if the summary is unusable."""
+    if not isinstance(summary, dict):
+        return None
+    out = []
+    for p in (summary.get("scoringPlays") or [])[-RECENT_SCORING:][::-1]:
+        out.append({
+            "period": (p.get("period") or {}).get("number"),
+            "clock": (p.get("clock") or {}).get("displayValue"),
+            "team": _abbr((p.get("team") or {}).get("abbreviation")),
+            "type": (p.get("type") or {}).get("text"),
+            "text": p.get("text"),
+            "home_score": p.get("homeScore"),
+            "away_score": p.get("awayScore"),
+        })
+    return out
+
+
+def scoring_path(summary, postseason: bool = False) -> list[dict] | None:
+    """Every scoring play as (elapsed minute, score after it), oldest first.
+
+    The live page draws the actual score from this: exact to the play rather
+    than joined-up 2.5-minute snapshots, and complete from kickoff even when
+    the tracker was started mid-game.
+    """
+    if not isinstance(summary, dict):
+        return None
+    out = []
+    for p in summary.get("scoringPlays") or []:
+        try:
+            clock = float((p.get("clock") or {}).get("value"))
+        except (TypeError, ValueError):
+            continue
+        period = _int((p.get("period") or {}).get("number"))
+        out.append({"t": elapsed_minutes(period, clock, postseason=postseason),
+                    "home": _int(p.get("homeScore")), "away": _int(p.get("awayScore"))})
+    return out
+
+
+def elapsed_minutes(period: int, clock_seconds: float, status: str = "",
+                    postseason: bool = False) -> float:
+    """Game-clock minutes played. Regular-season overtime is 10 minutes."""
+    if period <= 0:
+        return 0.0
+    if status == "STATUS_HALFTIME":
+        return 30.0
+    if period <= 4:
+        minutes = (period - 1) * 15 + (15 - clock_seconds / 60)
+    else:
+        ot = 15 if postseason else 10
+        minutes = 60 + (period - 5) * ot + (ot - clock_seconds / 60)
+    return round(min(max(minutes, 0.0), 120.0), 2)
+
+
+# --- the simulated distribution at a point in the game ---------------------
+
+def _cdf_at(pace: dict, key: str, t: float) -> np.ndarray:
+    """CDF at elapsed minute t, linear between checkpoints. Past 60 minutes
+    (overtime) the end-of-regulation distribution is used."""
+    minutes = np.asarray(pace["minutes"], dtype=float)
+    cdfs = np.asarray(pace[f"{key}_cdf"], dtype=float)
+    t = float(np.clip(t, minutes[0], minutes[-1]))
+    i = int(np.clip(np.searchsorted(minutes, t, side="right") - 1, 0, len(minutes) - 2))
+    w = (t - minutes[i]) / (minutes[i + 1] - minutes[i])
+    return (1 - w) * cdfs[i] + w * cdfs[i + 1]
+
+
+def percentile(pace: dict, key: str, t: float, value: float) -> float:
+    """Mid-rank percentile of `value` among simulated games at minute t:
+    P(sim < value) + P(sim == value) / 2."""
+    cdf = _cdf_at(pace, key, t)
+    k = int(round(value)) - int(pace[f"{key}_min"])
+    if k < 0:
+        return 0.0
+    if k >= len(cdf):
+        return 1.0
+    below = cdf[k - 1] if k > 0 else 0.0
+    return float((below + cdf[k]) / 2)
+
+
+def quantile(pace: dict, key: str, t: float, p: float) -> int:
+    cdf = _cdf_at(pace, key, t)
+    return int(np.searchsorted(cdf, p - 1e-9)) + int(pace[f"{key}_min"])
+
+
+def bands(pace: dict) -> dict:
+    """Per-checkpoint 5/25/50/75/95 bands for the live page's charts."""
+    out = {"minutes": pace["minutes"]}
+    for key in ("total", "margin"):
+        out[key] = {
+            f"p{int(p * 100):02d}": [quantile(pace, key, m, p) for m in pace["minutes"]]
+            for p in (0.05, 0.25, 0.5, 0.75, 0.95)
+        }
+    return out
+
+
+# --- pregame reference -----------------------------------------------------
+
+@dataclass
+class Pregame:
+    game_id: str
+    home: str
+    away: str
+    kickoff: datetime | None
+    margin_home: float | None = None
+    win_prob_home: float | None = None
+    model: str | None = None
+    generated_at: str | None = None
+    market_spread: float | None = None
+    market_total: float | None = None
+    sim: dict | None = None
+    sim_source: str | None = None
+    notes: list[str] = field(default_factory=list)
+
+    @property
+    def favorite(self) -> str | None:
+        if self.margin_home is None or abs(self.margin_home) < PICKEM_MARGIN:
+            return None
+        return self.home if self.margin_home > 0 else self.away
+
+    @property
+    def underdog(self) -> str | None:
+        fav = self.favorite
+        return None if fav is None else (self.away if fav == self.home else self.home)
+
+    def summary(self) -> dict:
+        sim = self.sim or {}
+        return {
+            "model": self.model,
+            "generated_at": self.generated_at,
+            "margin_home": self.margin_home,
+            "win_prob_home": self.win_prob_home,
+            "favorite": self.favorite,
+            "market_spread": self.market_spread,
+            "market_total": self.market_total,
+            "sim_source": self.sim_source,
+            "sim_median_home": sim.get("median_home"),
+            "sim_median_away": sim.get("median_away"),
+            "sim_modal": sim.get("modal"),
+            "sim_total_p50": sim.get("total_p50"),
+            "notes": self.notes,
+        }
+
+
+def _json(value):
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return value
+
+
+def _sim_view(row: dict, dist: dict) -> dict:
+    return {
+        "median_home": row.get("median_home_points"),
+        "median_away": row.get("median_away_points"),
+        "modal": [row.get("modal_home_points"), row.get("modal_away_points")],
+        "total_p50": (dist.get("total") or {}).get("p50"),
+        "pace": dist.get("pace"),
+    }
+
+
+# --- flags -----------------------------------------------------------------
+
+def _tail(p: float) -> str | None:
+    if p <= EXTREME or p >= 1 - EXTREME:
+        return "extreme"
+    if p <= NOTABLE or p >= 1 - NOTABLE:
+        return "notable"
+    return None
+
+
+def evaluate(s: LiveState, pg: Pregame) -> dict:
+    """Place the live game against its pregame expectations."""
+    t = elapsed_minutes(s.period, s.clock_seconds, s.status, s.postseason)
+    margin = s.home_score - s.away_score
+    total = s.home_score + s.away_score
+    out = {"elapsed": t, "flags": [], "total_percentile": None, "margin_percentile": None,
+           "sim_total_median_now": None, "projected_total": None}
+
+    fav, dog = pg.favorite, pg.underdog
+    if dog and t > 0:
+        dog_lead = margin if dog == pg.home else -margin
+        if dog_lead > UNDERDOG_LEAD:
+            level = "extreme" if dog_lead >= UNDERDOG_EXTREME_LEAD or t >= LATE_MINUTES else "notable"
+            out["flags"].append({
+                "code": "underdog_leading", "level": level,
+                "message": f"{dog} leads by {dog_lead}; pregame had {fav} by {abs(pg.margin_home):.1f}",
+            })
+
+    pace = (pg.sim or {}).get("pace")
+    if pace:
+        tp = percentile(pace, "total", t, total)
+        mp = percentile(pace, "margin", t, margin)
+        now_median = quantile(pace, "total", t, 0.5)
+        final_median = quantile(pace, "total", 60, 0.5)
+        out.update(total_percentile=round(tp, 4), margin_percentile=round(mp, 4),
+                   sim_total_median_now=now_median,
+                   projected_total=round(total + max(final_median - now_median, 0), 1))
+        if t >= MIN_ELAPSED_MINUTES:
+            level = _tail(tp)
+            if level:
+                high = tp > 0.5
+                share = (1 - tp) if high else tp
+                out["flags"].append({
+                    "code": "pace_high" if high else "pace_low", "level": level,
+                    "message": (f"scoring pace {'high' if high else 'low'}: {total} pts after {t:.0f} min "
+                                f"(simulations typically {now_median} by now, only {share:.1%} "
+                                f"{'higher' if high else 'lower'}); on track for ~{out['projected_total']:.0f} "
+                                f"vs pregame median {final_median}"
+                                + (f", market {pg.market_total}" if pg.market_total else "")),
+                })
+            level = _tail(mp)
+            if level:
+                home_way = mp > 0.5
+                share = (1 - mp) if home_way else mp
+                lead = (f"{pg.home} +{margin}" if margin > 0 else
+                        f"{pg.away} +{-margin}" if margin < 0 else "tied")
+                expect = (f"pregame {fav} by {abs(pg.margin_home):.1f}" if fav else "pregame pick'em")
+                out["flags"].append({
+                    "code": "margin_home" if home_way else "margin_away", "level": level,
+                    "message": (f"margin off-script: {lead} after {t:.0f} min; only {share:.1%} of "
+                                f"simulations were this far {pg.home if home_way else pg.away}'s way "
+                                f"by now ({expect})"),
+                })
+    return out
+
+
+def new_alerts(seen: dict[str, str], flags: list[dict]) -> list[dict]:
+    """Flags worth announcing: first appearance, or escalation from notable
+    to extreme. A flag hovering around its threshold must not re-announce
+    every time it dips back over, so a code stays announced for the game."""
+    fresh = []
+    for f in flags:
+        if LEVEL_RANK[f["level"]] > LEVEL_RANK[seen.get(f["code"])]:
+            fresh.append(f)
+            seen[f["code"]] = f["level"]
+    return fresh
+
+
+# --- alert outputs ---------------------------------------------------------
+
+TOAST_APP_ID = r"{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe"
+
+
+def toast(title: str, body: str) -> None:
+    """Best-effort Windows desktop notification. Fire and forget: a toast
+    that fails to show must never hold up or break the polling loop."""
+    if os.name != "nt":
+        return
+    esc = lambda s: s.replace("'", "''")  # noqa: E731
+    script = (
+        "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, "
+        "ContentType = WindowsRuntime] > $null;"
+        "$t = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent("
+        "[Windows.UI.Notifications.ToastTemplateType]::ToastText02);"
+        "$x = $t.GetElementsByTagName('text');"
+        f"$x.Item(0).AppendChild($t.CreateTextNode('{esc(title)}')) > $null;"
+        f"$x.Item(1).AppendChild($t.CreateTextNode('{esc(body)}')) > $null;"
+        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("
+        f"'{TOAST_APP_ID}').Show([Windows.UI.Notifications.ToastNotification]::new($t))"
+    )
+    try:
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# --- the tracker -----------------------------------------------------------
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Tracker:
+    def __init__(self, notify: bool = True):
+        self.store = db.get_store()
+        self.fallback: db.Store | None = None
+        self.ctx = self._load_context()
+        self.index: dict[tuple[str, str], list[dict]] = {}
+        for g in self.ctx.games:
+            self.index.setdefault((g["home_team"], g["away_team"]), []).append(g)
+        self.notify = notify
+        self.sim_inputs = None
+        self.pregame: dict[str, Pregame] = {}
+        self.seen_flags: dict[str, dict[str, str]] = {}
+        self.history: dict[str, list[dict]] = {}
+        self.latest: dict[str, dict] = {}
+        self.bands: dict[str, dict] = {}
+        LIVE_DIR.mkdir(parents=True, exist_ok=True)
+        self.alerts: list[dict] = self._recent_alerts()
+        self.live_seen: set[str] = set()
+        self.finalized: set[str] = set()
+        self.last_states: list[LiveState] = []
+        self.failures = 0
+
+    def _load_context(self) -> FeatureContext:
+        """Games, ratings and odds, read once at startup.
+
+        Startup is the one read the polling loop can't absorb, so a transient
+        database error (Supabase has returned 504s here) is retried with
+        backoff. If the database stays down, the local SQLite mirror is used
+        instead: its pregame data may be older, but a tracker running on
+        slightly stale pregame numbers beats no tracker at all mid-game.
+        """
+        last: Exception | None = None
+        for wait in STARTUP_RETRY_SECONDS:
+            if wait:
+                print(f"  [live] retrying startup read in {wait}s")
+                time.sleep(wait)
+            try:
+                return FeatureContext(self.store, "nfl")
+            except Exception as exc:  # noqa: BLE001
+                last = exc
+                print(f"  [warn] could not read pregame data from {self.store.backend}: "
+                      f"{type(exc).__name__}: {str(exc)[:160]}")
+        if self.store.backend == "sqlite":
+            raise last
+        print(f"\n  [warn] {self.store.backend} still unreachable. Reading pregame data from the local")
+        print("         SQLite mirror for this session; it may be older than the hosted copy.\n")
+        self.store = db.SqliteStore()
+        return FeatureContext(self.store, "nfl")
+
+    @staticmethod
+    def _recent_alerts() -> list[dict]:
+        """Alerts from earlier runs today, so a restarted tracker's page still
+        shows what already fired (flags are not re-announced, see _load_history)."""
+        cutoff = _now() - timedelta(hours=IDLE_EXIT_HOURS)
+        out = []
+        try:
+            lines = ALERT_JSONL.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return out
+        for line in lines:
+            try:
+                alert = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            at = parse_dt(alert.get("at"))
+            if at and at > cutoff:
+                out.append(alert)
+        return out
+
+    # --- matching and pregame -------------------------------------------
+
+    def match(self, s: LiveState) -> dict | None:
+        candidates = self.index.get((s.home, s.away), [])
+        if s.start is None:
+            return candidates[0] if len(candidates) == 1 else None
+        best, gap = None, None
+        for g in candidates:
+            k = parse_dt(g.get("kickoff_time"))
+            if k is None:
+                continue
+            d = abs((k - s.start).total_seconds())
+            if gap is None or d < gap:
+                best, gap = g, d
+        return best if gap is not None and gap <= 36 * 3600 else None
+
+    def load_pregame(self, game: dict) -> Pregame:
+        gid = game["game_id"]
+        if gid in self.pregame:
+            return self.pregame[gid]
+        pg = Pregame(gid, game["home_team"], game["away_team"], parse_dt(game.get("kickoff_time")))
+        try:
+            rows = {r["model_version"]: r for r in self.store.select("predictions", {"game_id": gid})}
+            pred = rows.get(config.MODEL_VERSION)
+            if pred:
+                pg.margin_home = pred.get("model_margin_home")
+                pg.win_prob_home = pred.get("model_win_prob_home")
+                pg.model = pred.get("model_version")
+                pg.generated_at = pred.get("generated_at")
+                pg.market_spread = pred.get("market_spread")
+                made = parse_dt(pg.generated_at)
+                if made and pg.kickoff and made > pg.kickoff:
+                    pg.notes.append("prediction was regenerated after kickoff")
+            else:
+                pg.notes.append(f"no stored {config.MODEL_VERSION} prediction")
+        except Exception as exc:  # noqa: BLE001
+            pg.notes.append(f"predictions unavailable ({type(exc).__name__})")
+        _spread, pg.market_total, _src, _n = self.ctx.market(gid)
+        if pg.market_spread is None:
+            pg.market_spread = _spread
+        pg.sim, pg.sim_source = self._simulation(game, pg)
+        if pg.sim is None:
+            pg.notes.append("no simulation: pace and margin flags are off for this game")
+        self.pregame[gid] = pg
+        if pg.sim and pg.sim.get("pace"):
+            self.bands[gid] = bands(pg.sim["pace"])
+        self._load_history(gid)
+        return pg
+
+    def _simulation(self, game: dict, pg: Pregame):
+        gid = game["game_id"]
+        try:
+            rows = self.store.select("game_simulations", {"game_id": gid})
+        except Exception:  # noqa: BLE001 - table not created yet
+            rows = []
+        for row in sorted(rows, key=lambda r: str(r.get("generated_at")), reverse=True):
+            dist = _json(row.get("distributions")) or {}
+            if dist.get("pace"):
+                return _sim_view(row, dist), f"stored {row.get('sim_version')} ({row.get('generated_at')})"
+
+        # No stored simulation with a pace record: build one now. It is pinned
+        # to the stored pregame prediction, so the centre is still pregame.
+        try:
+            from .simulate_nfl import load_inputs, simulate_one
+
+            if self.sim_inputs is None:
+                print("  [live] no stored simulation; loading the simulator (once per session)")
+                self.sim_inputs = load_inputs(int(game["season"]))
+            label = f"{pg.model} @ {pg.generated_at}" if pg.model else None
+            row = simulate_one(game, self.ctx, self.sim_inputs, anchor=pg.margin_home, anchor_label=label)
+            if row:
+                return _sim_view(row, row["distributions"]), "computed at first poll, anchored to the stored pregame prediction"
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [warn] simulation for {gid} failed: {type(exc).__name__}: {exc}")
+        return None, None
+
+    def _load_history(self, gid: str) -> None:
+        """Earlier snapshots of this game, so a restarted tracker keeps the
+        trajectory and does not re-announce flags it already raised."""
+        rows = []
+        for store in (self.fallback or self.store, None):
+            try:
+                store = store or db.SqliteStore()
+                rows = store.select("live_tracking", {"game_id": gid})
+                if rows:
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+        rows.sort(key=lambda r: str(r["polled_at"]))
+        self.history[gid] = [
+            {"t": r.get("elapsed_minutes"), "home": r.get("home_score"), "away": r.get("away_score"),
+             "at": r.get("polled_at")}
+            for r in rows if r.get("elapsed_minutes") is not None
+        ]
+        if rows:
+            seen = self.seen_flags.setdefault(gid, {})
+            for f in _json(rows[-1].get("flags")) or []:
+                new_alerts(seen, [f])
+
+    # --- one cycle ------------------------------------------------------
+
+    def cycle(self) -> None:
+        payload = _espn("scoreboard")
+        states, skipped = parse_scoreboard(payload)
+        if payload is None or (not states and skipped):
+            self.failures += 1
+            print(f"[{_now():%H:%M:%S}Z] scoreboard unavailable (failure {self.failures}); "
+                  "skipping this cycle")
+            if self.failures == FAILED_CYCLES_WARNING:
+                self._announce(None, f"ESPN unreachable for {self.failures} polls in a row; still retrying",
+                               level="notable", toast_title="Live tracker: ESPN unreachable")
+            return
+        self.failures = 0
+        self.last_states = states
+        if skipped:
+            print(f"  [warn] {skipped} scoreboard event(s) malformed, skipped")
+
+        rows = []
+        for s in states:
+            try:
+                row = self._process(s)
+                if row:
+                    rows.append(row)
+            except Exception as exc:  # noqa: BLE001 - one odd game must not stop the rest
+                print(f"  [warn] {s.away} @ {s.home}: {type(exc).__name__}: {exc}")
+                traceback.print_exc(limit=2)
+
+        self._write(rows)
+        self._export()
+        self._status_line(states)
+
+    def _process(self, s: LiveState) -> dict | None:
+        if s.state == "pre":
+            return None
+        game = self.match(s)
+        if game is None:
+            if s.state == "in":
+                print(f"  [warn] ESPN game {s.away} @ {s.home} ({s.espn_id}) matches no game in the games table")
+            return None
+        gid = game["game_id"]
+        if s.state == "post" and (gid not in self.live_seen or gid in self.finalized):
+            return None          # finished before this session, or already closed out
+
+        pg = self.load_pregame(game)
+        scoring = path = None
+        if s.state == "in":
+            self.live_seen.add(gid)
+            summary = _espn("summary", {"event": s.espn_id})
+            scoring = recent_scoring(summary)
+            path = scoring_path(summary, s.postseason)
+        previous = self.latest.get(gid) or {}
+        if scoring is None:      # summary failed, or the game is over: keep what we had
+            scoring = previous.get("recent_scoring") or []
+        if path is None:
+            path = previous.get("score_path") or []
+
+        ev = evaluate(s, pg)
+        polled_at = db.utcnow()
+        fresh = []
+        if s.state == "in":
+            fresh = new_alerts(self.seen_flags.setdefault(gid, {}), ev["flags"])
+            for f in fresh:
+                self._announce(s, f["message"], f["level"])
+        else:
+            self.finalized.add(gid)
+            self._final_line(s, pg)
+
+        level = max((f["level"] for f in ev["flags"]), key=LEVEL_RANK.get, default=None)
+        self.history.setdefault(gid, []).append(
+            {"t": ev["elapsed"], "home": s.home_score, "away": s.away_score, "at": polled_at})
+        self.latest[gid] = {
+            "game_id": gid, "espn_id": s.espn_id, "home": s.home, "away": s.away,
+            "kickoff": game.get("kickoff_time"), "state": s.state, "detail": s.detail,
+            "period": s.period, "display_clock": s.display_clock, "elapsed": ev["elapsed"],
+            "home_score": s.home_score, "away_score": s.away_score, "possession": s.possession,
+            "down_distance": s.down_distance, "red_zone": s.red_zone, "espn_home_wp": s.espn_home_wp,
+            "flags": ev["flags"], "flag_level": level,
+            "total_percentile": ev["total_percentile"], "margin_percentile": ev["margin_percentile"],
+            "sim_total_median_now": ev["sim_total_median_now"], "projected_total": ev["projected_total"],
+            "recent_scoring": scoring, "score_path": path, "pregame": pg.summary(),
+            "trajectory": self.history[gid], "bands": self.bands.get(gid),
+            "polled_at": polled_at,
+        }
+        return {
+            "game_id": gid, "polled_at": polled_at, "espn_event_id": s.espn_id, "state": s.state,
+            "period": s.period, "display_clock": s.display_clock, "elapsed_minutes": ev["elapsed"],
+            "home_team": s.home, "away_team": s.away,
+            "home_score": s.home_score, "away_score": s.away_score,
+            "possession": s.possession, "down_distance": s.down_distance, "is_red_zone": s.red_zone,
+            "espn_home_win_prob": s.espn_home_wp,
+            "predicted_margin_home": pg.margin_home, "predicted_winner": pg.favorite,
+            "sim_median_home": (pg.sim or {}).get("median_home"),
+            "sim_median_away": (pg.sim or {}).get("median_away"),
+            "sim_total_median_now": ev["sim_total_median_now"],
+            "total_percentile": ev["total_percentile"], "margin_percentile": ev["margin_percentile"],
+            "projected_total": ev["projected_total"],
+            "flag_level": level, "flags": ev["flags"], "alerted": bool(fresh),
+            "recent_scoring": scoring,
+            "pregame": {k: v for k, v in pg.summary().items() if v not in (None, [])},
+        }
+
+    # --- outputs --------------------------------------------------------
+
+    def _announce(self, s: LiveState | None, message: str, level: str, toast_title: str | None = None):
+        stamp = _now()
+        game = f"{s.away} {s.away_score}-{s.home_score} {s.home} ({s.detail})" if s else "tracker"
+        line = f"[{stamp:%Y-%m-%d %H:%M:%S}Z] {level.upper():8} {game}: {message}"
+        bar = "!" * 78 if level == "extreme" else "*" * 78
+        print(f"\n{bar}\n{line}\n{bar}")
+        entry = {"at": stamp.isoformat(), "level": level, "game": game, "message": message,
+                 "game_id": getattr(s, "espn_id", None)}
+        self.alerts.append(entry)
+        try:
+            with open(ALERT_LOG, "a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+            with open(ALERT_JSONL, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry) + "\n")
+        except OSError as exc:
+            print(f"  [warn] could not append to the alert log: {exc}")
+        if self.notify:
+            toast(toast_title or f"{'EXTREME' if level == 'extreme' else 'Watch'}: {game}", message)
+
+    def _final_line(self, s: LiveState, pg: Pregame) -> None:
+        sim = pg.sim or {}
+        expect = (f"pregame {pg.favorite} by {abs(pg.margin_home):.1f}" if pg.favorite
+                  else "pregame pick'em")
+        if sim.get("median_home") is not None:
+            expect += f", simulated median {pg.away} {sim['median_away']:.0f}-{sim['median_home']:.0f} {pg.home}"
+        print(f"  FINAL  {s.away} {s.away_score}-{s.home_score} {s.home}   ({expect})")
+
+    def _write(self, rows: list[dict]) -> None:
+        if not rows:
+            return
+        target = self.fallback or self.store
+        try:
+            target.upsert("live_tracking", rows)
+            return
+        except Exception as exc:  # noqa: BLE001
+            if self.fallback is not None or self.store.backend == "sqlite":
+                print(f"  [warn] live_tracking write failed ({type(exc).__name__}); "
+                      "this cycle is in live.json only")
+                return
+            print(f"\n  [warn] cannot write live_tracking to {self.store.backend} ({type(exc).__name__}).")
+            print("         Snapshots go to the local SQLite mirror for the rest of this session.")
+            print("         Paste db/PASTE_INTO_SUPABASE.sql into the Supabase SQL Editor to create the table.\n")
+        try:
+            self.fallback = db.SqliteStore()
+            self.fallback.upsert("live_tracking", rows)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [warn] local fallback write failed too ({exc}); this cycle is in live.json only")
+
+    def storage_label(self) -> str:
+        if self.fallback is not None:
+            return f"sqlite (fallback: {self.store.backend} table missing)"
+        return self.store.backend
+
+    def _export(self) -> None:
+        now = _now()
+        upcoming = [
+            {"home": s.home, "away": s.away, "kickoff": s.start.isoformat() if s.start else None,
+             "detail": s.detail}
+            for s in self.last_states
+            if s.state == "pre" and s.start and s.start - now <= timedelta(hours=IDLE_EXIT_HOURS)
+        ]
+        payload = {
+            "generated_at": now.isoformat(),
+            "poll_seconds": POLL_SECONDS,
+            "storage": self.storage_label(),
+            "thresholds": {"notable": NOTABLE, "extreme": EXTREME, "underdog_lead": UNDERDOG_LEAD,
+                           "min_elapsed_minutes": MIN_ELAPSED_MINUTES},
+            "games": sorted(self.latest.values(),
+                            key=lambda g: (g["state"] != "in", -LEVEL_RANK[g["flag_level"]], g["kickoff"] or "")),
+            "upcoming": sorted(upcoming, key=lambda u: u["kickoff"] or ""),
+            "alerts": self.alerts[-MAX_ALERTS_EXPORTED:][::-1],
+        }
+        try:
+            LIVE_JSON.write_text(json.dumps(payload, default=str), encoding="utf-8")
+            if PUBLIC_LIVE_JSON.parent.exists():
+                shutil.copy(LIVE_JSON, PUBLIC_LIVE_JSON)
+        except OSError as exc:
+            print(f"  [warn] could not write {LIVE_JSON}: {exc}")
+
+    def _status_line(self, states: list[LiveState]) -> None:
+        live = [g for g in self.latest.values() if g["state"] == "in"]
+        parts = []
+        for g in sorted(live, key=lambda g: g["kickoff"] or ""):
+            tp, mp = g["total_percentile"], g["margin_percentile"]
+            pct = (f" pace p{tp * 100:.0f} margin p{mp * 100:.0f}" if tp is not None else "")
+            mark = {"extreme": " !!", "notable": " !"}.get(g["flag_level"], "")
+            parts.append(f"{g['away']} {g['away_score']}-{g['home_score']} {g['home']} {g['detail']}{pct}{mark}")
+        print(f"[{_now():%H:%M:%S}Z] {len(live)} live" + ("  |  " + "  |  ".join(parts) if parts else ""))
+
+    def next_sleep(self, interval: float) -> float | None:
+        """Seconds to the next poll, or None when there is nothing left to do."""
+        if self.failures or any(s.state == "in" for s in self.last_states):
+            return interval + random.uniform(-POLL_JITTER, POLL_JITTER)
+        now = _now()
+        kickoffs = [s.start for s in self.last_states if s.state == "pre" and s.start
+                    and s.start - now <= timedelta(hours=IDLE_EXIT_HOURS)]
+        if not kickoffs:
+            return None
+        wait = (min(kickoffs) - now).total_seconds()
+        return max(interval, min(wait, MAX_IDLE_SLEEP))
+
+    def close(self) -> None:
+        for store in (self.store, self.fallback):
+            try:
+                if store is not None:
+                    store.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def run(interval: float = POLL_SECONDS, once: bool = False, notify: bool = True) -> None:
+    # Line-buffered, so alerts reach a redirected log (or a scheduler's
+    # capture) as they happen rather than when a block buffer fills.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):
+        pass
+    tracker = Tracker(notify=notify)
+    print(f"[live] tracking NFL games | poll every ~{interval:.0f}s | storage {tracker.store.backend}"
+          f" | alerts -> console, {ALERT_LOG}{', desktop' if notify else ''} | page: dashboard /live.html")
+    try:
+        while True:
+            try:
+                tracker.cycle()
+            except Exception as exc:  # noqa: BLE001 - the loop itself must survive anything
+                tracker.failures += 1
+                print(f"  [warn] cycle failed: {type(exc).__name__}: {exc}")
+                traceback.print_exc(limit=3)
+            if once:
+                break
+            wait = tracker.next_sleep(interval)
+            if wait is None:
+                print(f"[live] nothing in progress and no kickoff within {IDLE_EXIT_HOURS}h; done")
+                break
+            if not any(s.state == "in" for s in tracker.last_states) and not tracker.failures:
+                resume = _now() + timedelta(seconds=wait)
+                print(f"[live] no game in progress; next check {resume:%H:%M}Z")
+            time.sleep(wait)
+    except KeyboardInterrupt:
+        print("\n[live] stopped")
+    finally:
+        tracker.close()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Live NFL in-game tracking.")
+    parser.add_argument("--interval", type=float, default=POLL_SECONDS, help="seconds between polls")
+    parser.add_argument("--once", action="store_true", help="one cycle, then exit")
+    parser.add_argument("--no-notify", action="store_true", help="no desktop notifications")
+    args = parser.parse_args()
+    run(args.interval, args.once, notify=not args.no_notify)

@@ -22,6 +22,7 @@ by the model's own gate.
 | 6 | Injury / depth pipeline (nflverse + ESPN) | done |
 | 7 | XGBoost Layer 3 + backtest | done |
 | 8 | React dashboard | done |
+| — | NFL game simulation (separate phase) | built; not yet in `run_pipeline.py` |
 
 ## Injuries
 
@@ -176,6 +177,142 @@ piece that will eventually let the value gate open honestly — or confirm it
 should stay shut.
 
 Run `python -m tests.test_grade` for the grading maths (20 hand-computed cases).
+
+## Game simulation (NFL)
+
+```bash
+python -m src.simulate_nfl --game 2026_01_DEN_KC --no-store   # one game, printed only
+python -m src.simulate_nfl --date 2026-09-20                  # a slate, written to game_simulations
+python -m src.simulate_nfl --calibrate                        # engine vs real NFL scoring
+python -m src.sim_data --rebuild                              # rebuild the play library
+python -m tests.test_simulate
+```
+
+A build phase of its own. It writes only the `game_simulations` table, never
+reads or writes `predictions`, and is not called by `run_pipeline.py`.
+
+**How a game is simulated.** 10,000 games are played snap by snap, all in
+lockstep as numpy arrays (about a second per game). Each scrimmage snap is
+drawn from the 112k real plays run in the same down / distance / field-zone
+situation in 2023–25; its net yardage comes from the change in field position,
+so penalties are included. On 4th down, teams go, kick or punt as often as NFL
+teams actually do from that spot, and late in the game they follow the score
+instead. Punts, field goals (distance plus forecast wind), PATs and two-point
+tries all come from real outcomes. Kickoffs use 2025 only, because that
+season's rule change moved drive starts. Overtime follows the rule where both
+teams get a possession.
+
+**Team strength** is exponential tilting of that shared library. Each play is
+weighted by `exp(lambda * EPA)`, with lambda solved so that the offence
+averages its expected EPA per play against this defence: its offensive rating
+plus the opponent's defensive rating. A good offence therefore draws more of
+the plays that actually worked in every situation, without an invented yardage
+curve. Pass rate over expected shifts each team's run/pass mix.
+
+**It is anchored to the pipeline.** A small symmetric EPA offset is solved so
+that the simulations average exactly the baseline margin, which already
+includes home field, rest, travel, injuries and wind. The simulator adds what
+surrounds that centre: the spread of outcomes, the total, and how the points
+arrive. The injury report is split by position: a missing quarterback weakens
+his own offence, and a missing cornerback strengthens the opposing one.
+
+**TD scorers are deliberately low confidence.** Each simulated touchdown is
+handed to a player by his share of that kind of opportunity. Goal-line rushing
+TDs go by goal-line carry share, red-zone passing TDs by red-zone target share,
+and so on. Small samples are shrunk toward the player's broader share. The
+current nflverse depth chart sets volume. Outside the playing slots, a player
+gets only his slot's typical share, so a former starter now on the bench
+doesn't keep a starter's workload, and a backup quarterback gets nothing.
+An injured player's share passes to the next man down at his position, in
+proportion to how unlikely he is to play. This extrapolates historical usage;
+it does not simulate game plans, which is why the output is flagged below the
+score and TD/FG counts.
+
+**Calibration.** Two league-average teams, unanchored, against the 2023–25
+actuals:
+
+| | sim | real |
+|---|---|---|
+| points / team | 22.5 | 22.6 |
+| TDs / team | 2.50 | 2.51 |
+| FGs / team | 1.69 | 1.70 |
+| defensive + return TDs / team-game | 0.134 | 0.132 |
+| total points, sd | 12.8 | 13.6 |
+| tie rate | 0.9% | 0.1% |
+
+Known gaps:
+
+- **Ties run high.** Ten-minute overtime without clock management leaves too
+  many games level. Some of the gap is also a rule change: the reference
+  seasons mostly ended OT on an opening-drive touchdown.
+- **Totals are slightly too narrow**, about 6% less spread than real games,
+  because each simulated game holds both teams' strength fixed.
+- **Not modelled:** timeouts, the two-minute drill, onside kicks, fakes, and
+  two-point decisions by chart (tries happen at the league base rate).
+- **The modal exact score is weak.** It typically carries 0.5–1% and is usually
+  within sampling noise of several others; the report says how many. The median
+  is the steadier headline.
+- **Supabase needs the table created first.** Re-run
+  `db/PASTE_INTO_SUPABASE.sql` (it is idempotent). Until then a stored run
+  prints a clear error, and `sync_to_supabase --check` lists the table as
+  missing.
+
+## Live tracking (NFL)
+
+```bash
+python -m src.live_tracker                 # poll every ~2.5 min until the day's games are over
+python -m src.live_tracker --once          # one cycle
+python -m src.live_tracker --no-notify     # no desktop toasts
+python -m tests.test_live
+```
+
+Open `http://localhost:5173/live.html` with the dashboard dev server running.
+The page re-reads `live.json` every 20 seconds.
+
+A layer of its own. It reads the stored pregame prediction and simulation,
+never changes either, and writes only `live_tracking`: one timestamped
+snapshot per game per poll, so a game's whole trajectory is kept.
+
+**Polling.** Each cycle makes one scoreboard call, which says which games are
+in progress, plus one summary call per in-progress game for its scoring plays.
+Games that haven't kicked off are never polled. With nothing live, the tracker
+sleeps until the next kickoff, and it exits when nothing starts within 12
+hours. A finished game gets one closing snapshot. Every ESPN call and every
+parse is guarded: a failed request or a malformed game skips that piece of that
+cycle, three failures in a row raise an alert, and polling carries on.
+
+**What counts as diverging.** The pregame simulation records the score every
+five minutes of game clock in all 10,000 simulated games. A live game is placed
+in the distribution for its own elapsed time:
+
+| flag | fires when | extreme when |
+|---|---|---|
+| `pace_high` / `pace_low` | total so far is beyond the 5th/95th percentile of simulations at this point | beyond 1st/99th |
+| `margin_home` / `margin_away` | home margin so far is beyond the 5th/95th percentile | beyond 1st/99th |
+| `underdog_leading` | the pregame underdog leads by more than 7 | leads by 14+, or any such lead in the 4th |
+
+Pace and margin flags wait for five minutes of game clock. Percentiles are
+mid-ranked, so a 0–0 start counts as ordinary rather than as a 0th-percentile
+low. Each flag is announced once, and again only if it escalates to extreme,
+so a flag hovering at its threshold doesn't re-alert every poll.
+
+**Where alerts go:**
+- a console banner,
+- `data/live/alerts.log`,
+- a Windows desktop toast,
+- the live page, which shows each game's score, flags, and two charts: points
+  and margin against the simulated 50%/90% range, drawn exactly from the
+  scoring plays.
+
+A restarted tracker reloads the day's alerts and snapshots, and doesn't
+re-announce flags it already raised.
+
+**If no simulation is stored** for a game (the usual case until
+`game_simulations` exists in Supabase), the tracker builds one on first sight
+of the game. It is pinned to the stored pregame prediction, so its centre is
+still the pregame number. If `live_tracking` is missing from Supabase,
+snapshots go to the local SQLite mirror for the session, with a warning, rather
+than being lost.
 
 ## The ML layer, and what the backtest says
 

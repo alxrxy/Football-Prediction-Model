@@ -131,6 +131,90 @@ create table if not exists predictions (
 );
 create index if not exists predictions_generated_idx on predictions (generated_at desc);
 
+-- Monte Carlo game simulations (src/simulate_nfl.py). Kept apart from
+-- predictions so the simpler pipeline output is never touched. Margins are
+-- home minus away. td_scorers is lower-confidence than everything else here.
+create table if not exists game_simulations (
+    game_id               text not null,
+    sim_version           text not null,
+    sport                 text,
+    home_team             text,
+    away_team             text,
+    n_sims                integer,
+    modal_home_points     integer,
+    modal_away_points     integer,
+    modal_score_prob      real,
+    median_home_points    real,
+    median_away_points    real,
+    mean_home_points      real,
+    mean_away_points      real,
+    home_win_prob         real,
+    tie_prob              real,
+    margin_50_low         real,
+    margin_50_high        real,
+    margin_80_low         real,
+    margin_80_high        real,
+    total_50_low          real,
+    total_50_high         real,
+    total_80_low          real,
+    total_80_high         real,
+    home_td_mode          integer,
+    away_td_mode          integer,
+    home_fg_mode          integer,
+    away_fg_mode          integer,
+    home_td_mean          real,
+    away_td_mean          real,
+    home_fg_mean          real,
+    away_fg_mean          real,
+    anchor_margin_home    real,
+    sim_margin_home       real,
+    market_spread         real,
+    market_total          real,
+    score_confidence      text,
+    td_scorer_confidence  text,
+    distributions         text,
+    td_scorers            text,
+    components            text,
+    generated_at          text not null,
+    primary key (game_id, sim_version)
+);
+
+-- Live in-game snapshots (src/live_tracker.py), one row per game per poll, so
+-- a game's whole trajectory is kept rather than only its latest state.
+-- Percentiles place the live total / home margin among the pregame
+-- simulations at the same elapsed game time.
+create table if not exists live_tracking (
+    game_id               text not null,
+    polled_at             text not null,
+    espn_event_id         text,
+    state                 text,
+    period                integer,
+    display_clock         text,
+    elapsed_minutes       real,
+    home_team             text,
+    away_team             text,
+    home_score            integer,
+    away_score            integer,
+    possession            text,
+    down_distance         text,
+    is_red_zone           integer default 0,
+    espn_home_win_prob    real,
+    predicted_margin_home real,
+    predicted_winner      text,
+    sim_median_home       real,
+    sim_median_away       real,
+    sim_total_median_now  real,
+    total_percentile      real,
+    margin_percentile     real,
+    projected_total       real,
+    flag_level            text,
+    flags                 text,
+    alerted               integer default 0,
+    recent_scoring        text,
+    pregame               text,
+    primary key (game_id, polled_at)
+);
+
 create table if not exists teams (
     team           text not null,
     sport          text not null,
