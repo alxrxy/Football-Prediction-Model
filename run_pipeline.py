@@ -1,9 +1,11 @@
 """End-to-end pipeline for a slate.
 
     python run_pipeline.py                      today's CFB slate
-    python run_pipeline.py --sport nfl          NFL, next slate with games
+    python run_pipeline.py --sport nfl          NFL, every slate through the next Sunday's week
+    python run_pipeline.py --sport nfl --next-slate   NFL, only the next slate with games
     python run_pipeline.py --sport both
     python run_pipeline.py --date 2026-09-13
+    python run_pipeline.py --date 2026-09-17 2026-09-20
     python run_pipeline.py --fresh-odds         bypass odds cache (costs quota)
     python run_pipeline.py --skip-ingest        re-predict from stored data
 
@@ -55,7 +57,35 @@ def next_slate_date(sport: str) -> date:
     return (first - timedelta(hours=predict_baseline.SLATE_START_UTC_HOUR)).date()
 
 
-def run_sport(sport: str, target: date | None, args) -> list[dict]:
+def week_slate_dates(sport: str) -> list[date]:
+    """Every slate still to play through the week of the next Sunday slate.
+
+    The NFL puts single games on Thursday and Monday nights, and each is a
+    slate of its own. Predicting only the next slate left those games
+    unpredicted unless someone ran the pipeline again that day. From any day
+    this covers a leftover Monday game, Thursday, Sunday and the following
+    Monday. The Odds API call already returns every upcoming game, so the
+    extra slates cost no quota.
+    """
+    store = db.get_store()
+    now = datetime.now(timezone.utc)
+    upcoming = [
+        (k, g) for g in store.select("games", {"sport": sport})
+        if not g.get("completed") and (k := parse_dt(g.get("kickoff_time"))) and k >= now
+    ]
+    store.close()
+
+    def slate_day(k: datetime) -> date:
+        return (k - timedelta(hours=predict_baseline.SLATE_START_UTC_HOUR)).date()
+
+    sundays = [(g["season"], g["week"]) for k, g in upcoming if slate_day(k).weekday() == 6]
+    if not sundays:
+        return [next_slate_date(sport)]
+    through = min(sundays)
+    return sorted({slate_day(k) for k, g in upcoming if (g["season"], g["week"]) <= through})
+
+
+def run_sport(sport: str, target: list[date] | None, args) -> list[dict]:
     print()
     print("=" * 78)
     print(f"{SPORTS[sport]} | storage: {config.STORAGE_BACKEND} | model: {config.MODEL_VERSION}")
@@ -88,20 +118,26 @@ def run_sport(sport: str, target: date | None, args) -> list[dict]:
         grade.run(sport=sport, refresh=True)
         print()
 
-    slate = target or next_slate_date(sport)
+    if target:
+        slates = target
+    elif sport == "nfl" and not args.next_slate:
+        slates = week_slate_dates(sport)
+    else:
+        slates = [next_slate_date(sport)]
+    label = ", ".join(d.isoformat() for d in slates)
     predictions = []
 
     if args.model in ("baseline", "both"):
-        predictions = predict_baseline.run(slate, sport)
+        predictions = predict_baseline.run(sport=sport, dates=slates)
         if not predictions:
-            print(f"No {SPORTS[sport]} games on {slate}.")
+            print(f"No {SPORTS[sport]} games still to kick off on {label}.")
             return []
         print()
         print(predict_baseline.format_report(predictions))
 
     if args.model in ("ml", "both"):
         try:
-            ml = predict_ml.run(sport, slate)
+            ml = predict_ml.run(sport, dates=slates)
         except SystemExit as exc:
             print(f"  [warn] ML layer unavailable: {exc}")
             ml = []
@@ -117,7 +153,11 @@ def run_sport(sport: str, target: date | None, args) -> list[dict]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the prediction pipeline.")
     parser.add_argument("--sport", default="ncaaf", choices=["ncaaf", "nfl", "both"])
-    parser.add_argument("--date", help="slate date, YYYY-MM-DD (default: next slate with games)")
+    parser.add_argument("--date", nargs="+",
+                        help="slate date(s), YYYY-MM-DD (default: NFL every slate through the "
+                             "next Sunday's week; CFB the next slate with games)")
+    parser.add_argument("--next-slate", action="store_true",
+                        help="NFL: predict only the next slate, not the rest of the week")
     parser.add_argument("--fresh-odds", action="store_true", help="bypass odds cache")
     parser.add_argument("--skip-ingest", action="store_true", help="predict from stored data only")
     parser.add_argument("--grade", action="store_true",
@@ -126,7 +166,7 @@ def main() -> int:
                         help="which modeling layer to run")
     args = parser.parse_args()
 
-    target = date.fromisoformat(args.date) if args.date else None
+    target = [date.fromisoformat(d) for d in args.date] if args.date else None
     sports = ["ncaaf", "nfl"] if args.sport == "both" else [args.sport]
 
     total = 0

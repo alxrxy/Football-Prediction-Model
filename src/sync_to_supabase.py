@@ -81,8 +81,13 @@ def _coerce(table: str, row: dict) -> dict:
     return out
 
 
-def sync() -> int:
-    missing = check()
+def sync(tables: list[str] | None = None) -> int:
+    """Push local rows to Supabase. Upserts overwrite, so once Supabase is the
+    live store, push only tables that exist solely in the local mirror:
+    a full sync would replace newer Supabase rows (graded predictions, final
+    scores) with older local ones."""
+    tables = tables or TABLES
+    missing = [t for t in check() if t in tables]
     if missing:
         print("Schema not applied yet. Missing tables: " + ", ".join(missing))
         print(f"\nPaste {config.SCHEMA_SUPABASE} into the Supabase SQL Editor and run it,")
@@ -92,7 +97,7 @@ def sync() -> int:
     source = db.SqliteStore()
     target = db.SupabaseStore()
     total = 0
-    for table in TABLES:
+    for table in tables:
         rows = [_coerce(table, r) for r in source.select(table)]
         if not rows:
             print(f"  {table:14} empty, skipped")
@@ -109,6 +114,8 @@ def sync() -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sync local SQLite data into Supabase.")
     parser.add_argument("--check", action="store_true", help="only verify the schema")
+    parser.add_argument("--tables", nargs="+", choices=TABLES,
+                        help="push only these tables (default: all; see sync() before using the default)")
     args = parser.parse_args()
 
     if args.check:
@@ -119,4 +126,4 @@ if __name__ == "__main__":
             sys.exit(1)
         print(f"All {len(TABLES)} tables present in Supabase.")
         sys.exit(0)
-    sys.exit(sync())
+    sys.exit(sync(args.tables))
