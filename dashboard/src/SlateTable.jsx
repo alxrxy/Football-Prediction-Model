@@ -90,8 +90,15 @@ export default function SlateTable({ games }) {
                       <strong>{game.home}</strong>
                       {game.neutral && <span className="tag">neutral</span>}
                       {proxy && <span className="tag warn">proxy rating</span>}
+                      {!b && !ml && (
+                        <span className="tag" title="No prediction has been run for this slate yet">
+                          not predicted
+                        </span>
+                      )}
                     </td>
-                    <SpreadCell spread={b?.market_spread} game={game} />
+                    {/* The prediction's line is the one it was made and graded
+                        against; before there is one, show the current market. */}
+                    <SpreadCell spread={b?.market_spread ?? game.market?.spread} game={game} />
                     <SpreadCell spread={b?.model_spread} game={game} />
                     <SpreadCell spread={ml?.model_spread} game={game} />
                     <td className={`num edge ${Math.abs(b?.edge ?? 0) >= 4 ? 'big' : ''}`}>
