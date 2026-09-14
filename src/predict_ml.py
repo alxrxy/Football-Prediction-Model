@@ -120,8 +120,11 @@ def build_live_features(sport: str, games: list[dict], ctx: FeatureContext,
     return rows
 
 
-def run(sport: str = "nfl", target: date | None = None) -> list[dict]:
+def run(sport: str = "nfl", target: date | None = None,
+        dates: list[date] | None = None) -> list[dict]:
     import pandas as pd
+
+    from .predict_baseline import slate_games
 
     model, meta = load_model(sport)
     gate = _value_gate(meta)
@@ -130,15 +133,15 @@ def run(sport: str = "nfl", target: date | None = None) -> list[dict]:
     ctx = FeatureContext(store, sport)
     now = datetime.now(timezone.utc)
 
-    target = target or now.date()
-    start, end = slate_window(target)
-    games = [
-        g for g in ctx.games
-        if (k := parse_dt(g.get("kickoff_time"))) is not None and start <= k < end
-    ]
-    games.sort(key=lambda g: parse_dt(g["kickoff_time"]))
+    # Several slates share one history replay, which is the slow part.
+    dates = dates or [target or now.date()]
+    label = ", ".join(d.isoformat() for d in dates)
+    games, started = slate_games(ctx.games, dates, now)
+    if started:
+        print(f"[predict-ml] {len(started)} game(s) already kicked off; "
+              "keeping their stored pregame predictions")
     if not games:
-        print(f"[predict-ml] no {sport} games on {target}")
+        print(f"[predict-ml] no {sport} games still to kick off on {label}")
         store.close()
         return []
 

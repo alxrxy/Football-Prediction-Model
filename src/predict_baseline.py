@@ -130,7 +130,25 @@ def _confidence(features: dict) -> str:
     return "medium"
 
 
-def run(target: date | None = None, sport: str = "ncaaf", all_upcoming: bool = False) -> list[dict]:
+def slate_games(games: list[dict], dates: list[date], now: datetime) -> tuple[list[dict], list[dict]]:
+    """Games on any of these slates, split into (not yet kicked off, already kicked off).
+
+    A game that has kicked off keeps the prediction it already has: that is
+    the pregame number it gets graded against, and re-predicting it would
+    mix in-game odds and injury news into a "pregame" row.
+    """
+    windows = [slate_window(d) for d in dates]
+    chosen = [
+        g for g in games
+        if (k := parse_dt(g.get("kickoff_time"))) is not None and any(s <= k < e for s, e in windows)
+    ]
+    chosen.sort(key=lambda g: parse_dt(g["kickoff_time"]))
+    return ([g for g in chosen if parse_dt(g["kickoff_time"]) > now],
+            [g for g in chosen if parse_dt(g["kickoff_time"]) <= now])
+
+
+def run(target: date | None = None, sport: str = "ncaaf", all_upcoming: bool = False,
+        dates: list[date] | None = None) -> list[dict]:
     store = db.get_store()
     ctx = FeatureContext(store, sport)
 
@@ -139,13 +157,12 @@ def run(target: date | None = None, sport: str = "ncaaf", all_upcoming: bool = F
         games = [g for g in ctx.games if (parse_dt(g.get("kickoff_time")) or now) >= now]
         label = "all upcoming"
     else:
-        target = target or now.date()
-        start, end = slate_window(target)
-        games = [
-            g for g in ctx.games
-            if (k := parse_dt(g.get("kickoff_time"))) is not None and start <= k < end
-        ]
-        label = f"slate {target.isoformat()}"
+        dates = dates or [target or now.date()]
+        games, started = slate_games(ctx.games, dates, now)
+        label = "slate " + ", ".join(d.isoformat() for d in dates)
+        if started:
+            print(f"[predict] {label}: {len(started)} game(s) already kicked off; "
+                  "keeping their stored pregame predictions")
 
     games.sort(key=lambda g: (parse_dt(g.get("kickoff_time")) or now))
 
