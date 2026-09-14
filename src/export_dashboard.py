@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import statistics
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -108,6 +109,7 @@ def build(sport: str) -> dict:
                 "neutral": bool(game.get("is_neutral_site")),
                 "weather": _clean(weather.get(gid)),
                 "books": books[:12],
+                "market": _market(odds_rows.get(gid, [])),
                 "baseline": _pred(baseline),
                 "ml": _pred(ml),
                 "injuries": {
@@ -174,6 +176,31 @@ def _clean(row):
     if not row:
         return None
     return {k: v for k, v in row.items() if k != "pulled_at"}
+
+
+def _market(rows: list[dict]) -> dict | None:
+    """The game's current line, independent of any prediction.
+
+    A prediction carries the line it was made against, but a game that hasn't
+    been predicted yet still has odds, and the slate row should show them
+    rather than a dash. Latest consensus row first; otherwise the median of
+    the books.
+    """
+    priced = [r for r in rows if r.get("spread") is not None]
+    if not priced:
+        return None
+    consensus = [r for r in priced if r["book"].endswith("_consensus")]
+    if consensus:
+        r = max(consensus, key=lambda r: str(r.get("pulled_at") or ""))
+        return {"spread": r["spread"], "total": r.get("total"), "source": r["book"],
+                "pulled_at": r.get("pulled_at")}
+    totals = [float(r["total"]) for r in priced if r.get("total") is not None]
+    return {
+        "spread": statistics.median(float(r["spread"]) for r in priced),
+        "total": statistics.median(totals) if totals else None,
+        "source": f"median of {len(priced)} books",
+        "pulled_at": max(str(r.get("pulled_at") or "") for r in priced) or None,
+    }
 
 
 def _backtest_summary(meta: dict | None) -> dict | None:
