@@ -152,11 +152,13 @@ export default function SlateTable({ games }) {
         Click any row for the full breakdown.
       </p>
       <p className="muted small">
-        <span className="tag flag">unvalidated</span> marks games past the
-        baseline&rsquo;s fixed edge threshold. That is a heuristic, not a
-        backtested signal &mdash; it is a different thing from the trained
-        model&rsquo;s value gate, which is reported separately and is currently
-        shut.
+        <span className="tag flag">unvalidated</span> marks games where the
+        baseline, blended with the devigged market at a small model weight,
+        still clears the price&rsquo;s break-even by 3+ points of probability.
+        Almost nothing does, by design: the model hasn&rsquo;t shown it knows
+        something the line doesn&rsquo;t, and it stays unvalidated until closing
+        line value backs it. The trained model&rsquo;s value gate is separate,
+        reported in the backtest panel, and currently shut.
       </p>
     </>
   )

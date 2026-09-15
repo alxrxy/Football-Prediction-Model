@@ -30,7 +30,7 @@ export default function BacktestPanel({ backtest, calibration }) {
       <div className={`verdict ${anySignificant ? 'ok' : 'off'}`}>
         {anySignificant
           ? 'Some edge threshold beat the closing line significantly, so the trained model is permitted to flag value.'
-          : 'No edge threshold beat the closing line by more than noise, so the trained model flags nothing as value. The baseline heuristic still marks games past its fixed threshold; those are labelled unvalidated and carry no evidence behind them.'}
+          : 'No edge threshold beat the closing line by more than noise, so the trained model flags nothing as value. The baseline can still flag a game that passes the blended market test; those are labelled unvalidated until closing line value backs them.'}
       </div>
 
       <h4>Margin error vs the closing line</h4>
