@@ -68,13 +68,28 @@ def player_pool(squad: pd.DataFrame, shares: dict[str, np.ndarray],
     )
 
 
-def _quantiles(x: np.ndarray, count: bool) -> dict:
+# Stats that sportsbooks post player props on (src/props.py). Their lines also
+# carry a finer grid of percentiles, so a prop line between the stored
+# quartiles can be priced without guessing the shape of the distribution.
+PROP_STATS = {"pass_yds", "rush_yds", "rec_yds", "rec"}
+PCT_GRID = list(range(5, 100, 5))
+# P(stat >= k) for small counts, where a half-point line sits between two
+# integers and interpolating percentiles would smear the step.
+COUNT_TAIL = 12
+
+
+def _quantiles(x: np.ndarray, count: bool, grid: bool = False) -> dict:
     q = np.percentile(x, [10, 25, 50, 75, 90])
     out = {"median": round(float(q[2]), 1), "mean": round(float(x.mean()), 2),
            "p10": round(float(q[0]), 1), "p25": round(float(q[1]), 1),
            "p75": round(float(q[3]), 1), "p90": round(float(q[4]), 1)}
     if count:
         out["mode"] = int(np.bincount(np.clip(x, 0, None).astype(np.int64)).argmax())
+    if grid:
+        if count:
+            out["ge"] = [round(float((x >= k).mean()), 4) for k in range(COUNT_TAIL + 1)]
+        else:
+            out["pct"] = [round(float(v), 1) for v in np.percentile(x, PCT_GRID)]
     return out
 
 
@@ -112,7 +127,8 @@ def box_score(stats: dict[str, np.ndarray], squad: pd.DataFrame,
         }
         for group, keys in GROUPS.items():
             if volume[group] >= (MIN_PASS_ATT if group == "passing" else MIN_GROUP):
-                entry[group] = {name: _quantiles(final[key][:, i], name in COUNT_KEYS) for name, key in keys}
+                entry[group] = {name: _quantiles(final[key][:, i], name in COUNT_KEYS, key in PROP_STATS)
+                                for name, key in keys}
         tds = final["rush_td"][:, i] + final["rec_td"][:, i]
         entry["anytime_td"] = round(float((tds >= 1).mean()), 4)
         entry["two_plus_td"] = round(float((tds >= 2).mean()), 4)

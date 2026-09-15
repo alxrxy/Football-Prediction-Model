@@ -25,6 +25,10 @@ _utf8_console()
 # --- Secrets ---
 CFBD_API_KEY = os.getenv("CFBD_API_KEY", "").strip()
 ODDS_API_KEY = os.getenv("ODDS_API_KEY", "").strip()
+# Claude API, for the dashboard's Q&A and prop explanations (src/claude_ai.py).
+# Read under any of these names; .env carries it as Claude_API_KEY.
+CLAUDE_API_KEY = (os.getenv("ANTHROPIC_API_KEY") or os.getenv("Claude_API_KEY")
+                  or os.getenv("CLAUDE_API_KEY") or "").strip()
 
 
 def _supabase_url() -> str:
@@ -83,6 +87,22 @@ DEVIG_METHOD = os.getenv("DEVIG_METHOD", "shin").strip().lower()
 # ML model must be retrained whenever this changes, or it is served features
 # built differently from the ones it was trained on.
 QB_CONDITIONAL_PRIOR = os.getenv("QB_CONDITIONAL_PRIOR", "0").strip().lower() in ("1", "true", "yes")
+
+# Claude API: the one metered piece of the stack. Low effort suits short,
+# data-grounded answers; the daily cap stops a runaway page or loop from
+# running up a bill (src/claude_ai.py refuses calls past it).
+# Prefixed CLAUDE_API_ because tools running this code (Claude Code among
+# them) may export their own CLAUDE_MODEL / CLAUDE_EFFORT, which a bare name
+# would silently pick up.
+CLAUDE_MODEL = os.getenv("CLAUDE_API_MODEL", "claude-opus-5").strip()
+CLAUDE_EFFORT = os.getenv("CLAUDE_API_EFFORT", "low").strip().lower()
+CLAUDE_DAILY_BUDGET_USD = float(os.getenv("CLAUDE_DAILY_BUDGET_USD", "2.0"))
+
+# Player-prop markets pulled from The Odds API (src/ingest_props.py). Each
+# costs one credit per game per region: 4 markets x 16 games = 64 a pull.
+PROP_MARKETS = os.getenv(
+    "PROP_MARKETS", "player_pass_yds,player_rush_yds,player_reception_yds,player_receptions"
+).strip()
 
 # --- API bases ---
 CFBD_BASE = "https://api.collegefootballdata.com"

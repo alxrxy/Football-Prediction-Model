@@ -5,6 +5,8 @@ import ScoreStrip from './ScoreStrip.jsx'
 import BacktestPanel from './BacktestPanel.jsx'
 import ResultsPanel from './ResultsPanel.jsx'
 import SimSlates from './SimSlates.jsx'
+import BestProps from './BestProps.jsx'
+import LiveGames from './LiveGames.jsx'
 import { dateLabel, shortDate } from './format.js'
 
 export default function App() {
@@ -113,6 +115,12 @@ export default function App() {
             </p>
           ) : (
             <SlateTable games={sport.games} />
+          )}
+          {sport.sport === 'nfl' && (
+            <>
+              <LiveGames />
+              <BestProps />
+            </>
           )}
           <GradedSlate slate={sport.results?.last_slate} />
           {sport.sport === 'nfl' && <SimSlates />}

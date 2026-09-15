@@ -1,4 +1,5 @@
 import SimDetail from './SimDetail.jsx'
+import GameQA from './GameQA.jsx'
 import { signed, spreadLabel } from './format.js'
 
 // The per-game breakdown (architecture section 6): where the number came from,
@@ -157,6 +158,10 @@ export default function GameDetail({ game }) {
       </div>
       {/* NFL games only; renders nothing for college ids. */}
       <SimDetail gameId={game.game_id} />
+      <GameQA
+        gameId={game.game_id}
+        suggestions={['Why does the model differ from the market here?', 'What would have to go right for the underdog?']}
+      />
     </div>
   )
 }
