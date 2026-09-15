@@ -612,6 +612,40 @@ constant in training and held at 0 live to match.
 - Raw ingested rows and derived predictions live in separate tables, every raw
   row carrying `pulled_at`.
 
+## Claude API sections (Q&A, best props, live games)
+
+```bash
+python -m src.api_server          # local Q&A server on 127.0.0.1:8787 (holds the API key)
+python -m src.ingest_props        # NFL player-prop lines, ~64 Odds API credits a pull (cached)
+python -m src.props               # rank props vs the simulations; Claude explains the top 10
+cd dashboard && npm run dev       # http://localhost:5174, proxies /api to the server
+python -m tests.test_props
+```
+
+The one metered piece of the stack. The key is read from `Claude_API_KEY` in
+`.env`; the page never sees it. Three sections use it:
+
+- **Ask about this game**, in every game's dropdown. The question goes to the
+  local server, which sends Claude only that game's numbers as a few dozen
+  lines of text (`src/game_context.py`): prediction, market, Stage 1 result,
+  baseline pieces, injuries, simulation ranges, key players, ranked props.
+  About 2¢ a question.
+- **Best props of the week**, on the NFL tab. Each prop line is devigged
+  across books and compared with that player's simulated chance; ranked by
+  the gap. Claude writes the explanations once per export (cached), not per
+  page view. Gaps past 25 pp are held out as likely usage misses. See P17:
+  the simulator doesn't yet model each player's own efficiency, so treat
+  the list as a check on the simulator for now.
+- **Live games**, on the NFL tab. While the live tracker runs, each game in
+  progress shows the live re-projection, and its Q&A answers from the live
+  state (score, clock, field position, live win chance, projected finals).
+
+Cost controls: `claude-opus-5` at low effort (`CLAUDE_API_MODEL`,
+`CLAUDE_API_EFFORT`), refusal fallbacks on, answers capped, 40 questions an
+hour, and a daily cap (`CLAUDE_DAILY_BUDGET_USD`, default $2). Every call's
+tokens and estimated cost go to `data/claude_usage.jsonl`;
+`/api/health` shows today's spend.
+
 ## Known limitations
 
 - **Neither model beats the closing line.** See the backtest section. The ML

@@ -122,8 +122,19 @@ def pregame_view(row: dict, kickoff) -> dict:
         "fg": {"home": dist.get("home_fg"), "away": dist.get("away_fg"),
                "home_mode": row.get("home_fg_mode"), "away_mode": row.get("away_fg_mode")},
         "scorers": _json(row.get("td_scorers")),
-        "box_score": _json(row.get("box_score")),
+        "box_score": _without_grids(_json(row.get("box_score"))),
     }
+
+
+def _without_grids(value):
+    """The box score minus the percentile grids kept for pricing props
+    (box_score.PROP_STATS): the page never shows them, and they would
+    roughly double the size of sims.json."""
+    if isinstance(value, dict):
+        return {k: _without_grids(v) for k, v in value.items() if k not in ("pct", "ge")}
+    if isinstance(value, list):
+        return [_without_grids(v) for v in value]
+    return value
 
 
 # --- actual results --------------------------------------------------------
