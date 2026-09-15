@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import SlateTable from './SlateTable.jsx'
+import GradedSlate from './GradedSlate.jsx'
+import ScoreStrip from './ScoreStrip.jsx'
 import BacktestPanel from './BacktestPanel.jsx'
 import ResultsPanel from './ResultsPanel.jsx'
+import SimSlates from './SimSlates.jsx'
 import { dateLabel } from './format.js'
 
 export default function App() {
@@ -85,6 +88,8 @@ export default function App() {
         ))}
       </div>
 
+      <ScoreStrip results={sport.results} sportLabel={sport.label} />
+
       <div className="banner">
         Paper trading only. One slate is not enough signal to trust any edge, and
         the backtest below has not cleared the bar for calling one real.
@@ -104,6 +109,8 @@ export default function App() {
           ) : (
             <SlateTable games={sport.games} />
           )}
+          <GradedSlate slate={sport.results?.last_slate} />
+          {sport.sport === 'nfl' && <SimSlates />}
         </main>
 
         <aside>
