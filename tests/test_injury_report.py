@@ -69,12 +69,31 @@ def test_empty():
     check("empty table", latest_injury_report([]), [])
 
 
+def test_snap_share_falls_back_per_player():
+    """P14: week 1's snaps cover only teams that have played, and never a
+    player who was already hurt. Everyone else takes last season's share."""
+    import pandas as pd
+
+    from src.ingest_injuries import merge_snap_shares, player_key
+
+    current = pd.DataFrame({"team": ["NE", "NE"], "player": ["Played Both", "Rookie"],
+                            "offense_pct": [0.9, 0.4], "defense_pct": [0.0, 0.0]})
+    prior = pd.DataFrame({"team": ["NE", "KC", "NE"], "player": ["Played Both", "Hurt Starter", "Sat Week One"],
+                          "offense_pct": [0.5, 0.93, 0.0], "defense_pct": [0.0, 0.0, 0.75]})
+    shares = merge_snap_shares([current, prior])
+    check("current season wins", shares[player_key("NE", "Played Both")], 0.9)
+    check("team yet to play -> prior", shares[player_key("KC", "Hurt Starter")], 0.93)
+    check("player without current snaps -> prior", shares[player_key("NE", "Sat Week One")], 0.75)
+    check("rookie keeps current", shares[player_key("NE", "Rookie")], 0.4)
+
+
 if __name__ == "__main__":
     for fn in [
         test_dropped_player_not_charged,
         test_latest_is_per_source,
         test_mixed_timestamp_formats,
         test_empty,
+        test_snap_share_falls_back_per_player,
     ]:
         print(f"\n{fn.__name__}")
         fn()
