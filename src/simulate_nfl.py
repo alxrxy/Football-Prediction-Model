@@ -35,7 +35,8 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from . import db
+from . import config, db
+from .box_score import BOX_CONFIDENCE, BOX_NOTE, POOL_CATEGORIES, box_score, player_pool, td_counts
 from .features import FeatureContext, latest_injury_report, parse_dt
 from .ingest_injuries import player_key
 from .ingest_nflverse import PLAYS_PER_GAME
@@ -43,7 +44,7 @@ from .predict_baseline import predict_game, slate_window
 from .sim_data import (
     USAGE_CATEGORIES, SimTables, build_tables, load_pbp, pass_rate_oe, player_roles,
 )
-from .simulate import Offense, SimResult, allocate_scorers, simulate_game, summarize
+from .simulate import Offense, PlayerPool, SimResult, allocate_scorers, simulate_game, summarize
 
 SIM_VERSION = "sim-v1"
 N_SIMS = 10_000
@@ -135,19 +136,19 @@ def side_targets(features: dict, ctx: FeatureContext, league_epa: float) -> dict
 
 
 def anchored_simulation(tables: SimTables, targets: dict, proe: tuple[float, float],
-                        anchor: float, wind: float, n: int, seed: int):
+                        anchor: float, wind: float, n: int, seed: int, pools: tuple | None = None):
     """Solve the EPA offset that makes the simulated margin average `anchor`.
 
     Margin is close to linear in a small symmetric offset, so two pilot runs on
     common random numbers give the slope, and the full run uses the solved
     offset. Returns (result, offset, slope, unanchored pilot margin).
     """
-    def run(delta, count, s):
+    def run(delta, count, s, with_players=None):
         return simulate_game(
             tables,
             Offense(targets["home"]["target_epa"] + delta, proe[0]),
             Offense(targets["away"]["target_epa"] - delta, proe[1]),
-            n=count, seed=s, wind_mph=wind,
+            n=count, seed=s, wind_mph=wind, pools=with_players,
         )
 
     margin = lambda r: float((r.points[:, 0] - r.points[:, 1]).mean())  # noqa: E731
@@ -157,7 +158,7 @@ def anchored_simulation(tables: SimTables, targets: dict, proe: tuple[float, flo
     if slope <= 10:   # would mean the engine barely responds to strength; refuse to extrapolate
         raise RuntimeError(f"margin barely responds to EPA offset (slope {slope:.1f})")
     delta = (anchor - m0) / slope
-    return run(delta, n, seed + 1), delta, slope, m0
+    return run(delta, n, seed + 1, pools), delta, slope, m0
 
 
 # --- scorers ---------------------------------------------------------------
@@ -210,7 +211,10 @@ def team_shares(roles: pd.DataFrame, team: str, injuries: list[dict]):
 
 def scorer_table(result: SimResult, side: int, squad: pd.DataFrame,
                  shares: dict[str, np.ndarray], seed: int) -> list[dict]:
-    counts = allocate_scorers(result, side, shares, seed)
+    # With players tracked, touchdowns are credited on the play itself, so
+    # the scorer list and the projected box score always agree.
+    counts = (td_counts(result.players[side]) if result.players is not None
+              else allocate_scorers(result, side, shares, seed))
     anytime = (counts >= 1).mean(axis=0)
     out = []
     for i in np.argsort(-anytime)[:TOP_SCORERS]:
@@ -257,16 +261,19 @@ def simulate_one(game: dict, ctx: FeatureContext, inputs: SimInputs, n: int = N_
     seed = zlib.crc32(game["game_id"].encode())
     anchor = pred["model_margin_home"] if anchor is None else float(anchor)
 
+    squads = {team: team_shares(inputs.roles, team, ctx.injuries) for team in (home, away)}
+    pools = tuple(player_pool(squads[t][0], squads[t][1]) for t in (home, away))
     result, delta, slope, unanchored = anchored_simulation(
-        tables, targets, proe, anchor, wind, n, seed
+        tables, targets, proe, anchor, wind, n, seed, pools
     )
     s = summarize(result)
 
-    scorers, injury_shifts = {}, {}
+    scorers, injury_shifts, boxes = {}, {}, {}
     for side, team in ((0, home), (1, away)):
-        squad, shares, shifts = team_shares(inputs.roles, team, ctx.injuries)
+        squad, shares, shifts = squads[team]
         scorers[team] = scorer_table(result, side, squad, shares, seed + 7 + side)
         injury_shifts[team] = shifts
+        boxes[team] = box_score(result.players[side], squad)
 
     top = s["top_scores"][0]
     r3 = lambda x: round(float(x), 3)  # noqa: E731
@@ -322,6 +329,8 @@ def simulate_one(game: dict, ctx: FeatureContext, inputs: SimInputs, n: int = N_
             "return_td_prob": {home: r3(s["return_td"][0]), away: r3(s["return_td"][1])},
             "injury_shifts": injury_shifts,
         },
+        "box_score": {"confidence": BOX_CONFIDENCE, "note": BOX_NOTE,
+                      "home": boxes[home], "away": boxes[away]},
         "components": {
             "anchor": {
                 "model": anchor_label or pred["model_version"],
@@ -435,6 +444,27 @@ def format_report(row: dict) -> str:
                 f"{sh['play_prob']:.0%} to play) -> {sh['to'] or 'rest of group'} "
                 f"(+{sh['moved_target_share']:.0%} targets, +{sh['moved_carry_share']:.0%} carries)"
             )
+    box = row.get("box_score")
+    if box:
+        r0 = lambda q: f"{q['median']:.0f} ({q['p25']:.0f}-{q['p75']:.0f})"  # noqa: E731
+        lines += ["", "-" * 78,
+                  f"PROJECTED BOX SCORE  [confidence: {box['confidence'].upper()} - player lines, below the score]",
+                  "-" * 78, "  median (middle 50% of simulations)"]
+        for team, key in ((a, "away"), (h, "home")):
+            b = box[key]
+            lines.append(f"  {team}: pass yds {r0(b['team']['pass_yds'])}, rush yds {r0(b['team']['rush_yds'])}")
+            for p in b["players"][:9]:
+                parts = []
+                if "passing" in p:
+                    ps = p["passing"]
+                    parts.append(f"{ps['cmp']['median']:.0f}/{ps['att']['median']:.0f}, {r0(ps['yds'])} pass yds")
+                if "rushing" in p:
+                    parts.append(f"{p['rushing']['att']['median']:.0f} car, {r0(p['rushing']['yds'])} rush yds")
+                if "receiving" in p:
+                    rc = p["receiving"]
+                    parts.append(f"{rc['rec']['median']:.0f}/{rc['tgt']['median']:.0f} rec, {r0(rc['yds'])} rec yds")
+                name = f"{p['player']} ({p['position'] or '?'}{p['depth_rank'] or ''})"
+                lines.append(f"    {name:28} " + " | ".join(parts))
     ho, ao = comp["home_offense"], comp["away_offense"]
     lines += [
         "",
@@ -467,7 +497,12 @@ def calibrate(n: int = 20_000) -> str:
 
     tables = build_tables()
     avg = Offense(tables.league_epa)
-    r = simulate_game(tables, avg, avg, n=n, seed=1)
+    # Team box-score totals don't depend on how usage is split, so a generic
+    # three-man pool is enough to check them.
+    pool = PlayerPool(names=["QB", "RB", "WR"],
+                      cum={c: np.cumsum([0.1, 0.6, 0.3]) for c in POOL_CATEGORIES},
+                      passer_weights=np.array([1.0, 0.0, 0.0]))
+    r = simulate_game(tables, avg, avg, n=n, seed=1, pools=(pool, pool))
     s = summarize(r)
     pbp = load_pbp(POOL_SEASONS)
     games = pbp["game_id"].nunique()
@@ -487,6 +522,20 @@ def calibrate(n: int = 20_000) -> str:
         ("overtime rate", s["overtime"], float((sched["overtime"] == 1).mean())),
         ("tie rate", s["tie"], float((hs == as_).mean())),
     ]
+    # Box-score totals per team-game. A pass attempt excludes sacks and
+    # scrambles; a rush attempt includes scrambles, as nflverse records them.
+    snaps = pbp[pbp["play_type"].isin(["pass", "run"]) & (pbp["two_point_attempt"] != 1)]
+    team_games = snaps[["game_id", "posteam"]].drop_duplicates().shape[0]
+    att = snaps[(snaps["pass_attempt"] == 1) & (snaps["sack"] != 1)]
+    rush = snaps[snaps["rush_attempt"] == 1]
+    real = {
+        "pass_att": len(att), "pass_cmp": att["complete_pass"].sum(),
+        "pass_yds": att.loc[att["complete_pass"] == 1, "yards_gained"].sum(),
+        "rush_att": len(rush), "rush_yds": rush["yards_gained"].sum(),
+    }
+    for key, total in real.items():
+        sim = float(np.mean([side[key].sum(axis=1).mean() for side in r.players]))
+        rows.append((f"{key} / team", sim, float(total) / team_games))
     out = [f"League-average vs league-average, {n:,} sims, vs {list(POOL_SEASONS)} actuals ({len(sched)} games)",
            f"  {'':16} {'sim':>8} {'real':>8}"]
     out += [f"  {k:16} {a:>8.3f} {b:>8.3f}" for k, a, b in rows]
@@ -496,8 +545,26 @@ def calibrate(n: int = 20_000) -> str:
 
 # --- entrypoint ------------------------------------------------------------
 
-def run(game_id: str | None = None, target: date | None = None, n: int = N_SIMS,
-        store_results: bool = True) -> list[dict]:
+def _stored_anchors(store, games: list[dict]) -> dict[str, tuple[float, str]]:
+    """The stored baseline margin for each game, when it was made before
+    kickoff. A game simulated after it started still centres on the number
+    the pipeline published beforehand, not one rebuilt from later data."""
+    out = {}
+    try:
+        rows = store.select("predictions", {"game_id": [g["game_id"] for g in games]})
+    except Exception:  # noqa: BLE001
+        return out
+    kickoffs = {g["game_id"]: parse_dt(g.get("kickoff_time")) for g in games}
+    for p in rows:
+        made, kick = parse_dt(p.get("generated_at")), kickoffs.get(p["game_id"])
+        if (p.get("model_version") == config.MODEL_VERSION and p.get("model_margin_home") is not None
+                and made and kick and made <= kick):
+            out[p["game_id"]] = (float(p["model_margin_home"]), f"{config.MODEL_VERSION} @ {p['generated_at']}")
+    return out
+
+
+def run(game_id: str | None = None, dates: list[date] | None = None, n: int = N_SIMS,
+        store_results: bool = True, quiet: bool = False) -> list[dict]:
     store = db.get_store()
     ctx = FeatureContext(store, "nfl")
     if game_id:
@@ -505,24 +572,29 @@ def run(game_id: str | None = None, target: date | None = None, n: int = N_SIMS,
         if not games:
             raise SystemExit(f"no NFL game {game_id!r} in the games table")
     else:
-        start, end = slate_window(target)
-        games = sorted(
-            (g for g in ctx.games if (k := parse_dt(g.get("kickoff_time"))) and start <= k < end),
-            key=lambda g: g["kickoff_time"],
-        )
+        games = []
+        for target in dates or []:
+            start, end = slate_window(target)
+            games += [g for g in ctx.games if (k := parse_dt(g.get("kickoff_time"))) and start <= k < end]
+        games.sort(key=lambda g: g["kickoff_time"])
         if not games:
-            raise SystemExit(f"no NFL games on {target}")
+            raise SystemExit(f"no NFL games on {', '.join(map(str, dates or []))}")
 
     print(f"[simulate] {len(games)} game(s), {n:,} sims each | loading tables, usage and depth charts")
     inputs = load_inputs(int(games[0]["season"]))
+    anchors = _stored_anchors(store, games)
 
     rows = []
     for game in games:
-        row = simulate_one(game, ctx, inputs, n)
+        margin, label = anchors.get(game["game_id"], (None, None))
+        row = simulate_one(game, ctx, inputs, n, anchor=margin, anchor_label=label)
         if row is None:
             continue
-        print()
-        print(format_report(row))
+        if quiet:
+            print(f"  {game['away_team']} @ {game['home_team']}: simulated")
+        else:
+            print()
+            print(format_report(row))
         rows.append(row)
 
     if store_results and rows:
@@ -531,10 +603,16 @@ def run(game_id: str | None = None, target: date | None = None, n: int = N_SIMS,
             store.upsert("game_simulations", clean)
             print(f"\n[simulate] {len(clean)} row(s) written to game_simulations ({store.backend})")
         except Exception as exc:  # noqa: BLE001
-            print(f"\n[simulate] could not write game_simulations ({store.backend}): {exc}")
-            if store.backend == "supabase":
-                print("  The table is new: paste db/PASTE_INTO_SUPABASE.sql into the Supabase SQL "
-                      "Editor once, then re-run.")
+            if store.backend == "sqlite":
+                print(f"\n[simulate] could not write game_simulations: {exc}")
+            else:
+                print(f"\n[simulate] game_simulations is missing from {store.backend} "
+                      f"({type(exc).__name__}); writing to the local SQLite mirror instead.")
+                print("  Paste db/PASTE_INTO_SUPABASE.sql into the Supabase SQL Editor to create it.")
+                local = db.SqliteStore()
+                local.upsert("game_simulations", clean)
+                local.close()
+                print(f"[simulate] {len(clean)} row(s) written to game_simulations (local sqlite)")
     store.close()
     return rows
 
@@ -543,14 +621,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Monte Carlo NFL game simulation.")
     which = parser.add_mutually_exclusive_group(required=True)
     which.add_argument("--game", help="one game_id, e.g. 2026_01_DEN_KC")
-    which.add_argument("--date", help="every game on this slate date, YYYY-MM-DD")
+    which.add_argument("--date", nargs="+", help="every game on these slate dates, YYYY-MM-DD")
     which.add_argument("--calibrate", action="store_true", help="engine vs real NFL scoring")
     parser.add_argument("--sims", type=int, default=N_SIMS)
     parser.add_argument("--no-store", action="store_true", help="print only, write nothing")
+    parser.add_argument("--quiet", action="store_true", help="one line per game instead of the full report")
     args = parser.parse_args()
 
     if args.calibrate:
         print(calibrate())
     else:
-        run(args.game, date.fromisoformat(args.date) if args.date else None,
-            args.sims, store_results=not args.no_store)
+        run(args.game, [date.fromisoformat(d) for d in args.date] if args.date else None,
+            args.sims, store_results=not args.no_store, quiet=args.quiet)

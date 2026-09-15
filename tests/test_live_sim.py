@@ -174,15 +174,17 @@ def squad_and_shares():
     squad = pd.DataFrame({"player": ["Starter Back", "Backup Back"], "position": ["RB", "RB"],
                           "rank": [1, 2], "play_prob": [1.0, 1.0]})
     shares = {"car_all": np.array([0.6, 0.4]), "car_rz": np.array([0.6, 0.4]), "car_gl": np.array([0.7, 0.3]),
-              "tgt_all": np.array([0.5, 0.5]), "tgt_rz": np.array([0.5, 0.5])}
+              "tgt_all": np.array([0.5, 0.5]), "tgt_rz": np.array([0.5, 0.5]),
+              "tgt_short": np.array([0.5, 0.5]), "tgt_deep": np.array([0.5, 0.5])}
     return squad, shares
 
 
 def test_game_usage():
     usage = game_usage(box([("Backup Back", ["12", "70", "5.8", "1", "20"])],
                            [("Backup Back", ["1", "5", "5", "0", "5", "2"])]), SIDES)
-    check("carries, targets and TDs merged per player",
-          usage[0]["Backup Back"], {"name": "Backup Back", "car": 12, "tgt": 2, "td": 1})
+    got = {k: usage[0]["Backup Back"][k] for k in ("car", "rush_yds", "tgt", "rec", "rec_yds", "td")}
+    check("rushing and receiving merged per player",
+          got, {"car": 12, "rush_yds": 70, "tgt": 2, "rec": 1, "rec_yds": 5, "td": 1})
     check("the other side is empty", usage[1], {})
 
 

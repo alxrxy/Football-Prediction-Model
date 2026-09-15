@@ -14,9 +14,11 @@ projections differ only because the game state changed, not because of fresh
 Monte Carlo noise; the trajectory on the live page moves when something
 happens and holds still when nothing does.
 
-Scorer projections start from the pregame usage shares and are pulled toward
-each player's share of his team's targets and carries so far in this game
-(ESPN's box score), gaining weight as the game accumulates opportunities.
+Players are tracked through the rest of the game exactly as pregame, and each
+projected line is the player's box score so far (ESPN) plus his simulated
+remainder. Usage shares start from pregame and are pulled toward each
+player's share of his team's targets and carries so far in this game, gaining
+weight as the game accumulates opportunities.
 """
 
 from __future__ import annotations
@@ -27,9 +29,12 @@ import zlib
 import numpy as np
 import pandas as pd
 
+from .box_score import BOX_CONFIDENCE, BOX_NOTE, box_score, player_pool, td_counts
 from .ingest_injuries import player_key
 from .sim_data import USAGE_CATEGORIES
-from .simulate import LiveStart, Offense, SimResult, allocate_scorers, simulate_game, summarize
+from .simulate import (
+    STAT_NAMES, LiveStart, Offense, SimResult, _count_dist, allocate_scorers, simulate_game, summarize,
+)
 
 # live-v1 (2026-09-13 22:28-22:3xZ only) misread the scoreboard's field
 # position whenever the HOME side had the ball, starting those simulations at
@@ -53,6 +58,15 @@ LIVE_SCORER_NOTE = (
     "red-zone / goal-line shares, pulled toward each player's share of targets and "
     "carries so far in this game."
 )
+
+# The box-score fields read from ESPN, and the engine stat each one feeds.
+_BLANK = dict.fromkeys(("car", "tgt", "td", "rush_yds", "rush_td", "rec", "rec_yds", "rec_td",
+                        "pass_att", "pass_cmp", "pass_yds", "pass_td", "pass_int"), 0)
+SO_FAR = {
+    "pass_att": "pass_att", "pass_cmp": "pass_cmp", "pass_yds": "pass_yds", "pass_td": "pass_td",
+    "pass_int": "pass_int", "rush_att": "car", "rush_yds": "rush_yds", "rush_td": "rush_td",
+    "tgt": "tgt", "rec": "rec", "rec_yds": "rec_yds", "rec_td": "rec_td",
+}
 
 
 def _num(value) -> int:
@@ -175,10 +189,11 @@ def describe(start: LiveStart, home: str, away: str) -> str:
     return text
 
 
-# --- usage so far ----------------------------------------------------------
+# --- the box score so far --------------------------------------------------
 
 def game_usage(summary, side_by_id: dict[str, int]) -> dict[int, dict[str, dict]]:
-    """Each side's carries, targets and touchdowns so far, by player."""
+    """Each side's box score so far, by player: passing, carries, targets,
+    receptions, yards and touchdowns, from ESPN's summary."""
     out: dict[int, dict[str, dict]] = {0: {}, 1: {}}
     for block in ((summary or {}).get("boxscore") or {}).get("players") or []:
         side = _side(block.get("team"), side_by_id)
@@ -186,21 +201,62 @@ def game_usage(summary, side_by_id: dict[str, int]) -> dict[int, dict[str, dict]
             continue
         for stat in block.get("statistics") or []:
             kind = stat.get("name")
-            if kind not in ("rushing", "receiving"):
+            if kind not in ("passing", "rushing", "receiving"):
                 continue
             keys = stat.get("keys") or []
             for athlete in stat.get("athletes") or []:
                 name = (athlete.get("athlete") or {}).get("displayName")
                 if not name:
                     continue
-                values = dict(zip(keys, athlete.get("stats") or []))
-                rec = out[side].setdefault(name, {"name": name, "car": 0, "tgt": 0, "td": 0})
-                if kind == "rushing":
-                    rec["car"] += _num(values.get("rushingAttempts"))
-                    rec["td"] += _num(values.get("rushingTouchdowns"))
+                v = dict(zip(keys, athlete.get("stats") or []))
+                rec = out[side].setdefault(name, {"name": name, **_BLANK})
+                if kind == "passing":
+                    done, tried = (str(v.get("completions/passingAttempts") or "0/0").split("/") + ["0"])[:2]
+                    rec["pass_cmp"] += _num(done)
+                    rec["pass_att"] += _num(tried)
+                    rec["pass_yds"] += _num(v.get("passingYards"))
+                    rec["pass_td"] += _num(v.get("passingTouchdowns"))
+                    rec["pass_int"] += _num(v.get("interceptions"))
+                elif kind == "rushing":
+                    td = _num(v.get("rushingTouchdowns"))
+                    rec["car"] += _num(v.get("rushingAttempts"))
+                    rec["rush_yds"] += _num(v.get("rushingYards"))
+                    rec["rush_td"] += td
+                    rec["td"] += td
                 else:
-                    rec["tgt"] += _num(values.get("receivingTargets"))
-                    rec["td"] += _num(values.get("receivingTouchdowns"))
+                    td = _num(v.get("receivingTouchdowns"))
+                    rec["tgt"] += _num(v.get("receivingTargets"))
+                    rec["rec"] += _num(v.get("receptions"))
+                    rec["rec_yds"] += _num(v.get("receivingYards"))
+                    rec["rec_td"] += td
+                    rec["td"] += td
+    return out
+
+
+def scoring_so_far(summary, side_by_id) -> tuple[list[int], list[int]]:
+    """(touchdowns, field goals) per side, from the scoring plays."""
+    tds, fgs = [0, 0], [0, 0]
+    for p in (summary or {}).get("scoringPlays") or []:
+        side = _side(p.get("team"), side_by_id)
+        kind = str((p.get("type") or {}).get("text") or "").lower()
+        if side is None:
+            continue
+        if "touchdown" in kind:
+            tds[side] += 1
+        elif "field goal" in kind:
+            fgs[side] += 1
+    return tds, fgs
+
+
+def so_far_lines(squad: pd.DataFrame, usage: dict[str, dict], team: str) -> dict[str, np.ndarray]:
+    """Each squad row's line so far, in the engine's stat names."""
+    by_key = {player_key(team, u["name"]): u for u in usage.values()}
+    out = {k: np.zeros(len(squad), dtype=np.int32) for k in STAT_NAMES}
+    for i, name in enumerate(squad["player"]):
+        u = by_key.get(player_key(team, name))
+        if u:
+            for k, src in SO_FAR.items():
+                out[k][i] = u[src]
     return out
 
 
@@ -211,16 +267,21 @@ def blend_usage(squad: pd.DataFrame, shares: dict[str, np.ndarray], usage: dict[
     For targets and carries separately, each player's broad share becomes
         w * share of the team's opportunities so far + (1 - w) * pregame share,
         w = opportunities so far / (opportunities so far + LIVE_USAGE_PRIOR),
-    and his red-zone / goal-line shares are scaled by the same factor, since
-    the box score does not break usage down by field position. A player the
-    depth chart did not have (a backup pressed into service) joins with his
-    live share in every category.
+    and his red-zone / goal-line / short / deep shares are scaled by the same
+    factor, since the box score does not break usage down that finely. A
+    player the depth chart did not have (a backup pressed into service) joins
+    with his live share in every category.
     """
     known = {player_key(team, p) for p in squad["player"]}
     extra = [u for u in usage.values()
-             if player_key(team, u["name"]) not in known and u["car"] + u["tgt"] > 0]
+             if player_key(team, u["name"]) not in known
+             and u["car"] + u["tgt"] + u.get("pass_att", 0) > 0]
     if extra:
-        add = pd.DataFrame({"player": [u["name"] for u in extra], "position": "", "rank": 99, "play_prob": 1.0})
+        add = pd.DataFrame({
+            "player": [u["name"] for u in extra],
+            "position": ["QB" if u.get("pass_att", 0) > u["car"] + u["tgt"] else "" for u in extra],
+            "rank": 99, "play_prob": 1.0,
+        })
         squad = pd.concat([squad, add], ignore_index=True)
     else:
         squad = squad.reset_index(drop=True).copy()
@@ -242,7 +303,8 @@ def blend_usage(squad: pd.DataFrame, shares: dict[str, np.ndarray], usage: dict[
 
     base = {c: pad(shares[c]) for c in USAGE_CATEGORIES}
     out, info = {}, {}
-    for group, broad, narrow in (("tgt", "tgt_all", ("tgt_rz",)), ("car", "car_all", ("car_rz", "car_gl"))):
+    for group, broad, narrow in (("tgt", "tgt_all", ("tgt_rz", "tgt_short", "tgt_deep")),
+                                 ("car", "car_all", ("car_rz", "car_gl"))):
         counts, total = game[group], float(game[group].sum())
         weight = total / (total + LIVE_USAGE_PRIOR)
         pre = base[broad] / base[broad].sum() if base[broad].sum() > 0 else base[broad]
@@ -262,7 +324,8 @@ def live_scorers(result: SimResult, side: int, squad: pd.DataFrame,
                  shares: dict[str, np.ndarray], seed: int) -> list[dict]:
     """Players most likely to score a touchdown from here, plus anyone who
     already has one."""
-    counts = allocate_scorers(result, side, shares, seed)
+    counts = (td_counts(result.players[side]) if result.players is not None
+              else allocate_scorers(result, side, shares, seed))
     more = (counts >= 1).mean(axis=0)
     picked = [i for i in np.argsort(-more)[:TOP_LIVE_SCORERS] if more[i] >= MIN_LIVE_SCORER_PROB]
     picked += [i for i in np.flatnonzero(squad["game_td"].to_numpy() > 0) if i not in picked]
@@ -301,24 +364,42 @@ class LiveSimulator:
 
     def run(self, *, game_id: str, home: str, away: str, offense: dict, start: LiveStart,
             summary, side_by_id: dict[str, int]) -> tuple[dict, dict]:
-        """(live_simulations column values, extra detail for the live page)."""
+        """(live_simulations column values, extra detail for the live views)."""
         t0 = time.perf_counter()
         seed = zlib.crc32(game_id.encode()) + LIVE_SEED_OFFSET
+        usage = game_usage(summary, side_by_id)
+
+        sides = []
+        for side, team in ((0, home), (1, away)):
+            squad, shares = self._base(team)
+            blended_squad, blended, info = blend_usage(squad, shares, usage[side], team)
+            so_far = so_far_lines(blended_squad, usage[side], team)
+            passer = None
+            if so_far["pass_att"].max() > 0:
+                # Whoever has been throwing today throws the rest of the game.
+                passer = np.zeros(len(blended_squad))
+                passer[int(so_far["pass_att"].argmax())] = 1.0
+            sides.append((team, blended_squad, blended, info, so_far,
+                          player_pool(blended_squad, blended, passer)))
+
         result = simulate_game(
             self.tables,
             Offense(offense["home"]["target_epa"], offense["home"].get("pass_rate_oe") or 0.0),
             Offense(offense["away"]["target_epa"], offense["away"].get("pass_rate_oe") or 0.0),
             n=self.n, seed=seed, wind_mph=offense.get("wind_mph") or 0.0, start=start,
+            pools=(sides[0][5], sides[1][5]),
         )
         s = summarize(result)
+        tds_so_far, fgs_so_far = scoring_so_far(summary, side_by_id)
 
-        usage = game_usage(summary, side_by_id)
-        scorers, usage_weight = {}, {}
-        for side, key, team in ((0, "home", home), (1, "away", away)):
-            squad, shares = self._base(team)
-            blended_squad, blended, info = blend_usage(squad, shares, usage[side], team)
-            scorers[key] = live_scorers(result, side, blended_squad, blended, seed + 11 + side)
+        scorers, usage_weight, boxes = {}, {}, {}
+        for side, (team, squad, shares, info, so_far, _pool) in enumerate(sides):
+            key = ("home", "away")[side]
+            scorers[key] = live_scorers(result, side, squad, shares, seed + 11 + side)
             usage_weight[team] = info
+            boxes[key] = box_score(result.players[side], squad, so_far)
+        final_td = [result.tds[:, i] + tds_so_far[i] for i in (0, 1)]
+        final_fg = [result.fgs[:, i] + fgs_so_far[i] for i in (0, 1)]
 
         top = s["top_scores"][0]
         r4 = lambda v: round(float(v), 4)  # noqa: E731
@@ -340,6 +421,7 @@ class LiveSimulator:
             "total_80_high": s["total"]["p90"],
             "scorers": {"confidence": "low", "note": LIVE_SCORER_NOTE,
                         "home": scorers["home"], "away": scorers["away"], "live_usage": usage_weight},
+            "box_score": {"confidence": BOX_CONFIDENCE, "note": BOX_NOTE, **boxes},
             "runtime_ms": int((time.perf_counter() - t0) * 1000),
         }
         extra = {
@@ -347,5 +429,11 @@ class LiveSimulator:
             "scores_tied_with_mode": s["scores_tied_with_mode"],
             "mean_home_points": r4(s["mean_home"]),
             "mean_away_points": r4(s["mean_away"]),
+            "home_points": s["home_points"], "away_points": s["away_points"],
+            "margin": s["margin"], "total": s["total"],
+            "td": [_count_dist(x) for x in final_td], "fg": [_count_dist(x) for x in final_fg],
+            "td_mode": [int(np.bincount(x).argmax()) for x in final_td],
+            "fg_mode": [int(np.bincount(x).argmax()) for x in final_fg],
+            "td_so_far": tds_so_far, "fg_so_far": fgs_so_far,
         }
         return fields, extra

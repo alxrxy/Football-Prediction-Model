@@ -1,0 +1,108 @@
+/* Game simulation view. Uses the dashboard's tokens from styles.css. */
+
+/* The slate table sets nowrap on every cell; inside the expanded row that
+   would stop the view's text wrapping and stretch the table off-screen. */
+.sim { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); white-space: normal; }
+.sim .num { white-space: nowrap; }
+.sim-slates .sim { margin-top: 0; padding-top: 0; border-top: 0; }
+.sim-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.sim-head h4 { margin: 0; }
+.sim-status {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 2px 8px; border-radius: 20px; border: 1px solid var(--border); color: var(--text-dim);
+}
+.sim-status.live { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.sim-status.final { color: var(--text); }
+
+.sim-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 12px 0 6px; }
+.sim-tile {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 11px; display: flex; flex-direction: column; gap: 2px;
+}
+.sim-tile em { font-style: normal; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+.sim-tile strong { font-size: 16px; }
+.sim-tile span { font-size: 11.5px; color: var(--text-dim); }
+.sim-tile.actual { border-color: var(--text-dim); }
+
+.sim-block { margin-top: 18px; }
+.sim-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+.lowconf {
+  margin-left: 6px; font-size: 10px; letter-spacing: 0.05em; padding: 1px 6px; border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); color: var(--warn);
+  text-transform: uppercase; vertical-align: 1px;
+}
+
+/* Score distribution: one bar per measure on a fixed domain. */
+.range-row {
+  display: grid; grid-template-columns: 110px minmax(120px, 1fr) minmax(200px, auto);
+  gap: 10px; align-items: center; font-size: 12px; padding: 4px 0;
+}
+.range-label { color: var(--text-dim); }
+.range-track { position: relative; height: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; }
+.range-track .band80, .range-track .band50 { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; }
+.range-track .band80 { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.range-track .band50 { background: color-mix(in srgb, var(--accent) 52%, transparent); }
+.range-track .median { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent); }
+.range-track .zero { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--text-dim); opacity: 0.5; }
+.range-track .actual-mark {
+  position: absolute; top: 50%; width: 8px; height: 8px; margin: -6px 0 0 -6px;
+  background: var(--text); transform: rotate(45deg); border: 2px solid var(--surface-2);
+}
+.range-text { font-family: var(--mono); font-size: 11.5px; }
+.range-text em { font-style: normal; color: var(--text-dim); margin-left: 6px; }
+.range-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+.range-legend i { display: inline-block; width: 14px; height: 8px; vertical-align: -1px; margin-right: 5px; border-radius: 2px; }
+.range-legend i.k80 { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.range-legend i.k50 { background: color-mix(in srgb, var(--accent) 52%, transparent); }
+.range-legend i.kmed { width: 2px; background: var(--accent); border-radius: 0; }
+.range-legend i.kact { width: 7px; height: 7px; background: var(--text); transform: rotate(45deg); }
+@media (max-width: 720px) { .range-row { grid-template-columns: 1fr; gap: 4px; } }
+
+/* TD / FG counts. */
+.count-row {
+  display: grid; grid-template-columns: 110px repeat(6, minmax(36px, 56px)) auto;
+  gap: 4px; align-items: center; font-size: 11px; padding: 3px 0;
+}
+.count-label { color: var(--text-dim); }
+.count-cell {
+  position: relative; height: 42px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--surface); display: flex; flex-direction: column; justify-content: flex-end;
+  align-items: center; overflow: hidden; padding-bottom: 2px;
+}
+.count-bar { position: absolute; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 28%, transparent); }
+.count-cell b, .count-cell em, .count-cell i { position: relative; line-height: 1.15; }
+.count-cell em { font-style: normal; color: var(--text-dim); font-family: var(--mono); font-size: 10.5px; }
+.count-cell i { font-style: normal; font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+.count-cell.mode { border: 2px solid var(--accent); }
+.count-cell.actual { outline: 2px solid var(--text); outline-offset: 1px; }
+.count-note { color: var(--text-dim); padding-left: 6px; white-space: nowrap; }
+@media (max-width: 720px) {
+  .count-row { grid-template-columns: 1fr repeat(6, minmax(30px, 1fr)); }
+  .count-label, .count-note { grid-column: 1 / -1; }
+}
+
+/* Scorers. */
+ul.sim-scorers { list-style: none; margin: 0; padding: 0; font-size: 12.5px; }
+ul.sim-scorers li { display: grid; grid-template-columns: 1fr auto; gap: 1px 10px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+ul.sim-scorers .who em, table.props .who em { font-style: normal; color: var(--text-dim); font-size: 11px; margin-left: 5px; }
+ul.sim-scorers .tagline { grid-column: 1 / -1; font-size: 11px; color: var(--text-dim); }
+ul.sim-scorers .tagline.hit { color: var(--text); font-weight: 600; }
+
+/* Player projections. */
+.prop-key { font-size: 11.5px; color: var(--text-dim); margin: 6px 0 2px; }
+.team-props { margin-top: 12px; }
+.team-props h5 span { font-weight: 400; margin-left: 8px; }
+table.props { margin-bottom: 8px; }
+table.props td.who { white-space: nowrap; vertical-align: top; }
+table.props td.stat { vertical-align: top; line-height: 1.25; }
+table.props td.stat strong { display: block; font-size: 13px; }
+table.props td.stat .r50, table.props td.stat .r80, table.props td.stat .so-far { display: block; font-size: 10.5px; color: var(--text-dim); }
+table.props td.stat .r80 { opacity: 0.75; }
+table.props td.stat .act { display: block; font-size: 11px; font-weight: 700; color: var(--text); margin-top: 2px; white-space: nowrap; }
+table.props td.stat .act i { font-style: normal; font-weight: 400; color: var(--text-dim); }
+
+/* Game browser. */
+.sim-slates { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border); }
+.sim-slates .segmented button { white-space: nowrap; }
+.sim-slates td.status-cell { font-size: 12px; }
+.sim-slates td.status-cell.live { color: var(--accent); font-weight: 600; }
