@@ -26,9 +26,11 @@ TABLES = [
     "venues", "teams", "games", "team_ratings",
     "weather", "odds", "injuries", "depth_charts", "predictions",
     "game_simulations", "live_tracking", "live_simulations",
+    "odds_snapshots", "clv_log",
 ]
 
 BOOLEAN_COLUMNS = {
+    "clv_log": ["is_flag"],
     "venues": ["is_dome"],
     "games": ["is_neutral_site", "is_conference", "completed"],
     "weather": ["is_dome"],
@@ -37,9 +39,9 @@ BOOLEAN_COLUMNS = {
 }
 JSON_COLUMNS = {
     "predictions": ["components"],
-    "game_simulations": ["distributions", "td_scorers", "components"],
+    "game_simulations": ["distributions", "td_scorers", "components", "box_score"],
     "live_tracking": ["flags", "recent_scoring", "pregame"],
-    "live_simulations": ["start_state", "scorers"],
+    "live_simulations": ["start_state", "scorers", "box_score"],
 }
 
 

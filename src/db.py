@@ -30,10 +30,12 @@ TABLE_KEYS: dict[str, list[str]] = {
     "game_simulations": ["game_id", "sim_version"],
     "live_tracking": ["game_id", "polled_at"],
     "live_simulations": ["game_id", "polled_at"],
+    "odds_snapshots": ["game_id", "book", "pulled_at"],
+    "clv_log": ["game_id", "model_version", "market"],
 }
 
 JSON_COLUMNS = {"components", "distributions", "td_scorers", "flags", "recent_scoring", "pregame",
-                "start_state", "scorers"}
+                "start_state", "scorers", "box_score"}
 
 
 def utcnow() -> str:
@@ -201,6 +203,57 @@ def get_store() -> Store:
     if config.STORAGE_BACKEND == "supabase":
         return SupabaseStore()
     return SqliteStore()
+
+
+# Tables that are newer than a hosted project may have: if one is missing
+# upstream (the schema file not re-pasted yet), rows go to the local mirror
+# rather than failing the run or being lost.
+_MIRRORED: set[str] = set()
+
+
+def upsert_or_mirror(store: Store, table: str, rows: list[dict[str, Any]]) -> str:
+    """Write rows; returns the backend they landed in."""
+    if not rows:
+        return store.backend
+    if store.backend == "sqlite":
+        store.upsert(table, rows)
+        return "sqlite"
+    if table not in _MIRRORED:
+        try:
+            store.upsert(table, rows)
+            return store.backend
+        except Exception as exc:  # noqa: BLE001
+            _MIRRORED.add(table)
+            print(f"  [warn] cannot write {table} to {store.backend} ({type(exc).__name__}); "
+                  "using the local SQLite mirror.")
+            print("         Paste db/PASTE_INTO_SUPABASE.sql into the Supabase SQL Editor to create it.")
+    local = SqliteStore()
+    try:
+        local.upsert(table, rows)
+    finally:
+        local.close()
+    return "sqlite (mirror)"
+
+
+def select_merged(store: Store, table: str, where: dict[str, Any] | None = None) -> list[dict]:
+    """Rows from the configured store, plus any the local mirror holds that it
+    lacks (written while the hosted table was missing)."""
+    rows: list[dict] = []
+    if table not in _MIRRORED or store.backend == "sqlite":
+        try:
+            rows = store.select(table, where)
+        except Exception:  # noqa: BLE001 - table not created upstream yet
+            _MIRRORED.add(table)
+    if store.backend == "sqlite":
+        return rows
+    keys = TABLE_KEYS[table]
+    seen = {tuple(str(r.get(k)) for k in keys) for r in rows}
+    local = SqliteStore()
+    try:
+        rows += [r for r in local.select(table, where) if tuple(str(r.get(k)) for k in keys) not in seen]
+    finally:
+        local.close()
+    return rows
 
 
 def stamp(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:

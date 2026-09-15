@@ -62,7 +62,20 @@ SCHEMA_SUPABASE = ROOT / "db" / "PASTE_INTO_SUPABASE.sql"
 
 # --- Tuning ---
 ODDS_CACHE_MINUTES = int(os.getenv("ODDS_CACHE_MINUTES", "180"))
+# Optional comma-separated Odds API bookmaker keys used instead of the "us"
+# region, e.g. to add pinnacle as the sharp anchor. Up to 10 books cost the
+# same quota as one region.
+ODDS_BOOKMAKERS = os.getenv("ODDS_BOOKMAKERS", "").strip()
+# The old flag: |model margin - market| in points. No longer decides value
+# (see src/market.py); kept for the point-sensitivity table in reports.
 VALUE_EDGE_THRESHOLD = float(os.getenv("VALUE_EDGE_THRESHOLD", "2.0"))
+
+# Stage 1 edge logic (src/market.py). The model's weight in the log-odds blend
+# with the devigged market, and the margin over break-even a flag needs. Raise
+# the weight only once logged CLV is positive over ~65+ leans.
+MODEL_MARKET_WEIGHT = float(os.getenv("MODEL_MARKET_WEIGHT", "0.15"))
+EDGE_BUFFER = float(os.getenv("EDGE_BUFFER", "0.03"))
+DEVIG_METHOD = os.getenv("DEVIG_METHOD", "shin").strip().lower()
 
 # --- API bases ---
 CFBD_BASE = "https://api.collegefootballdata.com"

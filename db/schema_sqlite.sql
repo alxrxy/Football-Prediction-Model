@@ -175,6 +175,7 @@ create table if not exists game_simulations (
     distributions         text,
     td_scorers            text,
     components            text,
+    box_score             text,
     generated_at          text not null,
     primary key (game_id, sim_version)
 );
@@ -247,8 +248,72 @@ create table if not exists live_simulations (
     pregame_win_prob_home real,
     start_state           text,
     scorers               text,
+    box_score             text,
     runtime_ms            integer,
     primary key (game_id, polled_at)
+);
+
+-- Every pregame odds pull, append-only, with the prices the odds table does
+-- not keep (src/ingest_odds.py). The prices make devigging possible, and the
+-- history is what CLV is measured against.
+create table if not exists odds_snapshots (
+    game_id            text not null,
+    book               text not null,
+    pulled_at          text not null,
+    source             text,
+    commence_time      text,
+    spread             real,
+    spread_price_home  integer,
+    spread_price_away  integer,
+    total              real,
+    over_price         integer,
+    under_price        integer,
+    moneyline_home     integer,
+    moneyline_away     integer,
+    primary key (game_id, book, pulled_at)
+);
+
+-- Closing line value per model lean (src/clv.py). One row per game and model,
+-- written at prediction time for every lean, flagged or not; the close_*
+-- columns are filled after kickoff. Probabilities are for the lean side
+-- covering, vig-free. clv_pp = p_close - p_market, at the line bet.
+create table if not exists clv_log (
+    game_id           text not null,
+    model_version     text not null,
+    market            text not null,
+    sport             text,
+    side              text,
+    team              text,
+    is_flag           integer default 0,
+    kickoff_time      text,
+    flagged_at        text,
+    line              real,
+    price             integer,
+    p_model           real,
+    p_market          real,
+    p_blend           real,
+    breakeven         real,
+    edge_pp           real,
+    edge_points       real,
+    weight            real,
+    buffer            real,
+    devig_method      text,
+    market_source     text,
+    ref_book          text,
+    ref_line          real,
+    ref_price_home    integer,
+    ref_price_away    integer,
+    close_line        real,
+    close_price_home  integer,
+    close_price_away  integer,
+    close_source      text,
+    close_at          text,
+    p_close           real,
+    clv_pp            real,
+    clv_basis         text,
+    result            text,
+    graded_at         text,
+    primary key (game_id, model_version, market)
 );
 
 create table if not exists teams (

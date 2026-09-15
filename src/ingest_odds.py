@@ -81,13 +81,21 @@ def match_events(events: list[dict], games: list[dict]) -> tuple[dict, list, lis
     return matched, name_misses, out_of_slate
 
 
+ODDS_COLUMNS = ("spread", "total", "moneyline_home", "moneyline_away")
+
+
 def _extract(bookmaker: dict, odds_home: str, odds_away: str) -> dict:
-    """Pull spread/total/moneyline out of one bookmaker's markets.
+    """Pull spread/total/moneyline, and the price on each side, out of one
+    bookmaker's markets.
 
     Spread is normalized to the home-team line (negative = home favored),
-    matching the convention used everywhere else in this project.
+    matching the convention used everywhere else in this project. The prices
+    go to odds_snapshots only: devigging needs both sides' prices, and a
+    -105/-115 spread is not the 50/50 a bare line implies.
     """
-    out: dict = {"spread": None, "total": None, "moneyline_home": None, "moneyline_away": None}
+    out: dict = {"spread": None, "total": None, "moneyline_home": None, "moneyline_away": None,
+                 "spread_price_home": None, "spread_price_away": None,
+                 "over_price": None, "under_price": None}
     for market in bookmaker.get("markets") or []:
         key = market.get("key")
         for outcome in market.get("outcomes") or []:
@@ -95,9 +103,15 @@ def _extract(bookmaker: dict, odds_home: str, odds_away: str) -> dict:
             if key == "spreads":
                 if name == odds_home:
                     out["spread"] = outcome.get("point")
+                    out["spread_price_home"] = outcome.get("price")
+                elif name == odds_away:
+                    out["spread_price_away"] = outcome.get("price")
             elif key == "totals":
                 if name == "Over":
                     out["total"] = outcome.get("point")
+                    out["over_price"] = outcome.get("price")
+                elif name == "Under":
+                    out["under_price"] = outcome.get("price")
             elif key == "h2h":
                 if name == odds_home:
                     out["moneyline_home"] = outcome.get("price")
@@ -146,14 +160,20 @@ def run(sport: str = "ncaaf", cache_minutes: int | None = None) -> int:
     cache_minutes = config.ODDS_CACHE_MINUTES if cache_minutes is None else cache_minutes
 
     meta: dict = {}
+    params = {
+        "apiKey": config.require("ODDS_API_KEY"),
+        "markets": "h2h,spreads,totals",
+        "oddsFormat": "american",
+    }
+    # A named list of up to 10 books costs the same as one region, which is
+    # how a sharp anchor (pinnacle) gets in alongside the US books.
+    if config.ODDS_BOOKMAKERS:
+        params["bookmakers"] = config.ODDS_BOOKMAKERS
+    else:
+        params["regions"] = "us"
     events = get_json(
         f"{config.ODDS_BASE}/sports/{sport_key}/odds",
-        params={
-            "apiKey": config.require("ODDS_API_KEY"),
-            "regions": "us",
-            "markets": "h2h,spreads,totals",
-            "oddsFormat": "american",
-        },
+        params=params,
         cache_minutes=cache_minutes,
         cache_tag=f"odds_{sport}",
         capture_meta=meta,
@@ -190,20 +210,40 @@ def run(sport: str = "ncaaf", cache_minutes: int | None = None) -> int:
         game["_match_away"] = full_names.get(game["away_team"], game["away_team"])
 
     rows: list[dict] = []
+    snapshots: list[dict] = []
+    in_play = 0
     matches, name_misses, out_of_slate = match_events(events, games)
 
     for i, game in matches.items():
         event = events[i]
+        # The feed also carries in-play prices for games under way. Storing
+        # them overwrote the pregame line with a live one (19 college
+        # consensus rows on 09-12 were pulled after kickoff), so a game that
+        # has started keeps its last pregame line, which is its closing line.
+        commence = _parse_dt(event.get("commence_time")) or _parse_dt(game.get("kickoff_time"))
+        if commence is not None and commence <= now:
+            in_play += 1
+            continue
         odds_home, odds_away = event.get("home_team", ""), event.get("away_team", "")
         spreads, totals, ml_h, ml_a = [], [], [], []
 
         for bookmaker in event.get("bookmakers") or []:
             vals = _extract(bookmaker, odds_home, odds_away)
+            book = f"oddsapi:{bookmaker.get('key')}"
             rows.append(
                 {
                     "game_id": game["game_id"],
-                    "book": f"oddsapi:{bookmaker.get('key')}",
+                    "book": book,
                     "source": "the_odds_api",
+                    **{k: vals[k] for k in ODDS_COLUMNS},
+                }
+            )
+            snapshots.append(
+                {
+                    "game_id": game["game_id"],
+                    "book": book,
+                    "source": "the_odds_api",
+                    "commence_time": event.get("commence_time"),
                     **vals,
                 }
             )
@@ -230,7 +270,11 @@ def run(sport: str = "ncaaf", cache_minutes: int | None = None) -> int:
             )
 
     store.upsert("odds", db.stamp(rows))
-    print(f"  matched {len(matches)}/{len(events)} events -> {len(rows)} odds rows")
+    where = db.upsert_or_mirror(store, "odds_snapshots", db.stamp(snapshots))
+    print(f"  matched {len(matches)}/{len(events)} events -> {len(rows)} odds rows, "
+          f"{len(snapshots)} priced snapshots ({where})")
+    if in_play:
+        print(f"  [info] {in_play} game(s) already under way: kept their pregame line")
     if out_of_slate:
         print(f"  [info] {len(out_of_slate)} event(s) outside the loaded slate (later week / not ingested)")
     if name_misses:
