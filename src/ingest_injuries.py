@@ -118,11 +118,13 @@ def play_probability(status: str | None, practice: str | None) -> float:
 # --- NFL -------------------------------------------------------------------
 
 def _snap_shares(season: int) -> dict[tuple[str, str], float]:
-    """(team, player) -> snap share, from the most recent weeks available.
+    """(team, player) -> snap share, from the most recent season with data.
 
-    Early in a season there are no current-year snaps, so the prior year is
-    used; a player's role rarely changes enough between seasons to matter for
-    an injury weight.
+    Current-season snaps win where a player has them; everyone else falls back
+    to the prior season, player by player. The fallback has to be per player,
+    not per dataset: in week 1 the current season only covers teams that have
+    already played, and a player injured before it has no current snaps at
+    all, which is exactly the player the injury layer needs to price.
     """
     import nfl_data_py as nfl
 
@@ -133,12 +135,15 @@ def _snap_shares(season: int) -> dict[tuple[str, str], float]:
         except Exception:  # noqa: BLE001
             continue
         if len(df):
-            frames.append((year, df))
-        if year == season and len(df) > 500:
-            break  # enough current-season data; no need for last year
+            frames.append(df)
+    return merge_snap_shares(frames)
 
+
+def merge_snap_shares(frames) -> dict[tuple[str, str], float]:
+    """Mean snap share per (team, player), taking each player from the first
+    (most recent) frame that has him."""
     shares: dict[tuple[str, str], float] = {}
-    for _year, df in frames:
+    for df in frames:
         df = df.copy()
         df["share"] = df[["offense_pct", "defense_pct"]].max(axis=1)
         grouped = df.groupby(["team", "player"])["share"].mean()
