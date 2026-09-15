@@ -22,6 +22,8 @@ const SORTS = {
 export default function SlateTable({ games }) {
   const [open, setOpen] = useState(null)
   const [sort, setSort] = useState('kickoff')
+  // An NFL week runs Thursday to Monday; show the day when the slate spans several.
+  const multiDay = new Set(games.map((g) => new Date(g.kickoff).toDateString())).size > 1
   const [hideProxy, setHideProxy] = useState(false)
 
   const shown = games
@@ -84,7 +86,7 @@ export default function SlateTable({ games }) {
                     className={`row ${isOpen ? 'open' : ''} ${proxy ? 'proxy' : ''}`}
                     onClick={() => setOpen(isOpen ? null : game.game_id)}
                   >
-                    <td className="muted">{kickoffLabel(game.kickoff)}</td>
+                    <td className="muted">{kickoffLabel(game.kickoff, multiDay)}</td>
                     <td className="matchup">
                       <strong>{game.away}</strong> <span className="at">@</span>{' '}
                       <strong>{game.home}</strong>

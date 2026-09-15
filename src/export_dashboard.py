@@ -33,8 +33,14 @@ def _model_meta(sport: str) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _slate_for(store, sport: str) -> tuple[str, list[dict]]:
-    """The next date with unplayed games, and that date's games."""
+def _slate_for(store, sport: str) -> tuple[str, list[dict], dict]:
+    """The next slate with unplayed games: (first date, games, extra labels).
+
+    For the NFL that is the whole week containing the next game, Thursday to
+    Monday, including games of that week already played, so Thursday's result
+    stays on screen through Sunday. College stays one date at a time, since a
+    single Saturday can be 80+ games.
+    """
     now = datetime.now(timezone.utc)
     games = store.select("games", {"sport": sport})
     upcoming = [
@@ -42,8 +48,15 @@ def _slate_for(store, sport: str) -> tuple[str, list[dict]]:
         if not g.get("completed") and (k := parse_dt(g.get("kickoff_time"))) and k >= now
     ]
     if not upcoming:
-        return now.date().isoformat(), []
-    first = min(upcoming, key=lambda pair: pair[0])[0]
+        return now.date().isoformat(), [], {}
+    first, first_game = min(upcoming, key=lambda pair: pair[0])
+
+    if sport == "nfl" and first_game.get("week") is not None:
+        week = [g for g in games
+                if g.get("season") == first_game.get("season") and g.get("week") == first_game.get("week")]
+        days = sorted(_slate_day(g) for g in week if _slate_day(g))
+        return days[0], week, {"label": f"Week {first_game['week']}", "end": days[-1]}
+
     # Mirror the predictors' slate window: a kickoff before 11:00Z belongs to
     # the previous calendar day's slate.
     target = (first - timedelta(hours=slate_window(first.date())[0].hour)).date()
@@ -51,14 +64,14 @@ def _slate_for(store, sport: str) -> tuple[str, list[dict]]:
         start, end = slate_window(candidate)
         selected = [g for k, g in upcoming if start <= k < end]
         if selected:
-            return candidate.isoformat(), selected
-    return first.date().isoformat(), []
+            return candidate.isoformat(), selected, {}
+    return first.date().isoformat(), [], {}
 
 
 def build(sport: str) -> dict:
     store = db.get_store()
 
-    slate_date, games = _slate_for(store, sport)
+    slate_date, games, slate_extra = _slate_for(store, sport)
     by_id = {g["game_id"]: g for g in games}
     ids = set(by_id)
 
@@ -127,6 +140,8 @@ def build(sport: str) -> dict:
         "sport": sport,
         "label": SPORTS[sport],
         "slate_date": slate_date,
+        "slate_label": slate_extra.get("label"),
+        "slate_end": slate_extra.get("end"),
         "games": out_games,
         "results": results,
         "backtest": _backtest_summary(meta),

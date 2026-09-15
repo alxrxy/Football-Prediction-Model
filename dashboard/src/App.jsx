@@ -5,7 +5,7 @@ import ScoreStrip from './ScoreStrip.jsx'
 import BacktestPanel from './BacktestPanel.jsx'
 import ResultsPanel from './ResultsPanel.jsx'
 import SimSlates from './SimSlates.jsx'
-import { dateLabel } from './format.js'
+import { dateLabel, shortDate } from './format.js'
 
 export default function App() {
   const [payload, setPayload] = useState(null)
@@ -99,7 +99,12 @@ export default function App() {
         <main>
           <h2>
             {sport.label}
-            <span className="muted"> · {dateLabel(sport.slate_date)}</span>
+            <span className="muted">
+              {' · '}
+              {sport.slate_label
+                ? `${sport.slate_label} · ${shortDate(sport.slate_date)} – ${shortDate(sport.slate_end)}`
+                : dateLabel(sport.slate_date)}
+            </span>
           </h2>
           {sport.games.length === 0 ? (
             <p className="muted">
