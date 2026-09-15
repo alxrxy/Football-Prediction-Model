@@ -8,7 +8,7 @@ No network and no Claude calls: synthetic lines and simulations.
 from __future__ import annotations
 
 from src import game_context
-from src.props import MAX_GAP, market_view, match_player, p_over, pnorm, rank
+from src.props import MAX_GAP, market_view, match_player, p_over, pick_alt, pnorm, rank
 
 PASS, FAIL = 0, 0
 
@@ -88,6 +88,31 @@ def test_rank():
     check("unmatched names counted", out["unmatched_players"], 1)
 
 
+def test_pick_alt():
+    q = {"p10": 150, "p25": 180, "median": 220, "p75": 260, "p90": 290}   # passing yards
+    row = {"pick": "under", "line": 240.5}
+    offers = [
+        {"book": "dk", "side": "under", "point": 240.5, "price": -110},   # the main line itself
+        {"book": "dk", "side": "under", "point": 270.5, "price": -400},   # safe but too short
+        {"book": "dk", "side": "under", "point": 260.5, "price": -230},   # sim 75%
+        {"book": "fd", "side": "under", "point": 255.5, "price": -170},   # sim ~69%
+        {"book": "dk", "side": "under", "point": 225.5, "price": +160},   # sim <65%: not "safe"
+        {"book": "dk", "side": "over", "point": 200.5, "price": -200},    # wrong side
+    ]
+    alt = pick_alt(row, q, offers)
+    check("an alt is found", alt is not None, True)
+    check("never the main line, never past -250", alt["line"] not in (240.5, 270.5), True)
+    check("simulation at least 65%", alt["p_model"] >= 0.65, True)
+    check("best expected return in the band", (alt["line"], alt["book"]), (255.5, "fd"))
+    check("nothing qualifies -> none", pick_alt(row, q, offers[:2]), None)
+    harder = [{"book": "dk", "side": "under", "point": 230.5, "price": -120}]   # tougher than 240.5
+    check("never a harder line than the pick", pick_alt(row, q, harder), None)
+    over = {"pick": "over", "line": 200.5}
+    got = pick_alt(over, q, [{"book": "dk", "side": "over", "point": 185.5, "price": -200},
+                             {"book": "dk", "side": "over", "point": 215.5, "price": +120}])
+    check("over: the easier (lower) line", got["line"], 185.5)
+
+
 def test_context():
     game = {"home": "BUF", "away": "DET", "kickoff": "2026-09-18T00:15:00+00:00", "neutral": False,
             "market": {"spread": -4.5, "total": 48.5},
@@ -115,7 +140,7 @@ def test_context():
 
 
 if __name__ == "__main__":
-    for fn in [test_p_over, test_market_view, test_names, test_rank, test_context]:
+    for fn in [test_p_over, test_market_view, test_names, test_rank, test_pick_alt, test_context]:
         print(f"\n{fn.__name__}")
         fn()
     print(f"\n{PASS} passed, {FAIL} failed")

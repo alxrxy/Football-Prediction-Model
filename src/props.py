@@ -56,9 +56,18 @@ MARKETS = {
     "player_reception_yds": ("receiving", "yds", "Rec yds"),
     "player_receptions": ("receiving", "rec", "Receptions"),
 }
-TOP_N = 10
+TOP_N = 25
 MAX_GAP = 0.25          # model vs market gaps past this are held out as likely usage misses
 NAME_MATCH = 0.88
+
+# Alt lines: for each top prop, an easier alternate line on the same side
+# where the simulation gives at least ALT_MIN_P, priced no shorter than
+# ALT_MIN_PRICE, with the best expected return among those. "Safe, but still
+# decent odds", in numbers. Books post most alternates as overs only, so an
+# under pick often has none.
+ALT_OF = {m: f"{m}_alternate" for m in MARKETS}
+ALT_MIN_P = 0.65
+ALT_MIN_PRICE = -250
 
 _SUFFIX = re.compile(r"\b(jr|sr|ii|iii|iv|v)\b")
 
@@ -116,6 +125,34 @@ def market_view(books: dict) -> dict | None:
     if not fair:
         return None
     return {"point": point, "p_over": mean(fair), "books": len(fair), "best": best}
+
+
+def decimal_odds(price: float) -> float:
+    return 1 + (price / 100 if price > 0 else 100 / -price)
+
+
+def pick_alt(row: dict, q: dict, offers: list[dict]) -> dict | None:
+    """The alternate line to show beside a prop: the same side as the pick at
+    an easier line (lower for an over, higher for an under), the simulation
+    giving it ALT_MIN_P or better, priced ALT_MIN_PRICE or longer; of those,
+    the best expected return per unit. The safer version of the pick, at
+    odds still worth having."""
+    best = None
+    for o in offers:
+        if o.get("side") != row["pick"] or o.get("point") is None or o.get("price") is None:
+            continue
+        easier = o["point"] < row["line"] if row["pick"] == "over" else o["point"] > row["line"]
+        if not easier or o["price"] < ALT_MIN_PRICE:
+            continue
+        pm = p_over(q, o["point"])
+        p = pm if row["pick"] == "over" else 1 - pm
+        if p < ALT_MIN_P:
+            continue
+        ev = p * decimal_odds(o["price"]) - 1
+        if best is None or ev > best["ev"]:
+            best = {"line": o["point"], "price": o["price"], "book": o["book"], "p_model": round(p, 4),
+                    "breakeven": round(market.implied(o["price"]), 4), "ev": round(ev, 4)}
+    return best
 
 
 # --- matching --------------------------------------------------------------
@@ -187,7 +224,7 @@ def rank(lines: dict, sims: dict[str, dict]) -> dict:
                 blended = market.blend(p_model, p_market, config.MODEL_MARKET_WEIGHT)
                 rows.append({
                     "game_id": gid, "game": f"{g['away']} @ {g['home']}", "kickoff": g.get("kickoff"),
-                    "player": p["player"], "team": team,
+                    "player": p["player"], "odds_name": name, "team": team,
                     "position": f"{p.get('position') or ''}{p.get('depth_rank') or ''}",
                     "market": mkey, "label": label, "line": mv["point"], "pick": pick,
                     "price": price, "book": book, "books": mv["books"],
@@ -200,6 +237,7 @@ def rank(lines: dict, sims: dict[str, dict]) -> dict:
                     "game_sim": {"home_win_prob": sim.get("home_win_prob"), "margin_home": margin.get("p50"),
                                  "total": (sim.get("total") or {}).get("p50")},
                     "sim_generated_at": sim.get("generated_at"),
+                    "_q": q,   # the full stat summary, for pricing alt lines; not exported
                 })
     held = [r for r in rows if r["gap"] > MAX_GAP]
     ranked = sorted((r for r in rows if r["gap"] <= MAX_GAP), key=lambda r: -r["gap"])
@@ -216,7 +254,8 @@ EXPLAIN_SYSTEM = (
     "between a game simulation's probability and the betting market's vig-free probability. For each "
     "prop, write one or two plain-English sentences: what the simulation expects and why that differs "
     "from the line (the player's role and volume, the game script the simulation expects, the spread "
-    "and total), then the main risk to it. Use only the numbers given. These are unvalidated model "
+    "and total), then the main risk to it; if an alt line is given, add a clause on why it's the safer "
+    "version. Use only the numbers given. These are unvalidated model "
     "outputs: no hype, no 'lock', and never tell anyone to bet."
 )
 EXPLAIN_SCHEMA = {
@@ -230,6 +269,13 @@ EXPLAIN_SCHEMA = {
 
 
 def _describe(r: dict) -> str:
+    alt = r.get("alt")
+    extra = (f" | alt line: {r['pick']} {alt['line']} at {alt['price']:+d} ({alt['book']}), simulation "
+             f"{alt['p_model']:.0%}" if alt else "")
+    return _describe_base(r) + extra
+
+
+def _describe_base(r: dict) -> str:
     s, gs = r["sim"], r["game_sim"]
     hw = gs.get("home_win_prob")
     home, away = r["game"].split(" @ ")[1], r["game"].split(" @ ")[0]
@@ -255,7 +301,7 @@ def explain(top: list[dict]) -> dict[int, str]:
     if cache.exists():
         return {int(k): v for k, v in json.loads(cache.read_text(encoding="utf-8")).items()}
     r = claude_ai.ask(EXPLAIN_SYSTEM, [{"role": "user", "content": content}], purpose="props_explain",
-                      max_tokens=8000, schema=EXPLAIN_SCHEMA)
+                      max_tokens=16000, schema=EXPLAIN_SCHEMA)
     if not r["text"]:
         print(f"  [warn] no explanations came back ({r['stop_reason']})")
         return {}
@@ -269,12 +315,28 @@ def explain(top: list[dict]) -> dict[int, str]:
 
 # --- export ----------------------------------------------------------------
 
-def run(with_explanations: bool = True, top_n: int = TOP_N) -> dict:
+def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = True) -> dict:
     if not PROPS_LINES_JSON.exists():
         raise SystemExit("No prop lines yet. Run: python -m src.ingest_props")
     lines = json.loads(PROPS_LINES_JSON.read_text(encoding="utf-8"))
     result = rank(lines, _sims())
     top = result["ranked"][:top_n]
+    alts_pulled = None
+    if with_alts and top:
+        from .ingest_props import fetch_alternates
+
+        # Only the (game, stat) pairs the list uses: ~1 credit each.
+        needs: dict[str, set[str]] = {}
+        for r in top:
+            needs.setdefault(r["game_id"], set()).add(ALT_OF[r["market"]])
+        try:
+            offers, alts_pulled = fetch_alternates(needs, lines)
+        except Exception as exc:  # noqa: BLE001 - the ranking stands without alt lines
+            print(f"  [warn] alt lines skipped: {exc}")
+            offers = {}
+        for r in top:
+            by_market = offers.get(r["game_id"], {}).get(r["odds_name"], {})
+            r["alt"] = pick_alt(r, r["_q"], by_market.get(ALT_OF[r["market"]], []))
     if with_explanations and top:
         try:
             notes = explain(top)
@@ -283,6 +345,8 @@ def run(with_explanations: bool = True, top_n: int = TOP_N) -> dict:
             notes = {}
         for r in top:
             r["explanation"] = notes.get(r["rank"])
+    for r in result["ranked"] + result["held_out"]:
+        r.pop("_q", None)
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "lines_pulled_at": lines.get("pulled_at"), "season": lines.get("season"), "week": lines.get("week"),
@@ -291,7 +355,10 @@ def run(with_explanations: bool = True, top_n: int = TOP_N) -> dict:
         "unmatched_players": result["unmatched_players"],
         "unprojected_players": result["unprojected_players"],
         "props": top,
-        "held_out": result["held_out"][:10],
+        "more": result["ranked"][top_n:],
+        "held_out": result["held_out"],
+        "alts_pulled_at": alts_pulled,
+        "alt_rule": {"min_p": ALT_MIN_P, "min_price": ALT_MIN_PRICE},
     }
     config.ensure_dirs()
     PROPS_JSON.write_text(json.dumps(payload), encoding="utf-8")
@@ -301,8 +368,10 @@ def run(with_explanations: bool = True, top_n: int = TOP_N) -> dict:
           f"({len(result['held_out'])} held out as likely usage misses, "
           f"{result['unmatched_players']} names unmatched) -> {PROPS_JSON}")
     for r in top:
+        alt = r.get("alt")
         print(f"  {r['rank']:>2}. {r['player']:<22} {r['label']:<10} {r['pick']:<5} {r['line']:>6} "
-              f"{r['price']:+d}  sim {r['p_model']:.0%} vs mkt {r['p_market']:.0%}  (+{r['gap'] * 100:.1f} pp)")
+              f"{r['price']:+d}  sim {r['p_model']:.0%} vs mkt {r['p_market']:.0%}  (+{r['gap'] * 100:.1f} pp)"
+              + (f"  | alt {alt['line']} {alt['price']:+d} sim {alt['p_model']:.0%}" if alt else ""))
     return payload
 
 
@@ -310,5 +379,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Rank NFL player props against the simulations.")
     parser.add_argument("--no-explain", action="store_true", help="skip the Claude explanations")
     parser.add_argument("--top", type=int, default=TOP_N)
+    parser.add_argument("--no-alts", action="store_true", help="skip alt lines (no extra Odds API credits)")
     args = parser.parse_args()
-    run(with_explanations=not args.no_explain, top_n=args.top)
+    run(with_explanations=not args.no_explain, top_n=args.top, with_alts=not args.no_alts)
