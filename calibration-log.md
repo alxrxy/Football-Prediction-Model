@@ -38,7 +38,7 @@ status only when its adoption test is met.
 | P8 | NFL: consider the ML margin (or a blend) as the headline number | model selection | 2026-09-14 | 9/13: ML SU 10/13 vs baseline 6/13, MAE 11.46 vs 13.10, Brier 0.214 vs 0.256; ATS both poor (4-8, 3-10) | ML MAE below baseline MAE over 4+ NFL weeks (~60 games), and not worse vs market | watch |
 | P9 | NFL injury term: check its magnitude | weight | 2026-09-14 | 9/13: \|injury adj\| ≥ 1 went 0-5 ATS, MAE 12.3 vs market 8.8; corr(injury term, cover residual) −0.00. 9/14 DEN@KC: term −0.95 toward DEN (−2.63 with real snap shares, P14), market already −2.5 with the same report; lost | fitted coefficient on the injury term (actual − market ~ injury) positive and significant over 100+ games | watch |
 | P10 | Props: apply game-day inactives before simulating | data | 2026-09-14 | DAL@NYG: 4 projected players recorded nothing (N. Harris 5.3 car, Beckham, Cambre, Abanikanda), none on the injury list; Singletary took 10 touches + TD unprojected | none needed for correctness; track "projected, no stats" rate weekly | proposed |
-| P11 | Props: rushing volume bands too narrow (game script) | investigate | 2026-09-14 | DAL@NYG: rush att in the 50% band 2/8, rush yds 1/8; team rush att −8 (trailing DAL), +9 (leading NYG). DEN@KC: leading KC 38 rush att vs median 25 (p90 31), trailing DEN 15 | 50% band hit rate for rush att in 40-60% over 10+ simulated games | investigate |
+| P11 | Props: rushing volume bands too narrow (game script) | investigate | 2026-09-14 | DAL@NYG: rush att in the 50% band 2/8, rush yds 1/8; team rush att −8 (trailing DAL), +9 (leading NYG). DEN@KC: leading KC 38 rush att vs median 25 (p90 31), trailing DEN 15 | 50% band hit rate for rush att in 40-60% over 10+ simulated games | **engine change applied 2026-09-15** (game-script play-calling): calibration rush att by final margin 21.4 → 32.5 vs real 20.7 → 31.6, was flat 24.1 → 27.9; league totals within 3%. The band test itself still needs 10+ graded games |
 | P12 | Run pregame sims before the first kickoff | process | 2026-09-14 | 12/13 week-1 sims written 23:11Z, after kickoff, so only DAL@NYG props are gradeable | n/a | proposed |
 | P13 | NFL prior-season rating must be QB-conditional (weight the prior by the expected starter's games, or add a QB-change term) | logic | 2026-09-15 | DEN@KC: KC's 2025 rating includes 146 backup-QB plays at −0.347 EPA; Mahomes-only prior moves KC +2.9 pts, edge −3.46 → −0.56, flag off. Scope: 11/32 teams shift ≥ 1 pt from non-primary starts (NYJ +5.1, IND +3.8, KC +2.9) | rebuild NFL training with QB-conditioned prior; holdout MAE vs line must not get worse, and weeks 1-4 MAE should improve | **tested 2026-09-15, not adopted.** Starter-games prior (≥ 4 starts): baseline wks 1-4 2016-25 MAE 10.46 → 10.56 (moved games 10.08 → 10.53); ML 2025 holdout MAE 10.08 → 10.10, wks 1-4 8.98 → 9.13. Fails both parts. Code kept behind `QB_CONDITIONAL_PRIOR=0` |
 | P14 | Snap-share fallback is per dataset, not per player | bug fix | 2026-09-15 | `_snap_shares` stops at 2026 once it has > 500 rows, so teams that hadn't played and players who sat out week 1 get no share: 78/154 latest NFL injury rows; every DEN/KC row. DEN@KC injury term −0.95 → −2.63 with real shares | none needed; correctness bug | **applied 2026-09-15** (`ingest_injuries.merge_snap_shares`); NFL rows without a share 78/154 → 32/161 on the week-2 pull |
@@ -85,6 +85,55 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-15 — Simulator: play-calling follows the score (P11, research Stage 3)
+
+**Applied** (simulator only; predictions and value flags are unaffected, since
+the simulations are anchored to the baseline margin):
+- Each snap's call, run or dropback, is made at the bucket's pass rate shifted
+  in log-odds by the offence's lead (9 bands) × game phase (6, incl. the
+  two-minute drill and the last five minutes). Shifts are fitted on the
+  2023–25 library, one per state, shrunk by n / (n + 200) (`sim_data._script_shift`).
+  A real play of that kind is then drawn from the bucket, so team strength
+  (the EPA tilt) and team tendency (PROE) carry through unchanged.
+- Live re-simulation uses the same engine, so it gets this too.
+
+Calibration, two league-average teams, 20,000 sims vs 2023–25 real games
+(`python -m src.simulate_nfl --calibrate`, `--no-script` for the old engine):
+
+| Team volume by final margin | lost 15+ | lost 8–14 | within 7 | won 8–14 | won 15+ |
+|---|---|---|---|---|---|
+| rush att, script off | 24.1 | 25.2 | 26.3 | 26.8 | 27.9 |
+| rush att, **script on** | **21.4** | **22.7** | **26.6** | **30.1** | **32.5** |
+| rush att, real | 20.7 | 21.6 | 26.4 | 29.4 | 31.6 |
+| pass att, script off | 31.4 | 32.2 | 32.9 | 33.0 | 34.4 |
+| pass att, **script on** | **32.7** | **33.5** | **32.3** | **30.2** | **30.0** |
+| pass att, real | 34.1 | 35.8 | 33.5 | 30.2 | 28.6 |
+
+| League totals per team | off | on | real |
+|---|---|---|---|
+| points | 22.50 | 22.20 | 22.63 |
+| pass att | 32.8 | 31.9 | 32.7 |
+| rush att | 26.1 | 26.6 | 26.1 |
+| pass yds | 237 | 231 | 232 |
+| rush yds | 120 | 123 | 118 |
+
+- The old engine had the slope backwards for passing (winners threw more). The
+  new one matches the rushing slope closely and most of the passing slope;
+  the trailing side still throws ~2 fewer than real teams do.
+- Totals move by under 3%: leading teams now run and burn clock, so there are
+  slightly fewer snaps. Rush yards per team are now 5 above real (were 3).
+- Anchoring still holds: over 14 target margins from −10 to +10, the mean
+  |error| of the anchored mean margin is 0.24 pts with the script (0.29
+  without; max 0.61 vs 1.07).
+- Not changed: time runoff is still drawn from the play's own duration, not
+  from the state. Leading teams in real games also snap later; that is the
+  next piece of Stage 3 if the calibration's snap count drifts.
+- P11's own test (50% band hit rate for rush att over 10+ graded sims) is
+  unchanged and still pending. Week-2 sims will be re-run on this engine
+  before Thursday.
 
 ---
 

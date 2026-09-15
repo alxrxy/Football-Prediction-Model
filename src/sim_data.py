@@ -34,7 +34,7 @@ warnings.filterwarnings("ignore")
 
 POOL_SEASONS = (2023, 2024, 2025)
 KICKOFF_SEASONS = (2025,)
-TABLES_VERSION = 3
+TABLES_VERSION = 4
 
 # --- situation buckets -----------------------------------------------------
 # down: 1st, 2nd, 3rd/4th (a 4th-down attempt is drawn from the same pool as a
@@ -102,7 +102,7 @@ PBP_COLUMNS = [
     "fixed_drive", "field_goal_result", "kick_distance", "extra_point_result",
     "two_point_attempt", "two_point_conv_result", "own_kickoff_recovery",
     "wind", "roof", "receiver_player_id", "rusher_player_id",
-    "passer_player_id", "wp", "pass_oe",
+    "passer_player_id", "wp", "pass_oe", "score_differential",
     "complete_pass", "qb_scramble", "air_yards",
 ]
 
@@ -112,6 +112,46 @@ def bucket_index(down, togo, yl) -> np.ndarray:
     t = np.digitize(togo, DIST_EDGES)
     z = np.digitize(yl, ZONE_EDGES)
     return (d * N_DIST + t) * N_ZONE + z
+
+
+# --- game script -----------------------------------------------------------
+# Play-calling follows the scoreboard: trailing teams throw, leading teams run,
+# more so as the clock runs down. A snap's script state is the offence's lead
+# (9 bands) x the phase of the game (6), and the engine shifts each bucket's
+# pass rate by that state's log-odds shift, fitted on the library.
+LEAD_EDGES = [-16.5, -8.5, -3.5, -0.5, 0.5, 3.5, 8.5, 16.5]
+# Elapsed seconds: Q1 | Q2 to the two-minute warning | its last two minutes |
+# Q3 | Q4 to 5:00 | the last five minutes and overtime.
+PHASE_EDGES = [900, 1680, 1800, 2700, 3300]
+N_PHASE = len(PHASE_EDGES) + 1
+N_SCRIPT = (len(LEAD_EDGES) + 1) * N_PHASE
+SCRIPT_PRIOR_PLAYS = 200.0   # a thin state's shift is shrunk toward none by this many plays
+
+
+def script_state(lead, elapsed) -> np.ndarray:
+    """Script state id from the offence's lead and elapsed game seconds."""
+    return np.digitize(lead, LEAD_EDGES) * N_PHASE + np.digitize(elapsed, PHASE_EDGES)
+
+
+def segment_cdf(seg: np.ndarray, weights: np.ndarray, n_segments: int) -> np.ndarray:
+    """One sorted array holding every segment's CDF, offset by segment id.
+
+    `seg` must be sorted. Segment s occupies (s, s+1], so a single
+    searchsorted on `s + u` draws from segment s for every simulated game at
+    once, whatever segment each is in.
+    """
+    counts = np.bincount(seg, minlength=n_segments)
+    offsets = np.concatenate([[0], np.cumsum(counts)])
+    cs = np.cumsum(weights)
+    starts, ends = offsets[:-1], offsets[1:]
+    populated = ends > starts
+    before = np.zeros(n_segments)
+    total = np.ones(n_segments)
+    before[populated] = cs[starts[populated]] - weights[starts[populated]]
+    total[populated] = cs[ends[populated] - 1] - before[populated]
+    norm = (cs - before[seg]) / total[seg]
+    norm[ends[populated] - 1] = 1.0   # exact top edge, so rounding cannot spill
+    return seg + norm
 
 
 @dataclass
@@ -162,6 +202,9 @@ class SimTables:
     scramble: np.ndarray | None = None
     interception: np.ndarray | None = None
     deep: np.ndarray | None = None          # air yards >= DEEP_AIR_YARDS
+    # Log-odds shift in pass rate per script state (script_state), relative
+    # to the bucket's rate. None in tables that predate it: no game script.
+    script_shift: np.ndarray | None = None
 
     def base_weights(self, pass_rate_oe: float) -> np.ndarray:
         """Resample weights that shift the run/pass mix by a team's tendency.
@@ -180,22 +223,8 @@ class SimTables:
         return w
 
     def segment_cdf(self, weights: np.ndarray) -> np.ndarray:
-        """One sorted array holding every bucket's CDF, offset by bucket id.
-
-        Bucket b occupies (b, b+1], so a single searchsorted on `b + u` draws
-        from bucket b for every simulated game at once, whatever bucket each
-        is in.
-        """
-        cs = np.cumsum(weights)
-        starts, ends = self.offsets[:-1], self.offsets[1:]
-        populated = ends > starts
-        before = np.zeros(N_BUCKETS)
-        total = np.ones(N_BUCKETS)
-        before[populated] = cs[starts[populated]] - weights[starts[populated]]
-        total[populated] = cs[ends[populated] - 1] - before[populated]
-        norm = (cs - before[self.bucket]) / total[self.bucket]
-        norm[ends[populated] - 1] = 1.0   # exact top edge, so rounding cannot spill
-        return self.bucket + norm
+        """Every bucket's CDF in one array (see the module-level segment_cdf)."""
+        return segment_cdf(self.bucket, weights, N_BUCKETS)
 
     def fg_prob(self, distance: np.ndarray, wind_mph: float) -> np.ndarray:
         x = (np.asarray(distance, dtype=float) - 40.0) / 10.0
@@ -351,6 +380,39 @@ def _logistic(X: np.ndarray, y: np.ndarray, iters: int = 30) -> np.ndarray:
     return beta
 
 
+def _script_shift(p: pd.DataFrame, pass_frac: np.ndarray) -> np.ndarray:
+    """Log-odds shift in pass rate per script state, relative to each bucket.
+
+    For each state, the one f with sum(sigmoid(logit pf_bucket + f)) equal to
+    the dropbacks actually called in that state. That is the maximum-likelihood
+    fit of a logistic model with the bucket rate as an offset and one term per
+    state, so across the library it hands back every state's real pass rate
+    while the bucket still sets down, distance and field position.
+    """
+    q = p[p["drop"] | p["run"]]
+    remaining = q["game_seconds_remaining"].astype(float).fillna(1800.0).to_numpy()
+    elapsed = np.where(q["qtr"].to_numpy() >= 5, 3600.0, 3600.0 - remaining)
+    state = script_state(q["score_differential"].astype(float).fillna(0.0).to_numpy(), elapsed)
+    pf = pass_frac[q["bucket"].to_numpy()]
+    offset = np.log(pf / (1 - pf))
+    y = q["drop"].to_numpy(float)
+    shift = np.zeros(N_SCRIPT)
+    for s in range(N_SCRIPT):
+        m = state == s
+        n = int(m.sum())
+        if not n:
+            continue
+        o, target, f = offset[m], y[m].sum(), 0.0
+        for _ in range(60):
+            pr = 1.0 / (1.0 + np.exp(-(o + f)))
+            step = (target - pr.sum()) / max(float((pr * (1 - pr)).sum()), 1e-9)
+            f = float(np.clip(f + step, -6.0, 6.0))
+            if abs(step) < 1e-10:
+                break
+        shift[s] = f * n / (n + SCRIPT_PRIOR_PLAYS)
+    return shift
+
+
 def _field_goals(pbp: pd.DataFrame) -> np.ndarray:
     """Make probability by distance, with wind, from real attempts. The wind
     term is what lets a forecast gale cost a kicker rather than being ignored."""
@@ -445,6 +507,7 @@ def build_tables(refresh: bool = False) -> SimTables:
         scramble=p["scr"].to_numpy(bool),
         interception=p["int"].to_numpy(bool),
         deep=p["deep"].to_numpy(bool),
+        script_shift=_script_shift(p, pass_frac),
         meta={
             "pool_seasons": list(POOL_SEASONS),
             "kickoff_seasons": list(KICKOFF_SEASONS),

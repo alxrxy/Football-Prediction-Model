@@ -265,6 +265,22 @@ plus the opponent's defensive rating. A good offence therefore draws more of
 the plays that actually worked in every situation, without an invented yardage
 curve. Pass rate over expected shifts each team's run/pass mix.
 
+**Play-calling follows the scoreboard.** Before each simulated snap the call is
+made, run or dropback, at that situation's pass rate shifted by the offence's
+lead (nine bands) and the phase of the game (six, including the two-minute
+drill and the last five minutes). The shifts are fitted on the 2023–25 play
+library (`sim_data._script_shift`). A simulated team that goes ahead runs and
+one that falls behind throws, so player volume follows each simulated game
+rather than an average one. `python -m src.simulate_nfl --calibrate` prints
+team volume by final margin against real games (`--no-script` for the engine
+without it):
+
+| rush att per team | lost 15+ | lost 8–14 | within 7 | won 8–14 | won 15+ |
+|---|---|---|---|---|---|
+| sim, script off | 24.1 | 25.2 | 26.3 | 26.8 | 27.9 |
+| sim, script on | 21.4 | 22.7 | 26.6 | 30.1 | 32.5 |
+| real 2023–25 | 20.7 | 21.6 | 26.4 | 29.4 | 31.6 |
+
 **It is anchored to the pipeline.** A small symmetric EPA offset is solved so
 that the simulations average exactly the baseline margin, which already
 includes home field, rest, travel, injuries and wind. The simulator adds what
