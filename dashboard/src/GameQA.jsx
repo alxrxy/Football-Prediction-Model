@@ -10,7 +10,8 @@ import './claude.css'
 const MAX_LEN = 500
 const OFFLINE = 'The Q&A server isn’t running. Start it with: python -m src.api_server'
 
-export default function GameQA({ gameId, title = 'Ask about this game', suggestions = [], placeholder }) {
+// scope 'props' asks about the week's ranked props instead of one game.
+export default function GameQA({ gameId, scope = 'game', title = 'Ask about this game', suggestions = [], placeholder }) {
   const [question, setQuestion] = useState('')
   const [turns, setTurns] = useState([])
   const [busy, setBusy] = useState(false)
@@ -26,6 +27,7 @@ export default function GameQA({ gameId, title = 'Ask about this game', suggesti
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          scope,
           game_id: gameId,
           question: text,
           history: turns.slice(-3).map(({ q: tq, a }) => ({ q: tq, a })),

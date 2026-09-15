@@ -75,5 +75,13 @@ export function useLive(enabled) {
   return data
 }
 
+// A feed older than this means the tracker isn't running. Its last snapshot
+// stays on disk and can still say "in progress" for a game that ended days ago.
+export const LIVE_FRESH_MS = 10 * 60 * 1000
+export const feedFresh = (feed) =>
+  Boolean(feed?.generated_at) && Date.now() - new Date(feed.generated_at).getTime() < LIVE_FRESH_MS
+export const liveGamesOf = (feed) => (feedFresh(feed) ? (feed.games || []).filter((g) => g.state === 'in') : [])
+export const liveGame = (feed, gameId) => (feedFresh(feed) ? feed.games?.find((g) => g.game_id === gameId) : null)
+
 export const findGame = (sims, gameId) =>
   sims?.slates?.flatMap((s) => s.games).find((g) => g.game_id === gameId) || null

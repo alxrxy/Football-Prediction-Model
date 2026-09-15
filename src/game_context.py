@@ -14,6 +14,7 @@ Read from the dashboard's own exports, so the server needs no database:
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import config
@@ -208,9 +209,57 @@ def live_text(lg: dict) -> str:
 
 # --- lookup --------------------------------------------------------------------
 
+LIVE_FRESH_SECONDS = 600
+
+
+def live_feed() -> dict | None:
+    """live.json, but only while the tracker is actually writing it. A stopped
+    tracker leaves its last snapshot behind, and that can still call a game
+    "in progress" days after it ended."""
+    feed = _load(LIVE_JSON) or {}
+    try:
+        written = datetime.fromisoformat(str(feed.get("generated_at")).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if written.tzinfo is None:
+        written = written.replace(tzinfo=timezone.utc)
+    return feed if (datetime.now(timezone.utc) - written).total_seconds() < LIVE_FRESH_SECONDS else None
+
+
+def props_text() -> str | None:
+    """This week's ranked props, one line each, for questions about the list."""
+    d = _load(PROPS_JSON) or {}
+    if not d.get("props"):
+        return None
+    lines = [
+        f"NFL week {d.get('week')} player props, lines pulled {d.get('lines_pulled_at')}. Each prop compares the "
+        f"game simulation's chance of the pick with the market's vig-free chance (over/under devigged across "
+        f"books), ranked by the gap. Gaps past {round((d.get('max_gap') or 0.25) * 100)} points are held out as "
+        f"likely usage misses. Known bias (calibration log P17): the simulator gives every player league-typical "
+        f"yards per catch and carry and splits targets by depth-chart share, so star receivers tend to project "
+        f"under their lines; a big gap is often that bias rather than value. None of these are validated."
+    ]
+    for p in d["props"]:
+        s = p.get("sim") or {}
+        lines.append(
+            f"#{p.get('rank')} {p['player']} ({p['team']} {p.get('position')}, {p.get('game')}): {p['label']} "
+            f"{p['pick']} {p['line']} at {p.get('price')} ({p.get('book')}, {p.get('books')} books); simulation "
+            f"{_pct(p.get('p_model'))} vs market {_pct(p.get('p_market'))}, gap +{_n((p.get('gap') or 0) * 100, 1)} pts; "
+            f"sim median {s.get('median')} (middle 50% {s.get('p25')}-{s.get('p75')}); "
+            f"{'passes' if p.get('passes_stage1') else 'does not pass'} the Stage 1 test."
+        )
+    held = d.get("held_out") or []
+    if held:
+        lines.append("Held out: " + "; ".join(
+            f"{h['player']} {h['label']} {h['pick']} {h['line']} (sim {_pct(h.get('p_model'))} vs "
+            f"market {_pct(h.get('p_market'))})" for h in held[:6]))
+    return "\n".join(lines)
+
+
 def build(game_id: str) -> dict | None:
     """{mode, text} for a game, or None when no export knows it."""
-    live = next((g for g in ((_load(LIVE_JSON) or {}).get("games") or []) if g.get("game_id") == game_id), None)
+    feed = live_feed() or {}
+    live = next((g for g in feed.get("games") or [] if g.get("game_id") == game_id), None)
     if live and live.get("state") == "in":
         return {"mode": "live", "text": live_text(live)}
 

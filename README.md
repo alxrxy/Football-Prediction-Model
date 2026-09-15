@@ -622,23 +622,34 @@ cd dashboard && npm run dev       # http://localhost:5174, proxies /api to the s
 python -m tests.test_props
 ```
 
+The NFL tab is a hub of full-page sections (the URL hash keeps your place:
+`#/nfl/games`, `#/nfl/game/<id>`, `#/nfl/props`, `#/nfl/live`, `#/nfl/record`):
+**Games** (every game of the week as a card; each opens a game page with the
+simulation, the baseline breakdown and Q&A), **Props**, **Live**, and
+**Record** (track record and backtest). Team names, colours and logos come
+from `dashboard/src/nflTeams.json`, written by `python -m src.export_team_meta`.
+The live page only trusts `live.json` while the tracker is writing it (10
+minutes), so a stopped tracker's old snapshot never shows a finished game as
+live.
+
 The one metered piece of the stack. The key is read from `Claude_API_KEY` in
 `.env`; the page never sees it. Three sections use it:
 
-- **Ask about this game**, in every game's dropdown. The question goes to the
+- **Ask about this game**, on every game page. The question goes to the
   local server, which sends Claude only that game's numbers as a few dozen
   lines of text (`src/game_context.py`): prediction, market, Stage 1 result,
   baseline pieces, injuries, simulation ranges, key players, ranked props.
   About 2¢ a question.
-- **Best props of the week**, on the NFL tab. Each prop line is devigged
+- **Props**, with its own Q&A about the week's list. Each prop line is devigged
   across books and compared with that player's simulated chance; ranked by
   the gap. Claude writes the explanations once per export (cached), not per
   page view. Gaps past 25 pp are held out as likely usage misses. See P17:
   the simulator doesn't yet model each player's own efficiency, so treat
   the list as a check on the simulator for now.
-- **Live games**, on the NFL tab. While the live tracker runs, each game in
-  progress shows the live re-projection, and its Q&A answers from the live
-  state (score, clock, field position, live win chance, projected finals).
+- **Live**. While the live tracker runs, each game in progress gets a
+  scoreboard, the live model's win chance over the game, projections, the
+  scoring log and key players, and a Q&A that answers from the live state
+  (score, clock, field position, live win chance, projected finals).
 
 Cost controls: `claude-opus-5` at low effort (`CLAUDE_API_MODEL`,
 `CLAUDE_API_EFFORT`), refusal fallbacks on, answers capped, 40 questions an
