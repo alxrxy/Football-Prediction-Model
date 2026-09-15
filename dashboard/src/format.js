@@ -52,3 +52,6 @@ export const edgeSide = (edge, home, away) => {
 }
 
 export const confidenceRank = { high: 3, medium: 2, low: 1 }
+
+// Colour for a correctness score, where 50 is parity with the market.
+export const tone = (score) => (score >= 53 ? 'good' : score < 47 ? 'bad' : '')

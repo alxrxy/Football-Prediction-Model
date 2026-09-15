@@ -161,6 +161,8 @@ def _pred(row: dict | None) -> dict | None:
         } if components.get("layer1_source") else None,
         "features": components.get("features"),
         "value_gate": components.get("value_gate"),
+        "market_edge": components.get("market_edge"),
+        "market_win_prob_home": components.get("market_win_prob_home"),
         "generated_at": row.get("generated_at"),
     }
 
@@ -230,10 +232,7 @@ def _results(store, sport: str) -> dict:
     """
     from .grade import correctness_score, evaluate
 
-    kickoffs = {
-        g["game_id"]: parse_dt(g.get("kickoff_time"))
-        for g in store.select("games", {"sport": sport})
-    }
+    games = {g["game_id"]: g for g in store.select("games", {"sport": sport})}
 
     graded = []
     for row in store.select("predictions", {"sport": sport}):
@@ -256,9 +255,8 @@ def _results(store, sport: str) -> dict:
         # before 11:00Z belongs to the previous day's slate.
         slates: dict[str, list] = {}
         for row in rows:
-            kickoff = kickoffs.get(row["game_id"])
-            if kickoff:
-                day = (kickoff - timedelta(hours=SLATE_START_UTC_HOUR)).date().isoformat()
+            day = _slate_day(games.get(row["game_id"]))
+            if day:
                 slates.setdefault(day, []).append(row)
         by_slate = []
         for day, day_rows in sorted(slates.items(), reverse=True):
@@ -285,7 +283,82 @@ def _results(store, sport: str) -> dict:
             "by_edge": {str(k): v for k, v in stats["by_edge"].items()},
             "by_conf": stats["by_conf"],
         }
-    return {"total_graded": len(graded), "models": out}
+    return {
+        "total_graded": len(graded),
+        "models": out,
+        "last_slate": _last_slate(graded, games),
+    }
+
+
+def _slate_day(game: dict | None) -> str | None:
+    """Same slate-day convention as the predictors: a kickoff before 11:00Z
+    belongs to the previous day's slate."""
+    kickoff = parse_dt((game or {}).get("kickoff_time"))
+    if kickoff is None:
+        return None
+    return (kickoff - timedelta(hours=SLATE_START_UTC_HOUR)).date().isoformat()
+
+
+def _last_slate(graded: list[dict], games: dict[str, dict]) -> dict | None:
+    """Every game of the most recent graded slate, both models side by side.
+
+    The full slate rather than a summary, so a bad week is on screen game by
+    game instead of disappearing into the cumulative numbers.
+    """
+    by_day: dict[str, dict[str, dict]] = {}
+    for row in graded:
+        day = _slate_day(games.get(row["game_id"]))
+        if day:
+            by_day.setdefault(day, {}).setdefault(row["game_id"], {})[row["model_version"]] = row
+    if not by_day:
+        return None
+
+    day = max(by_day)
+    out = []
+    for game_id, models in by_day[day].items():
+        game = games[game_id]
+        any_row = models.get(config.MODEL_VERSION) or next(iter(models.values()))
+        actual = any_row["actual_margin"]
+        market = any_row.get("market_spread")
+        out.append({
+            "game_id": game_id,
+            "kickoff": game.get("kickoff_time"),
+            "home": game["home_team"],
+            "away": game["away_team"],
+            "neutral": bool(game.get("is_neutral_site")),
+            "home_points": any_row["actual_home_points"],
+            "away_points": any_row["actual_away_points"],
+            "actual_margin": actual,
+            "market_spread": market,
+            "market_error": round(-float(market) - actual, 1) if market is not None else None,
+            "baseline": _graded_pick(models.get(config.MODEL_VERSION), actual),
+            "ml": _graded_pick(models.get("ml-v1"), actual),
+        })
+    out.sort(key=lambda g: g["kickoff"] or "")
+    return {"date": day, "games": out}
+
+
+def _graded_pick(row: dict | None, actual: int) -> dict | None:
+    """One model's result on one game, graded exactly as grade.evaluate does."""
+    if not row:
+        return None
+    edge, market = row.get("edge"), row.get("market_spread")
+    margin, prob = row.get("model_margin_home"), row.get("model_win_prob_home")
+
+    ats = None
+    if edge is not None and market is not None:
+        cover = actual + float(market)  # + => home covered
+        ats = "P" if cover == 0 else ("W" if (float(edge) > 0) == (cover > 0) else "L")
+    return {
+        "model_spread": row.get("model_spread"),
+        "edge": edge,
+        "lean": None if edge is None else ("home" if float(edge) > 0 else "away"),
+        "ats": ats,
+        "su": None if prob is None or actual == 0 else (float(prob) > 0.5) == (actual > 0),
+        "error": round(float(margin) - actual, 1) if margin is not None else None,
+        "confidence": row.get("confidence"),
+        "baseline_source": row.get("baseline_source"),
+    }
 
 
 def _calibration(games: list[dict]) -> dict:

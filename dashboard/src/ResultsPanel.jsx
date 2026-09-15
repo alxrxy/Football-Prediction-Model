@@ -1,3 +1,5 @@
+import { tone } from './format.js'
+
 const MODEL_LABELS = {
   'baseline-v1': 'Baseline',
   'ml-v1': 'ML model',
@@ -32,12 +34,6 @@ function erf(x) {
       t *
       Math.exp(-x * x)
   return sign * y
-}
-
-function tone(value) {
-  if (value >= 53) return 'good'
-  if (value < 47) return 'bad'
-  return ''
 }
 
 // One number for "how is it doing", benchmarked against the market rather
