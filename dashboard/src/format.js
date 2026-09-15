@@ -8,11 +8,21 @@ export const signed = (value, digits = 1) =>
 export const pct = (value) =>
   value === null || value === undefined ? '—' : `${Math.round(value * 100)}%`
 
-export const kickoffLabel = (iso) => {
+// withDay prefixes the weekday, for a slate that spans several days (an NFL week).
+export const kickoffLabel = (iso, withDay = false) => {
   if (!iso) return '—'
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return withDay ? `${date.toLocaleDateString([], { weekday: 'short' })} ${time}` : time
+}
+
+// "Thu, Sep 17", for a slate date (YYYY-MM-DD).
+export const shortDate = (iso) => {
+  if (!iso) return ''
+  const date = new Date(`${iso}T12:00:00Z`)
+  if (Number.isNaN(date.getTime())) return iso
+  return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
 export const dateLabel = (iso) => {
