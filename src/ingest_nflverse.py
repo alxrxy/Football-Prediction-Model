@@ -25,7 +25,7 @@ import math
 import warnings
 from datetime import datetime, timedelta, timezone
 
-from . import db, nfl_venues
+from . import config, db, nfl_venues, qb_prior
 
 warnings.filterwarnings("ignore")
 
@@ -223,7 +223,8 @@ def _epa_by_team(pbp):
     return off, deff
 
 
-def compute_ratings(season: int, week: int) -> list[dict]:
+def compute_ratings(season: int, week: int, schedules_all=None,
+                    qb_conditional: bool | None = None) -> list[dict]:
     """EPA-based power rating in points, blended across seasons."""
     nfl = _import()
     cols = ["season", "week", "season_type", "posteam", "defteam", "epa", "play_type", "game_id"]
@@ -237,6 +238,15 @@ def compute_ratings(season: int, week: int) -> list[dict]:
 
     off_c, def_c = _epa_by_team(current)
     off_p, def_p = _epa_by_team(prior)
+
+    if qb_conditional is None:
+        qb_conditional = config.QB_CONDITIONAL_PRIOR
+    if qb_conditional and schedules_all is not None:
+        off_p = condition_prior_offense(
+            off_p, prior,
+            qb_prior.game_starters(schedules_all[schedules_all["season"] == season - 1]),
+            qb_prior.expected_starters(schedules_all, season),
+        )
 
     teams = sorted(set(off_c.index) | set(off_p.index))
     rows = []
@@ -291,6 +301,30 @@ def _blend(current, prior, team):
     return weight * cur_mean + (1 - weight) * pri_mean
 
 
+def condition_prior_offense(off_p, prior_pbp, prior_starters: dict, expected: dict[str, str],
+                            verbose: bool = True):
+    """P13: each team's prior-season offense from the games its expected
+    starter started for it (src/qb_prior.py). A team whose starter started
+    fewer than qb_prior.MIN_STARTS of its games keeps the whole season."""
+    plays = prior_pbp[prior_pbp["play_type"].isin(["pass", "run"]) & prior_pbp["posteam"].notna()]
+    off_p = off_p.copy()
+    moved = []
+    for team, qb in sorted(expected.items()):
+        if team not in off_p.index:
+            continue
+        cond = qb_prior.conditional_offense(plays, prior_starters, team, qb)
+        if cond is None:
+            continue
+        before = float(off_p.loc[team, "mean"])
+        off_p.loc[team, "mean"] = cond[0]
+        moved.append((team, (cond[0] - before) * PRIOR_SEASON_REGRESSION * PLAYS_PER_GAME))
+    if verbose:
+        big = ", ".join(f"{t} {d:+.1f}" for t, d in sorted(moved, key=lambda m: -abs(m[1])) if abs(d) >= 0.5)
+        print(f"  QB-conditional prior: {len(moved)} of {len(off_p)} teams conditioned; "
+              f"prior moved >= 0.5 pts: {big or 'none'}")
+    return off_p
+
+
 def compute_elo(schedules_all, season: int, week: int) -> dict[str, float]:
     """Conventional margin-aware Elo over completed games.
 
@@ -330,7 +364,7 @@ def compute_elo(schedules_all, season: int, week: int) -> dict[str, float]:
 
 
 def ingest_ratings(store: db.Store, schedules_all, season: int, week: int) -> int:
-    rows = compute_ratings(season, week)
+    rows = compute_ratings(season, week, schedules_all)
     elo = compute_elo(schedules_all, season, week)
     for row in rows:
         row["elo"] = round(elo.get(row["team"], ELO_START), 1)

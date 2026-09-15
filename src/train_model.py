@@ -48,10 +48,10 @@ MARKET_FEATURES = FUNDAMENTAL_FEATURES + ["market_spread", "market_total"]
 N_COMPARISONS = 10
 
 
-def load(sport: str):
+def load(sport: str, path=None):
     import pandas as pd
 
-    path = config.DATA_DIR / f"training_{sport}.csv"
+    path = Path(path) if path else config.DATA_DIR / f"training_{sport}.csv"
     if not path.exists():
         raise SystemExit(
             f"{path} not found. Run: python -m src.build_training --sport {sport}"
@@ -65,12 +65,12 @@ def load(sport: str):
     return df
 
 
-def train(sport: str, holdout_season: int | None = None):
+def train(sport: str, holdout_season: int | None = None, path=None, save: bool = True):
     import numpy as np
     import pandas as pd
     import xgboost as xgb
 
-    df = load(sport)
+    df = load(sport, path)
     seasons = sorted(df["season"].unique())
     holdout_season = holdout_season or seasons[-1]
 
@@ -123,10 +123,16 @@ def train(sport: str, holdout_season: int | None = None):
             verbose=False,
         )
         pred = model.predict(sub_test[feats])
+        # Weeks 1-4 separately: that is where the prior season carries the
+        # rating, and where a stale or QB-blind prior shows up (P5, P13).
+        early = (sub_test["week"] <= 4).to_numpy()
         results[name] = {
             "mae": float(np.mean(np.abs(pred - sub_test["target_margin"]))),
             "rmse": float(np.sqrt(np.mean((pred - sub_test["target_margin"]) ** 2))),
             "n": int(len(sub_test)),
+            "mae_wk1_4": (float(np.mean(np.abs(pred[early] - sub_test["target_margin"].to_numpy()[early])))
+                          if early.any() else None),
+            "n_wk1_4": int(early.sum()),
             "best_iteration": int(model.best_iteration),
         }
         models[name] = (model, feats, sub_test, pred)
@@ -136,12 +142,18 @@ def train(sport: str, holdout_season: int | None = None):
     market_pred = -bench["market_spread"]  # implied home margin
     market_mae = float(np.mean(np.abs(market_pred - bench["target_margin"])))
 
+    early = bench[bench["week"] <= 4]
+    market_early = float(np.mean(np.abs(-early["market_spread"] - early["target_margin"]))) if len(early) else None
+
     print("\n  holdout accuracy (mean absolute error, points of margin)")
-    print(f"    {'closing line':<16} {market_mae:6.3f}   <- the benchmark to beat")
+    print(f"    {'closing line':<16} {market_mae:6.3f}   <- the benchmark to beat"
+          + (f"   weeks 1-4: {market_early:6.3f}" if market_early is not None else ""))
     for name, r in results.items():
         delta = r["mae"] - market_mae
         verdict = "beats the line" if delta < 0 else "worse than the line"
-        print(f"    {name:<16} {r['mae']:6.3f}   {delta:+.3f} vs line  ({verdict})")
+        wk = (f"   weeks 1-4: {r['mae_wk1_4']:6.3f} (n={r['n_wk1_4']})"
+              if r.get("mae_wk1_4") is not None else "")
+        print(f"    {name:<16} {r['mae']:6.3f}   {delta:+.3f} vs line  ({verdict}){wk}")
 
     # Both models get an ATS test. The with_market model was originally
     # assumed useless for value because it merely copies the line - true while
@@ -157,7 +169,7 @@ def train(sport: str, holdout_season: int | None = None):
 
     # The fundamentals model is the one that ships: it is the only one that
     # can disagree with the market, which is what a value signal requires.
-    if "fundamentals" in models:
+    if save and "fundamentals" in models:
         model, feats, _, _ = models["fundamentals"]
         _save(sport, model, feats, results, market_mae, ats, holdout_season,
               ats_by_model)

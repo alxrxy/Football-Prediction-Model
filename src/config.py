@@ -77,6 +77,13 @@ MODEL_MARKET_WEIGHT = float(os.getenv("MODEL_MARKET_WEIGHT", "0.15"))
 EDGE_BUFFER = float(os.getenv("EDGE_BUFFER", "0.03"))
 DEVIG_METHOD = os.getenv("DEVIG_METHOD", "shin").strip().lower()
 
+# P13: take the NFL prior-season offense from the expected starting
+# quarterback's games (src/qb_prior.py), in both the baseline rating and the
+# ML replay. Off until it passes its adoption test (calibration-log.md). The
+# ML model must be retrained whenever this changes, or it is served features
+# built differently from the ones it was trained on.
+QB_CONDITIONAL_PRIOR = os.getenv("QB_CONDITIONAL_PRIOR", "0").strip().lower() in ("1", "true", "yes")
+
 # --- API bases ---
 CFBD_BASE = "https://api.collegefootballdata.com"
 ODDS_BASE = "https://api.the-odds-api.com/v4"

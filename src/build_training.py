@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from . import config, db
 from .ingest_cfbd import _get as cfbd_get
 from .features import haversine_miles
+from .qb_prior import MIN_STARTS, qb_id
 
 warnings.filterwarnings("ignore")
 
@@ -85,13 +86,40 @@ class RollingEpa:
         self.def_sum: dict[str, float] = {}
         self.def_n: dict[str, float] = {}
         self.season: int | None = None
+        # team -> [(starting qb, offensive epa sum, plays)] per game, this
+        # season and last, for the quarterback-conditional prior (P13).
+        self.games: dict[str, list[tuple[str | None, float, float]]] = {}
+        self.last_games: dict[str, list[tuple[str | None, float, float]]] = {}
+        self.conditioned: set[str] = set()
 
     def start_season(self, season: int) -> None:
         if self.season is not None and season != self.season:
             for store in (self.off_sum, self.off_n, self.def_sum, self.def_n):
                 for team in store:
                     store[team] *= EPA_SEASON_CARRY
+            self.last_games, self.games = self.games, {}
+            self.conditioned = set()
         self.season = season
+
+    def condition_on_starter(self, team: str, qb: str | None) -> None:
+        """At a team's first game of a season, restate the carried share of
+        last season's offense at the mean of the games this game's starter
+        started for it (src/qb_prior.py). Volume is unchanged, so only the
+        carried rating moves, not how fast this season outweighs it."""
+        if team in self.conditioned:
+            return
+        self.conditioned.add(team)
+        last = self.last_games.get(team, [])
+        mine = [(s, n) for q, s, n in last if qb is not None and q == qb]
+        if len(mine) < MIN_STARTS:
+            return
+        q_n = sum(n for _, n in mine)
+        if not q_n:
+            return
+        last_sum = sum(s for _, s, _ in last)
+        last_n = sum(n for _, _, n in last)
+        q_mean = sum(s for s, _ in mine) / q_n
+        self.off_sum[team] = self.off_sum.get(team, 0.0) + EPA_SEASON_CARRY * (last_n * q_mean - last_sum)
 
     def rating(self, team: str) -> float:
         """Net EPA per play, shrunk toward 0 when the sample is thin."""
@@ -102,7 +130,9 @@ class RollingEpa:
         shrink = min(off_n, def_n) / (min(off_n, def_n) + EPA_PRIOR_PLAYS)
         return (off - dfn) * shrink
 
-    def update(self, team: str, epa_sum: float, plays: float, allowed_sum: float, allowed_plays: float) -> None:
+    def update(self, team: str, epa_sum: float, plays: float, allowed_sum: float, allowed_plays: float,
+               qb: str | None = None) -> None:
+        self.games.setdefault(team, []).append((qb, epa_sum, plays))
         self.off_sum[team] = self.off_sum.get(team, 0.0) + epa_sum
         self.off_n[team] = self.off_n.get(team, 0.0) + plays
         self.def_sum[team] = self.def_sum.get(team, 0.0) + allowed_sum
@@ -111,9 +141,12 @@ class RollingEpa:
 
 # --- NFL -------------------------------------------------------------------
 
-def build_nfl(seasons: list[int]) -> tuple[list[dict], RollingElo, RollingEpa]:
+def build_nfl(seasons: list[int], qb_conditional: bool | None = None) -> tuple[list[dict], RollingElo, RollingEpa]:
     import nfl_data_py as nfl
     from .nfl_venues import lookup as venue_lookup
+
+    if qb_conditional is None:
+        qb_conditional = config.QB_CONDITIONAL_PRIOR
 
     schedules = nfl.import_schedules(seasons)
     schedules = schedules[schedules["home_score"].notna()].copy()
@@ -143,6 +176,11 @@ def build_nfl(seasons: list[int]) -> tuple[list[dict], RollingElo, RollingEpa]:
         epa.start_season(season)
         home, away = str(g["home_team"]), str(g["away_team"])
         neutral = str(g.get("location")) == "Neutral"
+        # The starter is known at kickoff, so conditioning on him is no leak.
+        home_starter, away_starter = qb_id(g.get("home_qb_id")), qb_id(g.get("away_qb_id"))
+        if qb_conditional:
+            epa.condition_on_starter(home, home_starter)
+            epa.condition_on_starter(away, away_starter)
 
         venue = venue_lookup(g.get("stadium"))
         travel_away = _travel(home_coords.get(away), venue)
@@ -185,8 +223,8 @@ def build_nfl(seasons: list[int]) -> tuple[list[dict], RollingElo, RollingEpa]:
         gid = str(g["game_id"])
         h_sum, h_n = game_epa.get((gid, home), (0.0, 0.0))
         a_sum, a_n = game_epa.get((gid, away), (0.0, 0.0))
-        epa.update(home, h_sum, h_n, a_sum, a_n)
-        epa.update(away, a_sum, a_n, h_sum, h_n)
+        epa.update(home, h_sum, h_n, a_sum, a_n, qb=home_starter)
+        epa.update(away, a_sum, a_n, h_sum, h_n, qb=away_starter)
 
     # The rating objects are returned alongside the rows so live prediction can
     # reuse the exact same end state. Rebuilding ratings by a second, separate
@@ -415,19 +453,21 @@ FIELDS = [
 ]
 
 
-def run(sport: str, start: int, end: int | None = None) -> str:
+def run(sport: str, start: int, end: int | None = None, path=None,
+        qb_conditional: bool | None = None) -> str:
     import csv
 
     end = end or datetime.now(timezone.utc).year
     seasons = list(range(start, end + 1))
     print(f"[training] {sport} {start}-{end}, walk-forward features only")
 
-    rows, _elo, _epa = build_nfl(seasons) if sport == "nfl" else build_ncaaf(seasons)
+    rows, _elo, _epa = (build_nfl(seasons, qb_conditional) if sport == "nfl"
+                        else build_ncaaf(seasons))
     for row in rows:
         row.setdefault("both_fbs", 1)
 
     config.ensure_dirs()
-    path = config.DATA_DIR / f"training_{sport}.csv"
+    path = path or config.DATA_DIR / f"training_{sport}.csv"
     with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=FIELDS)
         writer.writeheader()
