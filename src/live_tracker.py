@@ -527,6 +527,7 @@ class Tracker:
         self.live_history: dict[str, list[dict]] = {}
         self.local_tables: set[str] = set()  # tables written to the local mirror this session
         self.cycle_seconds = 0.0
+        self.finals_this_cycle = 0
         self.pregame: dict[str, Pregame] = {}
         self.seen_flags: dict[str, dict[str, str]] = {}
         self.history: dict[str, list[dict]] = {}
@@ -637,10 +638,9 @@ class Tracker:
 
     def _simulation(self, game: dict, pg: Pregame):
         gid = game["game_id"]
-        try:
-            rows = self.store.select("game_simulations", {"game_id": gid})
-        except Exception:  # noqa: BLE001 - table not created yet
-            rows = []
+        # Hosted store first, then the local mirror, where simulate_nfl writes
+        # while the hosted table is missing.
+        rows = self._select_any("game_simulations", {"game_id": gid})
         for row in sorted(rows, key=lambda r: str(r.get("generated_at")), reverse=True):
             dist = _json(row.get("distributions")) or {}
             if dist.get("pace"):
@@ -728,6 +728,7 @@ class Tracker:
 
         rows, live_rows = [], []
         started = time.perf_counter()
+        self.finals_this_cycle = 0
         for s in states:
             try:
                 row, live_row = self._process(s)
@@ -743,6 +744,15 @@ class Tracker:
         self._write("live_tracking", rows)
         self._write("live_simulations", live_rows)
         self._export()
+        if self.finals_this_cycle:
+            # A game just ended: refresh the dashboard's game view so its
+            # actual result sits beside the projections without a manual export.
+            try:
+                from .export_sims import run as export_sims
+
+                export_sims(quiet=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"  [warn] could not refresh sims.json: {type(exc).__name__}: {exc}")
         self._status_line(states)
 
     def _process(self, s: LiveState) -> tuple[dict | None, dict | None]:
@@ -783,6 +793,7 @@ class Tracker:
                 self._announce(s, f["message"], f["level"])
         else:
             self.finalized.add(gid)
+            self.finals_this_cycle += 1
             self._final_line(s, pg)
 
         level = max((f["level"] for f in ev["flags"]), key=LEVEL_RANK.get, default=None)

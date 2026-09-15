@@ -1,3 +1,4 @@
+import SimDetail from './SimDetail.jsx'
 import { signed, spreadLabel } from './format.js'
 
 // The per-game breakdown (architecture section 6): where the number came from,
@@ -154,6 +155,8 @@ export default function GameDetail({ game }) {
           )}
         </section>
       </div>
+      {/* NFL games only; renders nothing for college ids. */}
+      <SimDetail gameId={game.game_id} />
     </div>
   )
 }

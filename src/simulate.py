@@ -88,6 +88,31 @@ class LiveStart:
     pending_conversion: int | None = None   # side whose PAT / two-point try is still to come
 
 
+STAT_NAMES = ("pass_att", "pass_cmp", "pass_yds", "pass_td", "pass_int",
+              "rush_att", "rush_yds", "rush_td", "tgt", "rec", "rec_yds", "rec_td")
+
+
+@dataclass
+class PlayerPool:
+    """One side's skill players, for crediting each simulated play.
+
+    `cum` holds cumulative usage shares per category (car_gl / car_rz /
+    car_all by field zone; tgt_rz, tgt_short, tgt_deep for targets), and
+    `passer_weights` how likely each player is to be a simulated game's
+    quarterback. Built by box_score.player_pool.
+    """
+
+    names: list[str]
+    cum: dict[str, np.ndarray]
+    passer_weights: np.ndarray
+
+    def pick(self, category: str, u: np.ndarray) -> np.ndarray:
+        c = self.cum[category]
+        if c[-1] <= 0:
+            return np.full(len(u), -1)
+        return np.minimum(np.searchsorted(c, u * c[-1], side="right"), len(c) - 1)
+
+
 @dataclass
 class SimResult:
     points: np.ndarray        # (n, 2) home, away
@@ -99,6 +124,7 @@ class SimResult:
     possessions: np.ndarray   # (n, 2)
     tilt: tuple[float, float]
     checkpoints: np.ndarray   # (n, len(CHECKPOINTS), 2) score at each checkpoint
+    players: tuple | None = None   # per side {stat: (n, players)}, when pools were given
 
 
 def solve_tilt(epa: np.ndarray, base: np.ndarray, target: float) -> float:
@@ -150,7 +176,7 @@ class _Sampler:
 
 class _Game:
     def __init__(self, tables: SimTables, home: Offense, away: Offense,
-                 n: int, seed: int, wind_mph: float):
+                 n: int, seed: int, wind_mph: float, pools: tuple | None = None):
         self.t = tables
         self.rng = np.random.default_rng(seed)
         self.samplers = (_sampler(tables, home), _sampler(tables, away))
@@ -168,6 +194,23 @@ class _Game:
         self.second_half_receiver = np.zeros(n, dtype=np.int32)
         self.cp_points = z(n, len(CHECKPOINTS), 2)
         self.cp_next = np.ones(n, dtype=np.int32)   # checkpoint 0 is 0-0 by definition
+
+        self.pools = pools
+        self.pstats = self.passer = None
+        if pools is not None:
+            if tables.stat_yards is None:
+                raise ValueError("these tables carry no per-play stats; rebuild them to track players")
+            self.pstats = tuple({k: np.zeros((n, len(p.names)), dtype=np.int32) for k in STAT_NAMES}
+                                for p in pools)
+            self.passer = tuple(self._passers(p) for p in pools)
+
+    def _passers(self, pool: PlayerPool) -> np.ndarray:
+        """Each simulated game's quarterback, drawn once per game: if the
+        starter is doubtful, some simulations are played by his backup."""
+        w = np.asarray(pool.passer_weights, dtype=float)
+        if w.sum() <= 0:
+            return np.full(self.n, -1)
+        return self.rng.choice(len(w), self.n, p=w / w.sum())
 
     def _record_checkpoints(self):
         last = len(CHECKPOINTS) - 1
@@ -347,6 +390,8 @@ class _Game:
         otd = ~dtd & ~lost & (t.off_td[rows] | (new <= 0))
         safety = ~dtd & ~lost & ~otd & (new >= 100)
         cont = ~dtd & ~lost & ~otd & ~safety
+        if self.pools is not None:
+            self._credit(ix, rows, off, yl, otd)
 
         if dtd.any():
             i, side = ix[dtd], 1 - off[dtd]
@@ -391,6 +436,72 @@ class _Game:
                 j = i[downs]
                 self._end(j)
                 self._start(j, 1 - self.off[j], 100 - nc[downs])
+
+    # --- player stats -----------------------------------------------------
+
+    @staticmethod
+    def _add(stats, key, sims, who, value):
+        # Each simulated game contributes at most one play per snap, so the
+        # (game, player) pairs here are unique and plain fancy-index += is exact.
+        ok = who >= 0
+        if ok.any():
+            stats[key][sims[ok], who[ok]] += np.broadcast_to(value, who.shape)[ok]
+
+    def _pick(self, pool: PlayerPool, cats: tuple, masks: tuple) -> np.ndarray:
+        who = np.full(len(masks[0]), -1)
+        u = self.rng.random(len(who))
+        for cat, sel in zip(cats, masks):
+            if sel.any():
+                who[sel] = pool.pick(cat, u[sel])
+        return who
+
+    def _credit(self, ix, rows, off, yl, otd):
+        """Credit each snap to players.
+
+        A designed run goes to a ball carrier by carry share for its field
+        zone (goal line, red zone, open field); a scramble and every pass
+        attempt to that simulated game's quarterback; a target to a receiver
+        by red-zone, short or deep target share. Yards are the play's
+        official yards, capped short of the goal line, and exactly the
+        distance to it on a touchdown, which is credited on the play itself.
+        """
+        t = self.t
+        yards = np.where(otd, yl, np.minimum(t.stat_yards[rows].astype(np.int32), yl - 1))
+        live = ~t.is_penalty[rows]
+        for side in (0, 1):
+            pool, st, passer = self.pools[side], self.pstats[side], self.passer[side]
+            m = live & (off == side)
+            if not m.any():
+                continue
+            sims, r, yds, td, z = ix[m], rows[m], yards[m], otd[m].astype(np.int32), yl[m]
+
+            run = t.is_rush[r] & ~t.scramble[r]
+            if run.any():
+                zr = z[run]
+                who = self._pick(pool, ("car_gl", "car_rz", "car_all"),
+                                 (zr <= 5, (zr > 5) & (zr <= 20), zr > 20))
+                for key, v in (("rush_att", 1), ("rush_yds", yds[run]), ("rush_td", td[run])):
+                    self._add(st, key, sims[run], who, v)
+
+            scr = t.scramble[r]
+            if scr.any():
+                who = passer[sims[scr]]
+                for key, v in (("rush_att", 1), ("rush_yds", yds[scr]), ("rush_td", td[scr])):
+                    self._add(st, key, sims[scr], who, v)
+
+            att = t.attempt[r]
+            if att.any():
+                s_, ra, za = sims[att], r[att], z[att]
+                comp = t.complete[ra].astype(np.int32)
+                gained, scored = yds[att] * comp, td[att] * comp
+                qb = passer[s_]
+                for key, v in (("pass_att", 1), ("pass_cmp", comp), ("pass_yds", gained),
+                               ("pass_td", scored), ("pass_int", t.interception[ra].astype(np.int32))):
+                    self._add(st, key, s_, qb, v)
+                rz, deep = za <= 20, t.deep[ra]
+                who = self._pick(pool, ("tgt_rz", "tgt_deep", "tgt_short"), (rz, ~rz & deep, ~rz & ~deep))
+                for key, v in (("tgt", 1), ("rec", comp), ("rec_yds", gained), ("rec_td", scored)):
+                    self._add(st, key, s_, who, v)
 
     def _overtime_over(self):
         """Both sides have had the ball and someone is ahead."""
@@ -459,15 +570,17 @@ class _Game:
             points=self.points, tds=self.tds, fgs=self.fgs, td_events=self.td_events,
             return_tds=self.ret_tds, overtime=self.overtime, possessions=self.possessions,
             tilt=(self.samplers[0].lam, self.samplers[1].lam), checkpoints=self.cp_points,
+            players=self.pstats,
         )
 
 
 def simulate_game(tables: SimTables, home: Offense, away: Offense,
                   n: int = 10_000, seed: int = 0, wind_mph: float = 0.0,
-                  start: LiveStart | None = None) -> SimResult:
+                  start: LiveStart | None = None, pools: tuple | None = None) -> SimResult:
     """Simulate from kickoff, or with `start` from a game already under way
-    (same engine, same team strengths; only the initial state differs)."""
-    return _Game(tables, home, away, n, seed, wind_mph).run(start)
+    (same engine, same team strengths; only the initial state differs).
+    With `pools` (home, away), every play is also credited to players."""
+    return _Game(tables, home, away, n, seed, wind_mph, pools).run(start)
 
 
 # --- summaries -------------------------------------------------------------

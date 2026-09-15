@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from src import db
-from src.sim_data import N_BUCKETS, N_PUNT_BINS, SimTables, bucket_index
+from src.sim_data import N_BUCKETS, N_PUNT_BINS, USAGE_CATEGORIES, SimTables, bucket_index
 from src.simulate import Offense, allocate_scorers, simulate_game, solve_tilt, summarize
 from src.simulate_nfl import injury_split, team_shares
 
@@ -150,7 +150,7 @@ def test_summary_shapes():
 
 
 def _roles():
-    cats = dict(tgt_all=0.0, tgt_rz=0.0, car_all=0.0, car_rz=0.0, car_gl=0.0)
+    cats = {c: 0.0 for c in USAGE_CATEGORIES}
     rows = [
         dict(team="KC", player="Starter Back", position="RB", rank=1, **{**cats, "car_all": 0.6, "car_gl": 0.7}),
         dict(team="KC", player="Backup Back", position="RB", rank=2, **{**cats, "car_all": 0.2, "car_gl": 0.1}),

@@ -34,7 +34,7 @@ warnings.filterwarnings("ignore")
 
 POOL_SEASONS = (2023, 2024, 2025)
 KICKOFF_SEASONS = (2025,)
-TABLES_VERSION = 2
+TABLES_VERSION = 3
 
 # --- situation buckets -----------------------------------------------------
 # down: 1st, 2nd, 3rd/4th (a 4th-down attempt is drawn from the same pool as a
@@ -59,8 +59,13 @@ FOURTH_SMOOTHING = 5.0    # pseudo-attempts borrowed from the same field bin
 GO, FG, PUNT = 0, 1, 2
 
 # --- player usage ----------------------------------------------------------
-USAGE_CATEGORIES = ("tgt_all", "tgt_rz", "car_all", "car_rz", "car_gl")
+# tgt_short / tgt_deep split targets outside the red zone by air yards, so a
+# simulated deep throw goes to the players who actually get deep targets and a
+# check-down to the backs, rather than every receiver drawing the same yards.
+USAGE_CATEGORIES = ("tgt_all", "tgt_rz", "car_all", "car_rz", "car_gl", "tgt_short", "tgt_deep")
 RZ_YL, GL_YL = 20, 5
+DEEP_AIR_YARDS = 10
+K_DEPTH = 15.0
 # Red-zone and goal-line samples are small (a team runs ~30 goal-line carries a
 # season), so each is shrunk toward the player's broader share by this many
 # team opportunities' worth of prior. A back with 3 of 4 goal-line carries is
@@ -98,6 +103,7 @@ PBP_COLUMNS = [
     "two_point_attempt", "two_point_conv_result", "own_kickoff_recovery",
     "wind", "roof", "receiver_player_id", "rusher_player_id",
     "passer_player_id", "wp", "pass_oe",
+    "complete_pass", "qb_scramble", "air_yards",
 ]
 
 
@@ -146,6 +152,16 @@ class SimTables:
 
     league_epa: float         # mean EPA per play of the library, unweighted
     meta: dict = field(default_factory=dict)
+
+    # Box-score detail per play, for crediting players (None in tables that
+    # predate it). stat_yards is the official yards_gained, unlike `yards`,
+    # which is the net change in field position, penalties included.
+    stat_yards: np.ndarray | None = None
+    complete: np.ndarray | None = None
+    attempt: np.ndarray | None = None       # pass attempt; sacks and scrambles excluded
+    scramble: np.ndarray | None = None
+    interception: np.ndarray | None = None
+    deep: np.ndarray | None = None          # air yards >= DEEP_AIR_YARDS
 
     def base_weights(self, pass_rate_oe: float) -> np.ndarray:
         """Resample weights that shift the run/pass mix by a team's tendency.
@@ -206,8 +222,12 @@ def load_pbp(seasons, refresh: bool = False) -> pd.DataFrame:
         path = config.CACHE_DIR / f"sim_pbp_{season}.parquet"
         final = season <= _final_season()
         if final and path.exists() and not refresh:
-            frames.append(pd.read_parquet(path))
-            continue
+            cached = pd.read_parquet(path)
+            # A cache written before a column joined PBP_COLUMNS lacks it;
+            # re-download rather than hand back a frame that is silently short.
+            if set(PBP_COLUMNS) <= set(cached.columns):
+                frames.append(cached)
+                continue
         try:
             df = nfl.import_pbp_data([season], columns=PBP_COLUMNS, downcast=True, cache=False)
         except Exception as exc:  # noqa: BLE001
@@ -265,6 +285,14 @@ def _scrimmage(s: pd.DataFrame) -> pd.DataFrame:
     p["pen"] = p["play_type"] == "no_play"
     p["drop"] = (p["pass"] == 1) & ~p["pen"]
     p["run"] = ~p["drop"] & ~p["pen"]
+    # nflverse records a scramble as a run (rush_attempt, not pass_attempt)
+    # and a sack as a pass attempt; the box score counts neither as a pass.
+    p["stat_y"] = p["yards_gained"].fillna(0).clip(-40, 99).astype(np.int16)
+    p["scr"] = (p["qb_scramble"] == 1) & ~p["pen"]
+    p["cmp"] = (p["complete_pass"] == 1) & ~p["pen"]
+    p["att"] = (p["pass_attempt"] == 1) & (p["sack"] != 1) & ~p["scr"] & ~p["pen"]
+    p["int"] = (p["interception"] == 1) & p["att"]
+    p["deep"] = p["air_yards"].fillna(0) >= DEEP_AIR_YARDS
     p["bucket"] = bucket_index(p["down"].astype(int), p["ydstogo"].astype(int), yl)
     return p.sort_values("bucket", kind="stable").reset_index(drop=True)
 
@@ -411,6 +439,12 @@ def build_tables(refresh: bool = False) -> SimTables:
         two_pt_success=float((two["two_point_conv_result"] == "success").mean()),
         fourth=_fourth_downs(s),
         league_epa=float(p["epa"].mean()),
+        stat_yards=p["stat_y"].to_numpy(np.int16),
+        complete=p["cmp"].to_numpy(bool),
+        attempt=p["att"].to_numpy(bool),
+        scramble=p["scr"].to_numpy(bool),
+        interception=p["int"].to_numpy(bool),
+        deep=p["deep"].to_numpy(bool),
         meta={
             "pool_seasons": list(POOL_SEASONS),
             "kickoff_seasons": list(KICKOFF_SEASONS),
@@ -436,10 +470,14 @@ def _usage_events(pbp: pd.DataFrame) -> pd.DataFrame:
     ru = pbp[(pbp["rush_attempt"] == 1) & pbp["rusher_player_id"].notna()]
     ev = pd.concat([
         pd.DataFrame({"season": tg["season"], "game_id": tg["game_id"], "team": tg["posteam"],
-                      "pid": tg["receiver_player_id"], "tgt": 1, "yl": tg["yardline_100"]}),
+                      "pid": tg["receiver_player_id"], "tgt": 1, "yl": tg["yardline_100"],
+                      "air": tg["air_yards"]}),
         pd.DataFrame({"season": ru["season"], "game_id": ru["game_id"], "team": ru["posteam"],
-                      "pid": ru["rusher_player_id"], "tgt": 0, "yl": ru["yardline_100"]}),
+                      "pid": ru["rusher_player_id"], "tgt": 0, "yl": ru["yardline_100"], "air": 0.0}),
     ], ignore_index=True)
+    deep = ev["air"].fillna(0) >= DEEP_AIR_YARDS
+    ev["tgt_short"] = ev["tgt"] * ~deep
+    ev["tgt_deep"] = ev["tgt"] * deep
     car = 1 - ev["tgt"]
     ev["tgt_all"] = ev["tgt"]
     ev["tgt_rz"] = ev["tgt"] * (ev["yl"] <= RZ_YL)
@@ -481,6 +519,8 @@ def usage_rates(pbp: pd.DataFrame, current_season: int) -> pd.DataFrame:
     out["tgt_rz"] = (num["tgt_rz"] + K_RZ * out["tgt_all"]) / (den["tgt_rz"] + K_RZ)
     out["car_rz"] = (num["car_rz"] + K_RZ * out["car_all"]) / (den["car_rz"] + K_RZ)
     out["car_gl"] = (num["car_gl"] + K_GL * out["car_rz"]) / (den["car_gl"] + K_GL)
+    for c in ("tgt_short", "tgt_deep"):
+        out[c] = (num[c] + K_DEPTH * out["tgt_all"]) / (den[c] + K_DEPTH)
     out["games"] = games.reindex(out.index).fillna(0.0)
     out["rz_targets"] = num["tgt_rz"]
     out["gl_carries"] = num["car_gl"]

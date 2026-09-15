@@ -43,3 +43,4 @@ models/*.json
 dashboard/dist/
 dashboard/public/data.json
 dashboard/public/live.json
+dashboard/public/sims.json
