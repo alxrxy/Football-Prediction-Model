@@ -146,10 +146,10 @@ cd dashboard && npm run build
 python -m src.export_static_dashboard
 ```
 
-The backtest sits beside the picks rather than behind a tab, and games past the
-baseline's fixed threshold are labelled `unvalidated` rather than `value` — the
-trained model's value gate is separate, reported in the backtest panel, and
-currently shut.
+The backtest sits beside the picks rather than behind a tab, and games that pass
+the Stage 1 edge test (below) are labelled `unvalidated` rather than `value`
+until closing line value backs them. The trained model's value gate is
+separate, reported in the backtest panel, and currently shut.
 
 ## Grading
 
@@ -177,6 +177,62 @@ piece that will eventually let the value gate open honestly — or confirm it
 should stay shut.
 
 Run `python -m tests.test_grade` for the grading maths (20 hand-computed cases).
+
+## Value flags and closing line value (Stage 1)
+
+```bash
+python -m src.clv                  # fill closing lines for finished games, report CLV
+python -m src.clv --report         # report only, no ESPN calls
+python -m src.clv --backfill       # log leans for predictions made before clv_log existed
+python calibration/stage1_before_after.py calibration/<date>_stage1_before_after.md
+python -m tests.test_market && python -m tests.test_clv
+```
+
+A game used to be flagged when the model's margin sat 2+ points from the
+market's. That flagged most of the slate and faded the sharpest number
+available whenever the model was wrong: the pregame flags went 15-25. The flag
+is now decided in probability space (`src/market.py`), following Stage 1 of
+`nfl-modeling-research.md`:
+
+1. **Devig.** Each book's spread is devigged from both sides' prices (Shin by
+   default; `odds_ratio` and `log` are also available via `DEVIG_METHOD`),
+   restated at the consensus line, and the median taken. Pinnacle is used on
+   its own if `ODDS_BOOKMAKERS` brings it in. Restating across lines uses the
+   real distribution of margins near that spread, so a half point across 3 or
+   7 counts for more than one across 5. With no stored prices the line is
+   taken at −110 both ways.
+2. **Blend.** The model's cover probability is combined with the market's in
+   log-odds space, `logit p = w·logit p_model + (1−w)·logit p_market`, with
+   `w = MODEL_MARKET_WEIGHT = 0.15`.
+3. **Buffer.** A game is flagged only when the lean side's blended cover
+   probability beats the break-even of its price (52.4% at −110) by
+   `EDGE_BUFFER = 3` pp.
+
+At w = 0.15 a flag takes about an 11-point disagreement in the NFL (about 14 in
+college) on a −110 line, so almost nothing flags. That is intended: the model
+hasn't shown it knows something the line doesn't. `w` should rise only when
+closing line value says it has.
+
+**Closing line value.** Every lean, flagged or not, goes into `clv_log` at
+prediction time with the lean side's vig-free probability. After the game, the
+close is taken from ESPN's pickcenter (DraftKings' closing line and prices,
+free, both sports), devigged the same way and restated at the lean's line:
+`clv_pp = p_close − p_market`. `python -m src.grade` fills it in and prints the
+report. Leans made after kickoff, and closes implausibly far from the stored
+line (bad line data, not movement), are kept but left out of the means. CLV
+becomes readable at ~50–65 leans, far sooner than an ATS record. The research's
+rule is to keep `w` at 0 if it's negative by then.
+
+**Prices.** `ingest_odds` keeps both sides' prices in `odds_snapshots`
+(append-only, pregame pulls only). It no longer stores in-play prices at all: a
+game that has kicked off keeps its last pregame line, which is its close.
+
+**Two new tables**, `odds_snapshots` and `clv_log`. Re-paste
+`db/PASTE_INTO_SUPABASE.sql` into the Supabase SQL Editor, then push what the
+local mirror collected in the meantime:
+`python -m src.sync_to_supabase --tables odds_snapshots clv_log`. Until then
+both are written to, and read back from, the local SQLite mirror, with a
+warning.
 
 ## Game simulation (NFL)
 
@@ -313,6 +369,64 @@ of the game. It is pinned to the stored pregame prediction, so its centre is
 still the pregame number. If `live_tracking` is missing from Supabase,
 snapshots go to the local SQLite mirror for the session, with a warning, rather
 than being lost.
+
+### Player projections and the game view
+
+```bash
+python -m src.simulate_nfl --date 2026-09-13 2026-09-20 --quiet   # simulate slates
+python -m src.export_sims                                         # refresh the game view's data
+python -m tests.test_box_score
+```
+
+Every simulation, pregame and live, now tracks full stat lines. Each simulated
+play is credited to players as it happens:
+
+- a designed run goes to a ball carrier chosen by carry share for that part of
+  the field (goal line, red zone, open field),
+- a scramble and every pass go to that simulated game's quarterback (a doubtful
+  starter plays some simulations and his backup the rest),
+- a target goes to a receiver chosen by red-zone, short or deep target share.
+
+The shares are the same injury- and depth-chart-adjusted shares the TD scorer
+list uses, so the two always agree: touchdowns are credited on the play
+itself. Yards come from the real play drawn, so they are league-typical for the
+situation rather than each player's own efficiency.
+
+Each player's line is summarised the way the score is: median, mean, the most
+likely count, and the middle 50% and 80% of simulations. Only players with
+meaningful usage appear. The result is stored as `box_score` on
+`game_simulations`, and on `live_simulations` as projected finals (stats so far
+plus the simulated rest).
+
+Against the 2023–25 actuals, two league-average teams produce these per-team
+box-score totals:
+
+| per team | sim | real |
+|---|---|---|
+| pass attempts | 32.8 | 32.7 |
+| completions | 21.3 | 21.2 |
+| passing yards | 237 | 232 |
+| carries | 26.1 | 26.1 |
+| rushing yards | 120 | 118 |
+
+**The game view.** Every NFL row on the dashboard expands. The NFL tab also
+lists every game on today's slate and the next three, finished, live or
+upcoming, in the Game simulations section. Each game shows:
+
+- the projected final score and its distribution,
+- the TD/FG counts,
+- the likely scorers,
+- every player's passing, rushing and receiving line with its ranges.
+
+While a game is on, the view offers the live model next to the pregame
+projection and refreshes every poll. Once the game is over, the actual score,
+counts, scorers and player lines sit beside the pregame projection, each with
+where it fell (inside the 50% range, the 80% range, or outside). The live
+tracker re-exports the view's data whenever a game goes final.
+
+Player projections are labelled lower confidence than the score and win
+projections throughout. Usage shifts week to week in ways historical shares
+don't capture.
 
 ### Live projections (live-resume simulation)
 
@@ -485,11 +599,11 @@ constant in training and held at 0 live to match.
 ## Known limitations
 
 - **Neither model beats the closing line.** See the backtest section. The ML
-  layer's value flags are gated off as a result; the baseline's flags are still
-  shown but are unvalidated and fire on ~77% of rated games.
-- **The baseline's value threshold is not meaningful.** Its mean absolute
-  disagreement with the market is ~4 points, so the spec'd 2.0-point threshold
-  flags most of the slate. Every run prints a threshold sensitivity table.
+  layer's value flags are gated off as a result. The baseline's flags now use
+  the Stage 1 test and fire on almost nothing at the starting model weight.
+- **Closing lines are one book.** CLV's close is DraftKings via ESPN. The
+  research recommends a sharp anchor (Pinnacle), which needs `ODDS_BOOKMAKERS`
+  and a pull just before kickoff, and both cost Odds API quota.
 - **NFL week-1 ratings lean ~99% on last season.** That is the correct thing to
   do with 7 plays of current-season data, but it means the NFL numbers are a
   prior-season model until a few weeks accumulate.
