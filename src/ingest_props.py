@@ -57,6 +57,46 @@ def parse_event(data: dict, markets: set[str]) -> dict:
     return players
 
 
+def fetch_alternates(needs: dict[str, set[str]], lines: dict,
+                     cache_minutes: int | None = None) -> tuple[dict, str]:
+    """Alternate lines for just the (game, market) pairs a ranking needs.
+
+    Requesting only those pairs costs one credit each, about 25 for a top-25
+    list, instead of four more per game for every stat. Returns
+    ({game_id: {player: {market: [{book, side, point, price}]}}}, pulled_at).
+    """
+    key = config.require("ODDS_API_KEY")
+    cache_minutes = config.ODDS_CACHE_MINUTES if cache_minutes is None else cache_minutes
+    base = {"apiKey": key, "oddsFormat": "american"}
+    base.update({"bookmakers": config.ODDS_BOOKMAKERS} if config.ODDS_BOOKMAKERS else {"regions": "us"})
+    out, live, meta = {}, 0, {}
+    for gid, markets in needs.items():
+        event_id = ((lines.get("games") or {}).get(gid) or {}).get("event_id")
+        if not event_id:
+            continue
+        meta = {}
+        data = get_json(f"{config.ODDS_BASE}/sports/{SPORT_KEYS['nfl']}/events/{event_id}/odds",
+                        params={**base, "markets": ",".join(sorted(markets))}, cache_minutes=cache_minutes,
+                        cache_tag=f"props_alt_{gid}", capture_meta=meta)
+        live += 0 if meta.get("from_cache") else 1
+        players: dict = {}
+        for book in (data if isinstance(data, dict) else {}).get("bookmakers") or []:
+            for market in book.get("markets") or []:
+                if market.get("key") not in markets:
+                    continue
+                for o in market.get("outcomes") or []:
+                    side = str(o.get("name") or "").lower()
+                    if not o.get("description") or side not in ("over", "under") \
+                            or o.get("point") is None or o.get("price") is None:
+                        continue
+                    players.setdefault(o["description"], {}).setdefault(market["key"], []).append(
+                        {"book": book["key"], "side": side, "point": float(o["point"]), "price": int(o["price"])})
+        out[gid] = players
+    print(f"  alt lines: {len(needs)} game(s), {sum(len(m) for m in needs.values())} market(s), "
+          f"{live} live call(s); quota remaining: {meta.get('quota_remaining')}")
+    return out, datetime.now(timezone.utc).isoformat()
+
+
 def run(cache_minutes: int | None = None) -> dict:
     store = db.get_store()
     cache_minutes = config.ODDS_CACHE_MINUTES if cache_minutes is None else cache_minutes

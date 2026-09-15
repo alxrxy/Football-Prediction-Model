@@ -247,7 +247,11 @@ def props_text() -> str | None:
             f"{_pct(p.get('p_model'))} vs market {_pct(p.get('p_market'))}, gap +{_n((p.get('gap') or 0) * 100, 1)} pts; "
             f"sim median {s.get('median')} (middle 50% {s.get('p25')}-{s.get('p75')}); "
             f"{'passes' if p.get('passes_stage1') else 'does not pass'} the Stage 1 test."
+            + (f" Alt line: {p['pick']} {alt['line']} at {alt['price']} ({alt['book']}), simulation "
+               f"{_pct(alt['p_model'])}." if (alt := p.get("alt")) else "")
         )
+    if d.get("more"):
+        lines.append(f"{len(d['more'])} more props rank below these (smaller gaps).")
     held = d.get("held_out") or []
     if held:
         lines.append("Held out: " + "; ".join(

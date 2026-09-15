@@ -617,7 +617,7 @@ constant in training and held at 0 live to match.
 ```bash
 python -m src.api_server          # local Q&A server on 127.0.0.1:8787 (holds the API key)
 python -m src.ingest_props        # NFL player-prop lines, ~64 Odds API credits a pull (cached)
-python -m src.props               # rank props vs the simulations; Claude explains the top 10
+python -m src.props               # rank props vs the simulations; top 25 with alt lines, Claude explains each
 cd dashboard && npm run dev       # http://localhost:5174, proxies /api to the server
 python -m tests.test_props
 ```
@@ -642,8 +642,14 @@ The one metered piece of the stack. The key is read from `Claude_API_KEY` in
   About 2¢ a question.
 - **Props**, with its own Q&A about the week's list. Each prop line is devigged
   across books and compared with that player's simulated chance; ranked by
-  the gap. Claude writes the explanations once per export (cached), not per
-  page view. Gaps past 25 pp are held out as likely usage misses. See P17:
+  the gap. The top 25 are shown as cards, the rest (and the props held out
+  for gaps past 25 pp, likely usage misses) in a dropdown beneath. Each top
+  prop gets an alt line where one qualifies: an easier line on the same side
+  that the simulation gives 65%+, priced −250 or longer, with the best
+  expected return. Books post alternates as overs only, so unders get none;
+  only the (game, stat) pairs the top 25 use are pulled, ~1 credit each.
+  Claude writes the explanations once per export (cached), not per
+  page view. See P17:
   the simulator doesn't yet model each player's own efficiency, so treat
   the list as a check on the simulator for now.
 - **Live**. While the live tracker runs, each game in progress gets a

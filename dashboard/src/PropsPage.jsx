@@ -56,31 +56,18 @@ export default function PropsPage() {
                 the simulator gives every player league-typical yards per catch and carry, so star receivers tend to project
                 under their lines and the gaps run large. Treat these as a check on the simulator, not picks.
               </div>
+              <p className="muted small alt-rule">
+                Alt line: an easier line on the same side (lower for an over, higher for an under) that the simulation
+                gives {Math.round((data.alt_rule?.min_p ?? 0.65) * 100)}%+, priced {data.alt_rule?.min_price ?? -250} or
+                longer, with the best expected return. Books post alternates as overs, so unders usually have none. Same
+                simulation, same caveat.
+              </p>
               <ol className="prop-list">
                 {data.props.map((r) => (
                   <PropCard key={`${r.game_id}-${r.player}-${r.market}`} r={r} />
                 ))}
               </ol>
-              {data.held_out?.length ? (
-                <details className="card held">
-                  <summary>
-                    {data.held_out.length} more held out: gaps over {Math.round(data.max_gap * 100)} points, more likely a
-                    usage miss than a mispriced line
-                  </summary>
-                  <ul>
-                    {data.held_out.map((h) => (
-                      <li key={`${h.player}-${h.market}`}>
-                        <TeamLogo abbr={h.team} size={20} />
-                        <strong>{h.player}</strong> {h.label} {h.pick} {h.line}
-                        <span className="muted">
-                          {' '}
-                          · sim {pct(h.p_model)} vs market {pct(h.p_market)} · sim median {num(h.sim?.median)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              ) : null}
+              <MoreProps more={data.more || []} held={data.held_out || []} maxGap={data.max_gap} />
             </>
           )}
         </div>
@@ -125,6 +112,24 @@ function PropCard({ r }) {
           </span>
           {r.passes_stage1 ? <span className="tag flag">passes Stage 1</span> : null}
         </div>
+        {r.alt ? (
+          <div className="alt-line">
+            <span className="alt-tag">Alt line</span>
+            <span className={`pick ${r.pick}`}>
+              {over ? '▲ Over' : '▼ Under'} {r.alt.line}
+            </span>
+            <strong className="alt-price">{price(r.alt.price)}</strong>
+            <span className="muted">
+              {r.alt.book} · simulation {pct(r.alt.p_model)} vs {pct(r.alt.breakeven)} to break even
+            </span>
+          </div>
+        ) : (
+          <p className="alt-none muted">
+            {r.pick === 'under'
+              ? 'No alt line: books post alternates as overs, so there’s no easier under to offer.'
+              : 'No alt line clears the bar (an easier over the simulation gives 65%+, at −250 or longer).'}
+          </p>
+        )}
         <div className="compare" role="img" aria-label={`Simulation ${pct(r.p_model)}, market ${pct(r.p_market)}`}>
           <CompareRow label="Simulation" value={r.p_model} cls="sim" />
           <CompareRow label="Market" value={r.p_market} cls="mkt" />
@@ -140,6 +145,69 @@ function PropCard({ r }) {
         <em>point gap</em>
       </div>
     </li>
+  )
+}
+
+// Everything below the top list: the rest of the ranking, then the props held
+// out for gaps too big to believe.
+function MoreProps({ more, held, maxGap }) {
+  if (!more.length && !held.length) return null
+  const row = (r, rank) => (
+    <tr key={`${r.game_id}-${r.player}-${r.market}`}>
+      <td className="num muted">{rank}</td>
+      <td>
+        <span className="kp-name">
+          <TeamLogo abbr={r.team} size={18} />
+          <strong>{r.player}</strong>
+        </span>
+        <em className="sub">{r.game}</em>
+      </td>
+      <td>{r.label}</td>
+      <td>
+        <span className={`pick sm ${r.pick}`}>
+          {r.pick === 'over' ? '▲ O' : '▼ U'} {r.line}
+        </span>
+      </td>
+      <td className="num">{price(r.price)}</td>
+      <td className="num">{pct(r.p_model)}</td>
+      <td className="num">{pct(r.p_market)}</td>
+      <td className="num gap">+{(r.gap * 100).toFixed(1)}</td>
+    </tr>
+  )
+  return (
+    <details className="card held">
+      <summary>
+        More props · {more.length} further down the ranking
+        {held.length ? ` and ${held.length} held out` : ''}
+      </summary>
+      <div className="table-wrap">
+        <table className="more-props">
+          <thead>
+            <tr>
+              <th className="num">#</th>
+              <th>Player</th>
+              <th>Prop</th>
+              <th>Pick</th>
+              <th className="num">Price</th>
+              <th className="num">Sim</th>
+              <th className="num">Market</th>
+              <th className="num">Gap</th>
+            </tr>
+          </thead>
+          <tbody>
+            {more.map((r) => row(r, r.rank))}
+            {held.length ? (
+              <tr className="group">
+                <td colSpan={8}>
+                  Held out · gaps over {Math.round(maxGap * 100)} points, more likely a usage miss than a mispriced line
+                </td>
+              </tr>
+            ) : null}
+            {held.map((r) => row(r, '—'))}
+          </tbody>
+        </table>
+      </div>
+    </details>
   )
 }
 
