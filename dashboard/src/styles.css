@@ -2,53 +2,74 @@
    the tokens are swapped for dark. */
 :root {
   color-scheme: light dark;
-  --bg: #f6f7f9;
+  --bg: #eef1f6;
   --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --border: #e0e4ea;
-  --text: #16191d;
-  --text-dim: #646c78;
-  --accent: #2f6feb;
+  --surface-2: #f3f5f9;
+  --border: #dfe4ec;
+  --text: #121826;
+  --text-dim: #5f6b7d;
+  --accent: #2f63e0;
+  --live: #e0462f;
+  --neutral-mark: #9aa5b5;
   --good: #137a4c;
   --bad: #b3261e;
   --warn: #8a5a00;
   --warn-bg: #fdf6e3;
   --flag: #6b3fa0;
-  --radius: 10px;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgb(16 24 40 / 0.05), 0 4px 14px -6px rgb(16 24 40 / 0.1);
+  --shadow-lift: 0 2px 4px rgb(16 24 40 / 0.06), 0 14px 32px -12px rgb(16 24 40 / 0.22);
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg: #0e1116;
-    --surface: #161b22;
-    --surface-2: #1c2230;
-    --border: #2a3140;
-    --text: #e6e9ef;
-    --text-dim: #9aa4b2;
-    --accent: #6f9dff;
+    --bg: #0a0e17;
+    --surface: #121826;
+    --surface-2: #1a2233;
+    --border: #253047;
+    --text: #e8ecf3;
+    --text-dim: #9aa6b8;
+    --accent: #6c95ff;
+    --live: #ff6b54;
+    --neutral-mark: #5d6a80;
     --good: #4ac68a;
     --bad: #ff8a80;
     --warn: #e0b25c;
     --warn-bg: #2a2416;
     --flag: #b48ce0;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 18px -8px rgb(0 0 0 / 0.55);
+    --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.35), 0 18px 38px -14px rgb(0 0 0 / 0.7);
   }
 }
 
 :root[data-theme='dark'] {
-  --bg: #0e1116;
-  --surface: #161b22;
-  --surface-2: #1c2230;
-  --border: #2a3140;
-  --text: #e6e9ef;
-  --text-dim: #9aa4b2;
-  --accent: #6f9dff;
+  --bg: #0a0e17;
+  --surface: #121826;
+  --surface-2: #1a2233;
+  --border: #253047;
+  --text: #e8ecf3;
+  --text-dim: #9aa6b8;
+  --accent: #6c95ff;
+  --live: #ff6b54;
+  --neutral-mark: #5d6a80;
   --good: #4ac68a;
   --bad: #ff8a80;
   --warn: #e0b25c;
   --warn-bg: #2a2416;
   --flag: #b48ce0;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 18px -8px rgb(0 0 0 / 0.55);
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.35), 0 18px 38px -14px rgb(0 0 0 / 0.7);
 }
+
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand-mark {
+  display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px;
+  border-radius: 12px; font-weight: 800; font-size: 15px; letter-spacing: -0.02em; color: #fff;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #111));
+  box-shadow: var(--shadow);
+}
+.brand p { margin: 0; }
 
 * { box-sizing: border-box; }
 

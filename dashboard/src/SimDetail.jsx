@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { findGame, useLive, useSims } from './simData.js'
+import { findGame, liveGame, useLive, useSims } from './simData.js'
 import './sims.css'
 
 // The game view behind an NFL row: projected score and its distribution,
@@ -102,7 +102,7 @@ export default function SimDetail({ gameId }) {
     )
   }
 
-  const lg = feed?.games?.find((g) => g.game_id === gameId)
+  const lg = liveGame(feed, gameId)
   const status = lg?.state === 'in' ? 'live' : lg?.state === 'post' ? 'final' : entry.status
   const live = lg?.state === 'in' && lg.live_sim ? fromLive(lg.live_sim) : null
   const pre = entry.pregame ? fromPregame(entry.pregame) : null

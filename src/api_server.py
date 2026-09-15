@@ -35,8 +35,9 @@ MAX_ANSWER_ECHO = 1500       # a prior answer sent back as history is trimmed to
 PER_HOUR = 40
 
 SYSTEM = (
-    "You answer questions about one football game for the owner of a personal prediction dashboard. "
-    "Use only the game data provided with the question; if the answer isn't in it, say what's missing "
+    "You answer questions about one football game, or about this week's ranked player props, for the owner "
+    "of a personal prediction dashboard. "
+    "Use only the data provided with the question; if the answer isn't in it, say what's missing "
     "rather than guessing. The numbers are a model's projections, not facts: its value flags are "
     "unvalidated, its player projections are lower confidence than its score projections, and the "
     "betting market is usually the better forecast. Describe what the numbers say; never tell the user "
@@ -60,15 +61,22 @@ def _allowed() -> bool:
 
 
 def answer(payload: dict) -> tuple[int, dict]:
+    scope = "props" if payload.get("scope") == "props" else "game"
     game_id = str(payload.get("game_id") or "").strip()[:60]
     question = str(payload.get("question") or "").strip()
-    if not game_id or not question:
-        return 400, {"error": "A game and a question are both needed."}
+    if not question or (scope == "game" and not game_id):
+        return 400, {"error": "A question (and, for a game, which game) is needed."}
     if len(question) > MAX_QUESTION:
         return 400, {"error": f"Keep questions under {MAX_QUESTION} characters."}
-    ctx = game_context.build(game_id)
-    if ctx is None:
-        return 404, {"error": "No data for this game. Re-export the dashboard: python -m src.export_dashboard"}
+    if scope == "props":
+        text = game_context.props_text()
+        if text is None:
+            return 404, {"error": "No props ranked yet. Run: python -m src.ingest_props, then python -m src.props"}
+        ctx, game_id = {"mode": "props", "text": text}, "props"
+    else:
+        ctx = game_context.build(game_id)
+        if ctx is None:
+            return 404, {"error": "No data for this game. Re-export the dashboard: python -m src.export_dashboard"}
     if not _allowed():
         return 429, {"error": f"That's {PER_HOUR} questions in the last hour; the limit resets as the hour rolls on."}
 
