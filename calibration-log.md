@@ -34,12 +34,16 @@ status only when its adoption test is met.
 | P4 | Make confidence tiers discriminate: SP+/Elo agreement, early-season demotion | logic | 2026-09-12 | 47/47 rated CFB games "high"; 9/13 NFL: 13/13 "high" in both models and 13/13 sims. Season: "high" = every rated game (26-34 ATS), "low" = only FCS proxies, "medium" never assigned. The agreement signal did *not* carry to NFL: baseline/ML agree 1-6, disagree 2-3 | "high" beats "medium" ATS over 200+ graded games | proposed; agreement signal now 18-20 agree / 8-13 disagree across both sports, i.e. unproven |
 | P5 | Upper edge cap for early-season edges (large edge = stale rating) | threshold | 2026-09-12 | CFB rated \|edge\| 6-10 went 2-7. NFL wk 1 \|edge\| ≥ 6 went 0-4, MAE 15.6 vs market 8.1; NFL ratings are ~94% prior season this week | \|edge\|>8 (CFB) / >6 (NFL) in weeks 1-4 loses ATS over 60+ games | proposed; extended to NFL 2026-09-14 |
 | P6 | CFB home field 2.4 → ~2.8 | weight | 2026-09-12 | slate: model leaned away 30/47, -2.1 pts vs market; history: market-implied HFA 3.2 (2017-25) but 0.5 in 2025 | mean signed edge on non-neutral games < -1.0 across 4+ weeks | watch |
-| P7 | Do not use the CFB ML model's margins until its compression is explained | investigate | 2026-09-12 | mean \|ML margin\| 9.5 vs actual 24.7; MAE 20.6 | n/a, diagnose first | investigate |
+| P7 | Do not use the CFB ML model's margins until its compression is explained | investigate | 2026-09-12 | mean \|ML margin\| 9.5 vs actual 24.7; MAE 20.6. *Correction 09-15: the "Georgia −27 vs market −69.5" example below used an in-play line (P15); DK closed −40.5* | n/a, diagnose first | investigate |
 | P8 | NFL: consider the ML margin (or a blend) as the headline number | model selection | 2026-09-14 | 9/13: ML SU 10/13 vs baseline 6/13, MAE 11.46 vs 13.10, Brier 0.214 vs 0.256; ATS both poor (4-8, 3-10) | ML MAE below baseline MAE over 4+ NFL weeks (~60 games), and not worse vs market | watch |
-| P9 | NFL injury term: check its magnitude | weight | 2026-09-14 | 9/13: \|injury adj\| ≥ 1 went 0-5 ATS, MAE 12.3 vs market 8.8; corr(injury term, cover residual) −0.00 | fitted coefficient on the injury term (actual − market ~ injury) positive and significant over 100+ games | watch |
+| P9 | NFL injury term: check its magnitude | weight | 2026-09-14 | 9/13: \|injury adj\| ≥ 1 went 0-5 ATS, MAE 12.3 vs market 8.8; corr(injury term, cover residual) −0.00. 9/14 DEN@KC: term −0.95 toward DEN (−2.63 with real snap shares, P14), market already −2.5 with the same report; lost | fitted coefficient on the injury term (actual − market ~ injury) positive and significant over 100+ games | watch |
 | P10 | Props: apply game-day inactives before simulating | data | 2026-09-14 | DAL@NYG: 4 projected players recorded nothing (N. Harris 5.3 car, Beckham, Cambre, Abanikanda), none on the injury list; Singletary took 10 touches + TD unprojected | none needed for correctness; track "projected, no stats" rate weekly | proposed |
-| P11 | Props: rushing volume bands too narrow (game script) | investigate | 2026-09-14 | DAL@NYG: rush att in the 50% band 2/8, rush yds 1/8; team rush att −8 (trailing DAL), +9 (leading NYG) | 50% band hit rate for rush att in 40-60% over 10+ simulated games | investigate |
+| P11 | Props: rushing volume bands too narrow (game script) | investigate | 2026-09-14 | DAL@NYG: rush att in the 50% band 2/8, rush yds 1/8; team rush att −8 (trailing DAL), +9 (leading NYG). DEN@KC: leading KC 38 rush att vs median 25 (p90 31), trailing DEN 15 | 50% band hit rate for rush att in 40-60% over 10+ simulated games | investigate |
 | P12 | Run pregame sims before the first kickoff | process | 2026-09-14 | 12/13 week-1 sims written 23:11Z, after kickoff, so only DAL@NYG props are gradeable | n/a | proposed |
+| P13 | NFL prior-season rating must be QB-conditional (weight the prior by the expected starter's games, or add a QB-change term) | logic | 2026-09-15 | DEN@KC: KC's 2025 rating includes 146 backup-QB plays at −0.347 EPA; Mahomes-only prior moves KC +2.9 pts, edge −3.46 → −0.56, flag off. Scope: 11/32 teams shift ≥ 1 pt from non-primary starts (NYJ +5.1, IND +3.8, KC +2.9) | rebuild NFL training with QB-conditioned prior; holdout MAE vs line must not get worse, and weeks 1-4 MAE should improve | proposed |
+| P14 | Snap-share fallback is per dataset, not per player | bug fix | 2026-09-15 | `_snap_shares` stops at 2026 once it has > 500 rows, so teams that hadn't played and players who sat out week 1 get no share: 78/154 latest NFL injury rows; every DEN/KC row. DEN@KC injury term −0.95 → −2.63 with real shares | none needed; correctness bug | **applied 2026-09-15** (`ingest_injuries.merge_snap_shares`); NFL rows without a share 78/154 → 32/161 on the week-2 pull |
+| P15 | Never grade a prediction made after kickoff; never store in-play lines | bug fix | 2026-09-15 | 19 of 80 CFB predictions on 09-12 were generated at 18:37Z, after 16:00–17:00 kickoffs, against in-play Odds API lines (Georgia −69.5 vs DK close −40.5). The old rule flagged 8 of them, 6-2. Pregame-only flagged record is 15-25, not 21-27 | none needed | **applied**: predict-side guard since 2026-09-14 (`ba6d7f3`); `ingest_odds` skips in-play events and CLV marks late leans `after_kickoff`, 2026-09-15 |
+| P16 | Baseline model weight to 0 if its NFL leans show no CLV | weight | 2026-09-15 | backfill: 75 pregame baseline leans −0.22 pp (t −1.22), but 61 are CFB and priced at an assumed −110 against DK's close; NFL n=14 | NFL lean CLV ≤ 0 at 65+ NFL leans (≈ week 5) → set `MODEL_MARKET_WEIGHT=0` for the baseline | watch |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -47,19 +51,31 @@ baseline's edge had no positive relationship to the cover result (CFB w =
 error while firing less often. The threshold only becomes meaningful after
 P3–P5 remove the edges that are just rating error.
 
+*Superseded 2026-09-15:* the points threshold no longer decides flags; Stage 1
+does (see that entry). The same caution still applies to it. At a fixed model
+weight the blended test is still monotone in |edge|, so what it flags are the
+largest disagreements, and those are mostly stale ratings (P5, P13). That is
+why the weight starts low and rises only on CLV.
+
 ## Season-to-date record (baseline-v1)
 
 | Slate | Sport | Games | SU model | SU market fav | ATS all | ATS flagged | MAE model | MAE market | Tiers assigned |
 |---|---|---|---|---|---|---|---|---|---|
 | 2026-09-12 | NCAAF | 80 | 64/80 (80%) | 72/80 (90%) | 36-44 (45%) | 18-19 (49%) | 14.13 | 10.84 | 47 high / 33 low |
 | 2026-09-13 | NFL | 13 | 6/13 (46%) | 10/13 (77%) | 3-10 (23%) | 3-7 (30%) | 13.10 | 10.73 | 13 high |
-| **To date** | | **93** | **70/93 (75%)** | **82/93 (88%)** | **39-54 (42%)** | **21-26 (45%)** | **13.99** | **10.82** | |
+| 2026-09-14 | NFL (MNF, DEN@KC) | 1 | 0/1 | 1/1 | 0-1 | 0-1 | 22.46 | 18.50 | 1 high |
+| **To date** | | **94** | **70/94 (74%)** | **83/94 (88%)** | **39-55 (41%)** | **21-27 (44%)** | **14.08** | **10.90** | |
+| **To date, pregame only** (P15) | | **75** | | | **29-46 (39%)** | **15-25 (38%)** | | | |
+
+The pregame-only row drops the 19 CFB predictions made after kickoff against
+in-play lines (they went 10-9, flagged 6-2). It is the honest record of the
+old flag.
 
 By confidence tier, to date:
 
 | Tier | Games | SU | ATS | MAE | Market MAE |
 |---|---|---|---|---|---|
-| high | 60 (47 CFB rated + 13 NFL) | 39/60 (65%) | 26-34 (43%) | 12.25 | 10.84 |
+| high | 61 (47 CFB rated + 14 NFL) | 39/61 (64%) | 26-35 (43%) | 12.42 | 10.97 |
 | medium | 0 | — | — | — | — |
 | low | 33 (all CFB FCS-proxy) | 31/33 (94%) | 13-20 (39%) | 17.13 | 10.80 |
 
@@ -67,8 +83,107 @@ The tiers are not meaningful yet. "Low" has only ever meant "one side is an
 FCS proxy", and those games are mismatches, which is why low beats high
 straight up. See P4.
 
-NFL ML model (ml-v1), to date: SU 10/13, ATS 4-8 (1 no-lean; `grade.py`
-counts it as a loss, 4-9), MAE 11.46.
+NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
+counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-15 — Stage 1 edge logic applied (research doc §4)
+
+**Applied** (code, not weights):
+- Devig each book's spread from both prices (Shin), restated at the consensus
+  line with the empirical margin distribution.
+- Blend the model with the market in log-odds space at model weight 0.15.
+- Flag only at 3+ pp past the price's break-even.
+- CLV logged for every lean (`clv_log`), closed from ESPN/DraftKings.
+- Prices kept in `odds_snapshots`; in-play odds no longer stored.
+- P14 applied.
+
+Full tables: `calibration/2026-09-15_stage1_before_after.md` (regenerate with
+`python calibration/stage1_before_after.py <out.md>`).
+
+**Before/after, baseline, pregame predictions only** (the historical rows
+stored no prices, so the market is taken at −110 both ways):
+
+| | Old flags (≥ 2 pts) | ATS | CLV of old flags | New flags (w 0.15, 3 pp) |
+|---|---|---|---|---|
+| NFL (14) | 11 | 3-8 | −0.36 pp | 0 |
+| CFB rated (37) | 29 | 12-17 | +0.42 pp | 0 |
+| **Total** | **40** | **15-25 (38%)** | +0.20 pp | **0** |
+
+Probability of the home side covering, scored (pushes excluded; a coin flip is
+0.693):
+
+| Log loss | Model alone | Blend w=0.15 | Market |
+|---|---|---|---|
+| NFL live (14) | 0.888 | 0.717 | 0.693 |
+| CFB live rated (37) | 0.790 | 0.703 | 0.693 |
+| ML NFL 2025 holdout (285) | 0.719 | 0.694 | 0.693 |
+| ML CFB 2025 holdout (762 FBS) | 0.737 | **0.692** | 0.693 |
+
+- The new rule would have avoided all 40 old flags. Their record was 15-25
+  with CLV of about zero. Blending cuts the probability error sharply, but in
+  three of four samples the blend is still no better than the market alone. So
+  far the model subtracts information more than it adds it.
+- Week 2 as run today: 0 of 16 NFL games flag (the old rule: 12). The nearest
+  is CIN @ HOU at 2.97 pp, priced from real snapshot prices: HOU −3 at −105,
+  break-even 51.2%.
+- The one positive sample: the ML CFB 2025 holdout flags 47 games at w 0.15,
+  going 31-15-1, and its blend beats the market's log loss slightly. It is one
+  of four samples, and on big spreads it is the P7 compression leaning
+  mechanically to underdogs. On the 37 rated live CFB games the ML model's new
+  flags went 4-4. The ML gate stays shut.
+- CLV to date (backfill): baseline 75 pregame leans −0.22 pp (t −1.22), ML 74
+  +0.13 pp (t +0.70). The research rule is w = 0 if CLV is negative at 65+.
+  Logged as P16 against NFL leans only, since 61 of these are CFB leans priced
+  at an assumed −110 against a single book's close.
+- New bug found while backfilling (P15): 19 CFB predictions on 09-12 were made
+  after kickoff against in-play lines. The corrected record is above.
+
+---
+
+## 2026-09-14 — NFL (week 1, Monday) DEN @ KC post-mortem, written 2026-09-15
+
+One game, graded from ESPN's final (DEN 10 – KC 31). The DB row is not yet
+marked completed, so run `python -m src.grade --sport nfl --refresh` to record
+it. Full working in `calibration/2026-09-14_nfl_DEN_KC_postmortem.md`.
+**Diagnosis only: no weights, thresholds or code changed.** One game is one
+data point, and the proposals below have to earn adoption like every other.
+
+The baseline had KC −1.46 against a KC −2 market (edge −3.46) and flagged DEN.
+KC won by 21 and covered by 18.5. ML had KC −0.9 (lean DEN, gate off). The
+sim, anchored to the baseline, gave KC 45.6%.
+
+**Finding: the input most responsible was Layer 1, the team rating.** None of
+the four candidate layers was the main cause. Replacing one input at a time:
+
+| Input | Effect on the −3.46 edge |
+|---|---|
+| Prior-season rating without QB conditioning (KC's 2025 includes 146 backup-QB plays at −0.347 EPA) | **2.90 pts**. With a Mahomes-starts-only prior the edge is −0.56 and there is no flag |
+| Injury term (−0.95) | −0.95 toward DEN. With the real snap shares it would have been −2.63, *further* toward DEN (P14) |
+| Situational (HFA, travel, rest, wind) | +2.15 toward KC, correct direction |
+| ML layer | same lean, smaller (Elo carries the same contamination: DEN +120 Elo) |
+| Sim / game script | anchored, can't move the side. Missed KC's volume once they led: 38 rushes vs median 25 (p90 31) |
+
+- The injury layer behaved as designed and wasn't the cause. The market had
+  already priced KC's injuries at −2.5. With both corrections applied the edge
+  is −2.23, which is still a flag at the 2.0 threshold. That shows the
+  threshold logic (Stage 1 of the research doc) as much as the inputs.
+- Most of the *size* of the miss is the game. The market missed by 18.5 too.
+  DEN managed 3.7 yds/play and lost the turnovers 2-1. The input problem
+  explains the flag, not the 21 points.
+- CLV would have been slightly negative: DEN +2 consensus at prediction time vs
+  DEN +2.5 at DraftKings' close (open −2.5 −120 → close −2.5 −108; ML −155 →
+  −130).
+- Scope: the same backup-QB mechanism shifts 11 of 32 teams' 2025 ratings by
+  ≥ 1 pt (NYJ +5.1, IND +3.8, KC +2.9, WAS +2.3, CIN +2.3). That's the size of
+  the mechanism, not a fitted effect. A team with a new 2026 starter needs his
+  number, not last year's primary's.
+
+Proposals: **P13** (QB-conditional prior, logic, needs the training rebuild
+test) and **P14** (snap-share fallback, correctness bug, awaiting OK). Added
+evidence to **P9** (market already priced the injuries) and **P11** (KC 38
+rushes while leading).
 
 ---
 
