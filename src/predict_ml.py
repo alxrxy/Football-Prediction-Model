@@ -28,7 +28,7 @@ import json
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import build_training, config, db
+from . import build_training, clv, config, db, market
 from .features import (
     FeatureContext, MARGIN_SIGMA, normal_cdf, parse_dt, qb_availability_loss,
 )
@@ -144,6 +144,7 @@ def run(sport: str = "nfl", target: date | None = None,
         print(f"[predict-ml] no {sport} games still to kick off on {label}")
         store.close()
         return []
+    ctx.load_prices(g["game_id"] for g in games)
 
     print(f"[predict-ml] replaying history to rebuild ratings the model was trained on...")
     elo, epa = build_training.replay_state(sport)
@@ -158,10 +159,12 @@ def run(sport: str = "nfl", target: date | None = None,
         margin = float(margin)
         market_spread, market_total, market_source, n_books = ctx.market(row["game_id"])
         edge = margin + market_spread if market_spread is not None else None
-        is_value = bool(
-            gate["allowed"] and edge is not None
-            and abs(edge) >= gate["threshold"]
-        )
+        prices = ctx.prices.get(row["game_id"], [])
+        market_edge = (market.spread_edge(margin, sigma, market_spread, prices, sport)
+                       if market_spread is not None else None)
+        # The holdout gate must be open, and then the same blended test as
+        # the baseline decides (src/market.py).
+        is_value = bool(gate["allowed"] and market_edge and market_edge["flag"])
         predictions.append(
             {
                 "game_id": row["game_id"],
@@ -181,6 +184,8 @@ def run(sport: str = "nfl", target: date | None = None,
                                  if k in meta["features"]},
                     "residual_sd": sigma,
                     "value_gate": gate,
+                    "market_edge": market_edge,
+                    "market_win_prob_home": market.market_win_prob(ctx.ml_books(row["game_id"])),
                     "market": {"spread": market_spread, "total": market_total,
                                "books": n_books, "source": market_source},
                 },
@@ -191,6 +196,11 @@ def run(sport: str = "nfl", target: date | None = None,
 
     rows = [{k: v for k, v in p.items() if not k.startswith("_")} for p in predictions]
     store.upsert("predictions", rows)
+    clv.log_leans(store, [
+        clv.lean_row(p, p["_features"]["home_team"], p["_features"]["away_team"],
+                     p["_features"]["kickoff_time"], ctx.prices.get(p["game_id"], []))
+        for p in predictions
+    ])
     store.close()
 
     print(f"[predict-ml] {len(predictions)} predictions written (model {MODEL_VERSION})")

@@ -16,7 +16,7 @@ import argparse
 import json
 from datetime import date, datetime, time, timedelta, timezone
 
-from . import config, db
+from . import clv, config, db, market
 from .features import MARGIN_SIGMA, FeatureContext, normal_cdf, parse_dt
 
 # A college football "slate day" runs from late morning ET through the small
@@ -49,14 +49,21 @@ def predict_game(features: dict) -> dict | None:
 
     edge = None
     is_value = False
+    market_edge = None
     if market_spread is not None:
         # Positive edge => model likes the HOME side relative to the market.
         edge = margin + market_spread
+        # Value is decided in probability space: the model's cover
+        # probability blended with the devigged market, against the price's
+        # break-even plus a buffer (src/market.py). The points gap is logged
+        # but no longer decides anything.
+        market_edge = market.spread_edge(margin, sigma, market_spread,
+                                         features.get("market_prices") or [], features["sport"])
         # A game where one side's rating is a flat replacement-level proxy
         # cannot produce a real edge — the "disagreement" with the market is
         # mostly the proxy's own error. Log the edge, never flag it as value.
         if features["baseline_source"] not in ("sp_plus_fcs_proxy", "elo"):
-            is_value = abs(edge) >= config.VALUE_EDGE_THRESHOLD
+            is_value = market_edge["flag"]
 
     return {
         "game_id": features["game_id"],
@@ -71,7 +78,11 @@ def predict_game(features: dict) -> dict | None:
         "is_value": is_value,
         "confidence": _confidence(features),
         "baseline_source": features["baseline_source"],
-        "components": _components(features, baseline, margin),
+        "components": {
+            **_components(features, baseline, margin),
+            "market_edge": market_edge,
+            "market_win_prob_home": market.market_win_prob(features.get("market_ml_books") or []),
+        },
         "generated_at": db.utcnow(),
     }
 
@@ -165,6 +176,7 @@ def run(target: date | None = None, sport: str = "ncaaf", all_upcoming: bool = F
                   "keeping their stored pregame predictions")
 
     games.sort(key=lambda g: (parse_dt(g.get("kickoff_time")) or now))
+    ctx.load_prices(g["game_id"] for g in games)
 
     predictions, skipped = [], []
     for game in games:
@@ -178,6 +190,11 @@ def run(target: date | None = None, sport: str = "ncaaf", all_upcoming: bool = F
 
     rows = [{k: v for k, v in p.items() if not k.startswith("_")} for p in predictions]
     store.upsert("predictions", rows)
+    clv.log_leans(store, [
+        clv.lean_row(p, p["_features"]["home_team"], p["_features"]["away_team"],
+                     p["_features"]["kickoff_time"], p["_features"].get("market_prices"))
+        for p in predictions
+    ])
     store.close()
 
     print(f"[predict] {label}: {len(predictions)} predictions written ({store.backend})")
@@ -202,17 +219,19 @@ def format_report(predictions: list[dict]) -> str:
     for p in sorted(predictions, key=sort_key):
         f = p["_features"]
         kickoff = parse_dt(f["kickoff_time"])
-        market = p["market_spread"]
+        spread = p["market_spread"]
         edge = p["edge"]
+        me = p["components"].get("market_edge") or {}
         side = ""
-        if edge is not None and p["is_value"]:
-            side = f["home_team"] if edge > 0 else f["away_team"]
+        if me.get("side") and p["is_value"]:
+            side = f["home_team"] if me["side"] == "home" else f["away_team"]
         rows.append([
             kickoff.strftime("%H:%MZ") if kickoff else "—",
             f"{f['away_team']} @ {f['home_team']}" + (" (N)" if f["is_neutral_site"] else ""),
             f"{p['model_spread']:+.1f}",
-            f"{market:+.1f}" if market is not None else "—",
+            f"{spread:+.1f}" if spread is not None else "—",
             f"{edge:+.1f}" if edge is not None else "—",
+            f"{me['edge_pp'] * 100:+.1f}" if me.get("edge_pp") is not None else "—",
             f"{p['model_win_prob_home'] * 100:.0f}%",
             side or "—",
             p["confidence"],
@@ -220,7 +239,8 @@ def format_report(predictions: list[dict]) -> str:
 
     table = tabulate(
         rows,
-        headers=["Kick", "Matchup (away @ home)", "Model", "Market", "Edge", "Home WP", "Value side", "Conf"],
+        headers=["Kick", "Matchup (away @ home)", "Model", "Market", "Edge pts", "vs BE pp",
+                 "Home WP", "Value side", "Conf"],
         tablefmt="simple",
     )
 
@@ -233,7 +253,9 @@ def format_report(predictions: list[dict]) -> str:
 
     summary = (
         f"\n{len(predictions)} games predicted | {len(with_market)} with a market line | "
-        f"{len(values)} flagged as value (|edge| >= {config.VALUE_EDGE_THRESHOLD})"
+        f"{len(values)} flagged as value (blended with the devigged market at model weight "
+        f"{config.MODEL_MARKET_WEIGHT}, {config.EDGE_BUFFER * 100:.0f}+ pp past break-even)"
+        "\n'vs BE pp' = the lean side's blended cover probability minus its price's break-even"
         f"\nAcross the {len(rated)} fully-rated games: "
         f"mean |model - market| = {mean_gap:.2f} pts"
     )
@@ -289,26 +311,17 @@ def calibration_block(rated: list[dict]) -> str:
         f"  mean |model - market| : {mean_abs:.2f} pts      stdev: {stdev:.2f}",
         f"  mean signed edge      : {mean_signed:+.2f} pts "
         f"({'leans away' if mean_signed < 0 else 'leans home'})",
-        "  value flags by threshold:",
+        "  games by points gap (reference only; the flag is the blended test):",
     ]
     for t in (2.0, 3.0, 4.0, 5.0, 6.0, 7.0):
         hits = sum(1 for e in edges if abs(e) >= t)
-        marker = "  <- current" if abs(t - config.VALUE_EDGE_THRESHOLD) < 1e-9 else ""
-        lines.append(f"    >= {t:>3.1f} pts : {hits:>3} / {n} ({hits / n * 100:>3.0f}%){marker}")
+        lines.append(f"    >= {t:>3.1f} pts : {hits:>3} / {n} ({hits / n * 100:>3.0f}%)")
 
-    flagged_now = sum(1 for e in edges if abs(e) >= config.VALUE_EDGE_THRESHOLD)
-    if flagged_now / n > 0.40:
-        lines.append(
-            f"  WARNING: {config.VALUE_EDGE_THRESHOLD} pts flags {flagged_now / n * 100:.0f}% of "
-            "rated games. A flag that fires on most of the slate carries no"
-        )
-        lines.append(
-            "  information. The baseline's spread against the market is wider than the "
-            "threshold assumes — raise VALUE_EDGE_THRESHOLD in .env, or wait for the"
-        )
-        lines.append(
-            "  ML layer to tighten the model, before treating these as real edges."
-        )
+    need = market.points_to_flag(MARGIN_SIGMA.get(rated[0]["sport"], 16.0))
+    lines.append(
+        f"  a flag needs the blended probability {config.EDGE_BUFFER * 100:.0f} pp past break-even: at "
+        f"model weight {config.MODEL_MARKET_WEIGHT} that is a ~{need:.1f}-pt gap on a -110 line"
+    )
     return "\n".join(lines)
 
 

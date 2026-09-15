@@ -368,9 +368,21 @@ def run(sport: str | None = None, model: str | None = None,
         rows_by_model.setdefault(row["model_version"], []).append(row)
     by_model = {v: evaluate(rs) for v, rs in sorted(rows_by_model.items())}
 
+    # Closing line value for every logged lean: the metric that becomes
+    # readable long before the ATS record does (src/clv.py).
+    clv_text = ""
+    try:
+        from . import clv
+
+        clv_text = clv.report(clv.capture(sport, store))
+    except Exception as exc:  # noqa: BLE001 - CLV must never block grading
+        print(f"  [warn] CLV capture failed: {type(exc).__name__}: {exc}")
+
     store.close()
     if rows:
         print(format_report(by_model, rows_by_model))
+    if clv_text:
+        print(clv_text)
     else:
         print(
             "  No completed games with stored predictions yet. Run this after a "

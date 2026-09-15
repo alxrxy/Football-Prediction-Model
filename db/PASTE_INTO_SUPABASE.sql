@@ -7,7 +7,7 @@
 --   3. Select this entire file, copy, paste into the editor
 --   4. Click Run (or press Ctrl+Enter)
 --   5. The last statement prints a table of what was created - check that all
---      twelve tables are listed with the expected column counts.
+--      fourteen tables are listed with the expected column counts.
 --
 -- Then, back in the project folder:
 --   python -m src.sync_to_supabase --check    verify the tables are visible
@@ -238,6 +238,7 @@ create table if not exists game_simulations (
     distributions         jsonb,
     td_scorers            jsonb,
     components            jsonb,
+    box_score             jsonb,                -- projected player lines, lower confidence
     generated_at          timestamptz not null default now(),
     primary key (game_id, sim_version)
 );
@@ -312,8 +313,73 @@ create table if not exists live_simulations (
     pregame_win_prob_home double precision,
     start_state           jsonb,                -- where the resumed games started
     scorers               jsonb,                -- low confidence, like the pregame list
+    box_score             jsonb,                -- projected final player lines (so far + rest)
     runtime_ms            integer,
     primary key (game_id, polled_at)
+);
+
+-- Every pregame odds pull, append-only, with the spread and total prices the
+-- odds table does not keep (src/ingest_odds.py). The prices are what make
+-- devigging possible; the history is what closing line value is measured on.
+create table if not exists odds_snapshots (
+    game_id            text not null,
+    book               text not null,
+    pulled_at          timestamptz not null,
+    source             text,
+    commence_time      timestamptz,
+    spread             double precision,     -- home-team line
+    spread_price_home  integer,
+    spread_price_away  integer,
+    total              double precision,
+    over_price         integer,
+    under_price        integer,
+    moneyline_home     integer,
+    moneyline_away     integer,
+    primary key (game_id, book, pulled_at)
+);
+
+-- Closing line value per model lean (src/clv.py). One row per (game, model),
+-- written at prediction time for EVERY lean, flagged or not, so the sample
+-- grows at a slate's pace rather than a flag's. close_* is filled after
+-- kickoff. p_* are vig-free probabilities of the lean side covering;
+-- clv_pp = p_close - p_market at the line the lean was taken at.
+create table if not exists clv_log (
+    game_id           text not null,
+    model_version     text not null,
+    market            text not null,        -- 'spread'
+    sport             text,
+    side              text,                 -- 'home' | 'away'
+    team              text,
+    is_flag           boolean default false,
+    kickoff_time      timestamptz,
+    flagged_at        timestamptz,          -- the prediction's generated_at
+    line              double precision,     -- home-team line at prediction time
+    price             integer,              -- lean side's price (-110 if none stored)
+    p_model           double precision,
+    p_market          double precision,
+    p_blend           double precision,
+    breakeven         double precision,
+    edge_pp           double precision,     -- p_blend - breakeven
+    edge_points       double precision,     -- the old points edge, for reference
+    weight            double precision,
+    buffer            double precision,
+    devig_method      text,
+    market_source     text,
+    ref_book          text,                 -- the close's book, as quoted at prediction time
+    ref_line          double precision,
+    ref_price_home    integer,
+    ref_price_away    integer,
+    close_line        double precision,
+    close_price_home  integer,
+    close_price_away  integer,
+    close_source      text,
+    close_at          timestamptz,
+    p_close           double precision,
+    clv_pp            double precision,
+    clv_basis         text,                 -- 'same_book' | 'consensus'
+    result            text,                 -- 'W' | 'L' | 'P'
+    graded_at         timestamptz,
+    primary key (game_id, model_version, market)
 );
 
 
@@ -331,6 +397,8 @@ create index if not exists odds_game_idx
     on odds (game_id);
 create index if not exists injuries_team_week_idx
     on injuries (sport, season, week, team);
+create index if not exists odds_snapshots_game_idx
+    on odds_snapshots (game_id, pulled_at desc);
 
 
 -- ---------------------------------------------------------------------------
@@ -348,6 +416,8 @@ alter table games        add column if not exists home_rest_days double precisio
 alter table games        add column if not exists away_rest_days double precision;
 alter table injuries     add column if not exists snap_share double precision;
 alter table injuries     add column if not exists source text;
+alter table game_simulations add column if not exists box_score jsonb;
+alter table live_simulations add column if not exists box_score jsonb;
 
 
 -- ---------------------------------------------------------------------------
@@ -381,18 +451,21 @@ alter table predictions  enable row level security;
 alter table game_simulations enable row level security;
 alter table live_tracking    enable row level security;
 alter table live_simulations enable row level security;
+alter table odds_snapshots   enable row level security;
+alter table clv_log          enable row level security;
 
 
 -- ---------------------------------------------------------------------------
 -- 5. VERIFY
 --
--- Expected output: twelve rows, with these column counts.
+-- Expected output: fourteen rows, with these column counts.
 --     depth_charts  6      predictions  17
 --     odds          8      games        20
 --     weather       7      injuries     13
 --     venues       12      teams        13
---     team_ratings 14      game_simulations 41
---     live_tracking 28     live_simulations 28
+--     team_ratings 14      game_simulations 42
+--     live_tracking 28     live_simulations 29
+--     odds_snapshots 13    clv_log      35
 -- ---------------------------------------------------------------------------
 
 select
@@ -412,7 +485,7 @@ where t.table_schema = 'public'
   and t.table_name in (
       'venues', 'teams', 'games', 'team_ratings', 'injuries',
       'depth_charts', 'weather', 'odds', 'predictions', 'game_simulations',
-      'live_tracking', 'live_simulations'
+      'live_tracking', 'live_simulations', 'odds_snapshots', 'clv_log'
   )
 group by t.table_name
 order by t.table_name;

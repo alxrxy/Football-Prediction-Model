@@ -111,7 +111,14 @@ export default function SlateTable({ games }) {
                           {b?.is_value && (
                             <span
                               className="tag flag"
-                              title="Baseline heuristic only, at a fixed threshold. Not backtested."
+                              title={
+                                b?.market_edge
+                                  ? `Blended with the devigged market (model weight ${b.market_edge.weight}): ` +
+                                    `${(b.market_edge.p_side_blend * 100).toFixed(1)}% to cover vs ` +
+                                    `${(b.market_edge.breakeven * 100).toFixed(1)}% break-even. ` +
+                                    'Not yet validated by closing line value.'
+                                  : 'Baseline heuristic only, at a fixed threshold. Not backtested.'
+                              }
                             >
                               unvalidated
                             </span>

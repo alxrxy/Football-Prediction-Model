@@ -14,6 +14,8 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta, timezone
 
+from . import db
+
 # --- tunable priors --------------------------------------------------------
 
 HOME_FIELD_POINTS = {            # neutral sites get 0
@@ -222,7 +224,9 @@ class FeatureContext:
     """Pre-loaded lookups so building N games' features costs one DB read each."""
 
     def __init__(self, store, sport: str = "ncaaf"):
+        self.store = store
         self.sport = sport
+        self.prices: dict[str, list[dict]] = {}
         self.games = store.select("games", {"sport": sport})
         self.teams = {t["team"]: t for t in store.select("teams", {"sport": sport})}
         self.venues = {v["venue_id"]: v for v in store.select("venues")}
@@ -294,6 +298,35 @@ class FeatureContext:
                 n_books = sum(1 for b in books if b.startswith(prefix)) if prefix else 1
                 return float(row["spread"]), row.get("total"), label, n_books
         return None, None, None, 0
+
+    def load_prices(self, game_ids) -> None:
+        """Each book's latest pregame line and prices for these games.
+
+        The odds table keeps each book's line but not its price, and
+        devigging needs the price (src/market.py), so this reads
+        odds_snapshots. A snapshot taken at or after kickoff is an in-play
+        price and is ignored. Games with no snapshot get no prices, which the
+        edge test treats as -110 both ways.
+        """
+        ids = sorted(set(game_ids))
+        kickoff = {g["game_id"]: parse_dt(g.get("kickoff_time")) for g in self.games}
+        rows: list[dict] = []
+        for i in range(0, len(ids), 100):
+            rows += db.select_merged(self.store, "odds_snapshots", {"game_id": ids[i:i + 100]})
+        latest: dict[tuple[str, str], dict] = {}
+        for r in rows:
+            pulled, k = parse_dt(r.get("pulled_at")), kickoff.get(r["game_id"])
+            if pulled is None or (k is not None and pulled >= k):
+                continue
+            key = (r["game_id"], r["book"])
+            if key not in latest or pulled > parse_dt(latest[key]["pulled_at"]):
+                latest[key] = r
+        for (gid, _book), r in latest.items():
+            self.prices.setdefault(gid, []).append(r)
+
+    def ml_books(self, game_id: str) -> list[dict]:
+        """Per-book moneylines from the odds table, for the market's win probability."""
+        return [r for book, r in self.odds.get(game_id, {}).items() if book.startswith("oddsapi:")]
 
     def baseline_margin(self, home: str, away: str) -> tuple[float | None, str, dict]:
         """Layer 1: expected neutral-field margin from power ratings.
@@ -446,4 +479,6 @@ class FeatureContext:
             "market_total": market_total,
             "market_source": market_source,
             "market_books": n_books,
+            "market_prices": self.prices.get(game["game_id"], []),
+            "market_ml_books": self.ml_books(game["game_id"]),
         }
