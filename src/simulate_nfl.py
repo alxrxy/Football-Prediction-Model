@@ -487,7 +487,7 @@ def format_report(row: dict) -> str:
 
 # --- engine calibration ----------------------------------------------------
 
-def calibrate(n: int = 20_000) -> str:
+def calibrate(n: int = 20_000, game_script: bool = True) -> str:
     """Two league-average teams on a neutral field, against what real NFL
     teams actually scored over the library seasons. Nothing is anchored here,
     so this is the honest test of whether the engine's scoring is realistic."""
@@ -502,7 +502,7 @@ def calibrate(n: int = 20_000) -> str:
     pool = PlayerPool(names=["QB", "RB", "WR"],
                       cum={c: np.cumsum([0.1, 0.6, 0.3]) for c in POOL_CATEGORIES},
                       passer_weights=np.array([1.0, 0.0, 0.0]))
-    r = simulate_game(tables, avg, avg, n=n, seed=1, pools=(pool, pool))
+    r = simulate_game(tables, avg, avg, n=n, seed=1, pools=(pool, pool), game_script=game_script)
     s = summarize(r)
     pbp = load_pbp(POOL_SEASONS)
     games = pbp["game_id"].nunique()
@@ -540,7 +540,47 @@ def calibrate(n: int = 20_000) -> str:
            f"  {'':16} {'sim':>8} {'real':>8}"]
     out += [f"  {k:16} {a:>8.3f} {b:>8.3f}" for k, a, b in rows]
     out.append(f"  sim possessions/team {np.mean(s['possessions']):.2f}")
+    out.append(f"  game script {'on' if game_script else 'off'}")
+    out.append(volume_by_margin(r, pbp, sched))
     return "\n".join(out)
+
+
+MARGIN_BANDS = [-14.5, -7.5, 7.5, 14.5]
+MARGIN_LABELS = ("lost by 15+", "lost by 8-14", "within 7", "won by 8-14", "won by 15+")
+
+
+def volume_by_margin(r, pbp: pd.DataFrame, sched: pd.DataFrame) -> str:
+    """Team rush and pass attempts by how the game finished for that team.
+
+    The engine can match league totals and still get this flat, which is the
+    game-script miss behind P11: a team that leads runs the ball, and one that
+    trails throws it. Real games are between unequal teams, so the real
+    column carries some team quality too; the slope across bands is the check.
+    """
+    sim_margin = np.concatenate([r.points[:, 0] - r.points[:, 1], r.points[:, 1] - r.points[:, 0]])
+    sim = {k: np.concatenate([r.players[0][k].sum(axis=1), r.players[1][k].sum(axis=1)])
+           for k in ("rush_att", "pass_att")}
+    snaps = pbp[pbp["play_type"].isin(["pass", "run"]) & (pbp["two_point_attempt"] != 1)]
+    tg = pd.DataFrame({
+        "game_id": snaps["game_id"].astype(str), "team": snaps["posteam"].astype(str),
+        "rush_att": (snaps["rush_attempt"] == 1).astype(int),
+        "pass_att": ((snaps["pass_attempt"] == 1) & (snaps["sack"] != 1)).astype(int),
+    }).groupby(["game_id", "team"], as_index=False)[["rush_att", "pass_att"]].sum()
+    tg = tg.merge(sched[["game_id", "home_team", "home_score", "away_score"]].astype({"game_id": str}),
+                  on="game_id")
+    diff = (tg["home_score"] - tg["away_score"]).to_numpy()
+    real_margin = np.where(tg["team"].to_numpy() == tg["home_team"].to_numpy(), diff, -diff)
+    rush, passes = tg["rush_att"].to_numpy(), tg["pass_att"].to_numpy()
+    sb, rb = np.digitize(sim_margin, MARGIN_BANDS), np.digitize(real_margin, MARGIN_BANDS)
+    lines = ["  team volume by final margin   rush att sim / real   pass att sim / real   games sim / real"]
+    for i, label in enumerate(MARGIN_LABELS):
+        s, q = sb == i, rb == i
+        if not s.any() or not q.any():
+            continue
+        lines.append(f"    {label:<14} {sim['rush_att'][s].mean():>10.1f} / {rush[q].mean():<5.1f}"
+                     f" {sim['pass_att'][s].mean():>12.1f} / {passes[q].mean():<5.1f}"
+                     f" {s.mean():>11.1%} / {q.mean():.1%}")
+    return "\n".join(lines)
 
 
 # --- entrypoint ------------------------------------------------------------
@@ -626,10 +666,12 @@ if __name__ == "__main__":
     parser.add_argument("--sims", type=int, default=N_SIMS)
     parser.add_argument("--no-store", action="store_true", help="print only, write nothing")
     parser.add_argument("--quiet", action="store_true", help="one line per game instead of the full report")
+    parser.add_argument("--no-script", action="store_true",
+                        help="with --calibrate: game script off, for a before/after")
     args = parser.parse_args()
 
     if args.calibrate:
-        print(calibrate())
+        print(calibrate(game_script=not args.no_script))
     else:
         run(args.game, [date.fromisoformat(d) for d in args.date] if args.date else None,
             args.sims, store_results=not args.no_store, quiet=args.quiet)

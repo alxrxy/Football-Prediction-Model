@@ -22,6 +22,12 @@ exp(lambda * its EPA), with lambda solved so the reweighted library averages
 exactly the EPA per play this offence is expected to produce against this
 defence. A strong offence therefore draws more of the plays that actually
 worked, in every situation, with no invented yardage curve.
+
+Game script: before a scrimmage play is drawn, the call is made, run or
+dropback, at the bucket's pass rate shifted by the scoreboard and the clock
+(sim_data.script_state). A simulated team that goes ahead starts running and
+one that falls behind starts throwing, so volume follows each simulated game
+rather than an average one.
 """
 
 from __future__ import annotations
@@ -30,8 +36,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .sim_data import FG, GO, N_PUNT_BINS, PUNT, SimTables, bucket_index
-from .sim_data import FOURTH_TOGO_EDGES
+from .sim_data import FG, GO, N_BUCKETS, N_PUNT_BINS, PUNT, SimTables, bucket_index
+from .sim_data import FOURTH_TOGO_EDGES, script_state, segment_cdf
 
 PERIOD_END = np.array([0.0, 1800.0, 3600.0, 4200.0])   # indexed by period; 3 = overtime
 MAX_SNAPS = 700
@@ -149,37 +155,80 @@ def solve_tilt(epa: np.ndarray, base: np.ndarray, target: float) -> float:
 _SAMPLER_CACHE: dict = {}
 
 
-def _sampler(tables: SimTables, offense: Offense) -> "_Sampler":
+def _sampler(tables: SimTables, offense: Offense, game_script: bool = True) -> "_Sampler":
     """Samplers are pure functions of the library and the offence, and cost
     a tilt solve over 112k plays to build. The live tracker re-simulates the
     same matchups every poll, so they are kept rather than rebuilt."""
-    key = (id(tables), round(offense.target_epa, 7), round(offense.pass_rate_oe, 7))
+    key = (id(tables), round(offense.target_epa, 7), round(offense.pass_rate_oe, 7), game_script)
     sampler = _SAMPLER_CACHE.get(key)
     if sampler is None:
         if len(_SAMPLER_CACHE) >= 64:
             _SAMPLER_CACHE.clear()
-        sampler = _SAMPLER_CACHE[key] = _Sampler(tables, offense)
+        sampler = _SAMPLER_CACHE[key] = _Sampler(tables, offense, game_script)
     return sampler
 
 
+KIND_RUN, KIND_DROPBACK, KIND_OTHER = 0, 1, 2   # OTHER: no-play penalties
+
+
 class _Sampler:
-    def __init__(self, tables: SimTables, offense: Offense):
+    """Draws scrimmage plays for one offence.
+
+    Without a game script a play comes straight from its bucket as the
+    tilted library has it. With one, the call is made first: dropback at the
+    bucket's tilted pass rate shifted in log-odds by the script state, else a
+    run, and then a real play of that kind is drawn from the bucket. No-play
+    penalties keep their bucket share either way, and in a state with no
+    shift the mix is exactly the bucket's, so strength and team tendency
+    (PROE) carry through unchanged.
+    """
+
+    def __init__(self, tables: SimTables, offense: Offense, game_script: bool = True):
         base = tables.base_weights(offense.pass_rate_oe)
         self.lam = solve_tilt(tables.epa, base, offense.target_epa)
-        self.cdf = tables.segment_cdf(base * np.exp(self.lam * tables.epa))
+        w = base * np.exp(self.lam * tables.epa)
         self.tables = tables
+        self.script = game_script and tables.script_shift is not None
+        if not self.script:
+            self.cdf = tables.segment_cdf(w)
+            return
+        kind = np.where(tables.dropback, KIND_DROPBACK, np.where(tables.is_run, KIND_RUN, KIND_OTHER))
+        seg = tables.bucket * 3 + kind
+        self.order = np.argsort(seg, kind="stable")
+        self.cdf = segment_cdf(seg[self.order], w[self.order], N_BUCKETS * 3)
+        mass = np.zeros((N_BUCKETS, 3))
+        np.add.at(mass, (tables.bucket, kind), w)
+        self.has = mass > 0
+        self.p_other = mass[:, KIND_OTHER] / np.maximum(mass.sum(axis=1), 1e-12)
+        pf = mass[:, KIND_DROPBACK] / np.maximum(mass[:, KIND_DROPBACK] + mass[:, KIND_RUN], 1e-12)
+        pf = np.clip(pf, 0.01, 0.99)
+        self.logit_pass = np.log(pf / (1 - pf))
 
-    def draw(self, rng: np.random.Generator, down, togo, yl) -> np.ndarray:
+    def draw(self, rng: np.random.Generator, down, togo, yl, state=None) -> np.ndarray:
         b = self.tables.bucket_map[bucket_index(down, togo, yl)]
-        return np.searchsorted(self.cdf, b + rng.random(len(b)), side="right")
+        if not self.script:
+            return np.searchsorted(self.cdf, b + rng.random(len(b)), side="right")
+        shift = self.tables.script_shift[state] if state is not None else 0.0
+        p_pass = 1.0 / (1.0 + np.exp(-(self.logit_pass[b] + shift)))
+        u = rng.random((3, len(b)))
+        kind = np.where(u[0] < self.p_other[b], KIND_OTHER,
+                        np.where(u[1] < p_pass, KIND_DROPBACK, KIND_RUN))
+        # A populated bucket with no play of the chosen kind is vanishingly
+        # rare; draw whatever kind it does have rather than spill into the next.
+        gap = ~self.has[b, kind]
+        if gap.any():
+            kind[gap] = np.argmax(self.has[b[gap]], axis=1)
+        idx = np.searchsorted(self.cdf, b * 3 + kind + u[2], side="right")
+        return self.order[idx]
 
 
 class _Game:
     def __init__(self, tables: SimTables, home: Offense, away: Offense,
-                 n: int, seed: int, wind_mph: float, pools: tuple | None = None):
+                 n: int, seed: int, wind_mph: float, pools: tuple | None = None,
+                 game_script: bool = True):
         self.t = tables
         self.rng = np.random.default_rng(seed)
-        self.samplers = (_sampler(tables, home), _sampler(tables, away))
+        self.samplers = (_sampler(tables, home, game_script), _sampler(tables, away, game_script))
         self.wind = wind_mph
         self.n = n
         z = lambda *shape: np.zeros(shape, dtype=np.int32)  # noqa: E731
@@ -370,11 +419,12 @@ class _Game:
         t = self.t
         rows = np.empty(len(ix), dtype=np.int64)
         off = self.off[ix]
+        state = script_state(self.points[ix, off] - self.points[ix, 1 - off], self.clock[ix])
         for side in (0, 1):
             m = off == side
             if m.any():
                 s = ix[m]
-                rows[m] = self.samplers[side].draw(self.rng, self.down[s], self.togo[s], self.yl[s])
+                rows[m] = self.samplers[side].draw(self.rng, self.down[s], self.togo[s], self.yl[s], state[m])
 
         yl, togo = self.yl[ix], self.togo[ix]
         y = t.yards[rows].astype(np.int32)
@@ -576,11 +626,14 @@ class _Game:
 
 def simulate_game(tables: SimTables, home: Offense, away: Offense,
                   n: int = 10_000, seed: int = 0, wind_mph: float = 0.0,
-                  start: LiveStart | None = None, pools: tuple | None = None) -> SimResult:
+                  start: LiveStart | None = None, pools: tuple | None = None,
+                  game_script: bool = True) -> SimResult:
     """Simulate from kickoff, or with `start` from a game already under way
     (same engine, same team strengths; only the initial state differs).
-    With `pools` (home, away), every play is also credited to players."""
-    return _Game(tables, home, away, n, seed, wind_mph, pools).run(start)
+    With `pools` (home, away), every play is also credited to players.
+    `game_script=False` draws plays as if the score never mattered (for
+    before/after comparisons)."""
+    return _Game(tables, home, away, n, seed, wind_mph, pools, game_script).run(start)
 
 
 # --- summaries -------------------------------------------------------------
