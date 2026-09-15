@@ -40,7 +40,7 @@ status only when its adoption test is met.
 | P10 | Props: apply game-day inactives before simulating | data | 2026-09-14 | DAL@NYG: 4 projected players recorded nothing (N. Harris 5.3 car, Beckham, Cambre, Abanikanda), none on the injury list; Singletary took 10 touches + TD unprojected | none needed for correctness; track "projected, no stats" rate weekly | proposed |
 | P11 | Props: rushing volume bands too narrow (game script) | investigate | 2026-09-14 | DAL@NYG: rush att in the 50% band 2/8, rush yds 1/8; team rush att −8 (trailing DAL), +9 (leading NYG). DEN@KC: leading KC 38 rush att vs median 25 (p90 31), trailing DEN 15 | 50% band hit rate for rush att in 40-60% over 10+ simulated games | investigate |
 | P12 | Run pregame sims before the first kickoff | process | 2026-09-14 | 12/13 week-1 sims written 23:11Z, after kickoff, so only DAL@NYG props are gradeable | n/a | proposed |
-| P13 | NFL prior-season rating must be QB-conditional (weight the prior by the expected starter's games, or add a QB-change term) | logic | 2026-09-15 | DEN@KC: KC's 2025 rating includes 146 backup-QB plays at −0.347 EPA; Mahomes-only prior moves KC +2.9 pts, edge −3.46 → −0.56, flag off. Scope: 11/32 teams shift ≥ 1 pt from non-primary starts (NYJ +5.1, IND +3.8, KC +2.9) | rebuild NFL training with QB-conditioned prior; holdout MAE vs line must not get worse, and weeks 1-4 MAE should improve | proposed |
+| P13 | NFL prior-season rating must be QB-conditional (weight the prior by the expected starter's games, or add a QB-change term) | logic | 2026-09-15 | DEN@KC: KC's 2025 rating includes 146 backup-QB plays at −0.347 EPA; Mahomes-only prior moves KC +2.9 pts, edge −3.46 → −0.56, flag off. Scope: 11/32 teams shift ≥ 1 pt from non-primary starts (NYJ +5.1, IND +3.8, KC +2.9) | rebuild NFL training with QB-conditioned prior; holdout MAE vs line must not get worse, and weeks 1-4 MAE should improve | **tested 2026-09-15, not adopted.** Starter-games prior (≥ 4 starts): baseline wks 1-4 2016-25 MAE 10.46 → 10.56 (moved games 10.08 → 10.53); ML 2025 holdout MAE 10.08 → 10.10, wks 1-4 8.98 → 9.13. Fails both parts. Code kept behind `QB_CONDITIONAL_PRIOR=0` |
 | P14 | Snap-share fallback is per dataset, not per player | bug fix | 2026-09-15 | `_snap_shares` stops at 2026 once it has > 500 rows, so teams that hadn't played and players who sat out week 1 get no share: 78/154 latest NFL injury rows; every DEN/KC row. DEN@KC injury term −0.95 → −2.63 with real shares | none needed; correctness bug | **applied 2026-09-15** (`ingest_injuries.merge_snap_shares`); NFL rows without a share 78/154 → 32/161 on the week-2 pull |
 | P15 | Never grade a prediction made after kickoff; never store in-play lines | bug fix | 2026-09-15 | 19 of 80 CFB predictions on 09-12 were generated at 18:37Z, after 16:00–17:00 kickoffs, against in-play Odds API lines (Georgia −69.5 vs DK close −40.5). The old rule flagged 8 of them, 6-2. Pregame-only flagged record is 15-25, not 21-27 | none needed | **applied**: predict-side guard since 2026-09-14 (`ba6d7f3`); `ingest_odds` skips in-play events and CLV marks late leans `after_kickoff`, 2026-09-15 |
 | P16 | Baseline model weight to 0 if its NFL leans show no CLV | weight | 2026-09-15 | backfill: 75 pregame baseline leans −0.22 pp (t −1.22), but 61 are CFB and priced at an assumed −110 against DK's close; NFL n=14 | NFL lean CLV ≤ 0 at 65+ NFL leans (≈ week 5) → set `MODEL_MARKET_WEIGHT=0` for the baseline | watch |
@@ -85,6 +85,47 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-15 — P13 (QB-conditional prior) tested, not adopted
+
+The test: take last season's offense only from the games started by the
+quarterback expected to start now, if he started ≥ 4 for that team; else the
+whole season, as before (`src/qb_prior.py`, `QB_CONDITIONAL_PRIOR`). The 4 was
+fixed in advance and not tuned. Full tables:
+`calibration/2026-09-15_p13_qb_prior_before_after.md` (regenerate with
+`python calibration/p13_qb_prior_backtest.py <out.md>`).
+
+| Test | Off | On |
+|---|---|---|
+| Baseline Layer 1, wks 1-4 2016-25 (615 games), MAE | 10.457 | 10.563 |
+| same, the 163 games it moved ≥ 1 pt | 10.083 | 10.532 |
+| same, ATS all leans | 301-302 | 302-301 |
+| ML 2025 holdout (285), MAE (line 9.67) | 10.080 | 10.096 |
+| ML 2025 holdout, wks 1-4 MAE | 8.975 | 9.125 |
+| ML 2025 holdout, ATS all leans | 143/285 | 147/285 |
+
+- Worse on both models and both measures of the adoption test. On the games
+  it moved, it moved toward the result 54% of the time, by 2.9 pts on
+  average: right about as often as wrong, and by a lot. 6 of 10 seasons got
+  worse.
+- So DEN @ KC was one game where the mechanism was real, not a rule. Likely
+  reasons, not tested: a starter's own games are a smaller, noisier sample
+  than the season; backup-QB games also reflect the roster around him (a bad
+  team loses its starter to a bad line); and the market prices QB changes
+  anyway, so a QB-blind prior was already mostly compensated for by the line
+  in these comparisons.
+- Not tried, and would need a fresh test rather than tuning this one: shrink
+  the starter-games mean toward the season mean by sample size, instead of
+  replacing it.
+- A bug found on the way: the first ML run was a no-op (a variable-name
+  clash in `build_training.build_nfl` overwrote the starter ids with injury
+  values). Fixed before the numbers above; the backtest now reports how many
+  training rows the prior moved (1012 of 3028) so a no-op can't read as "no
+  effect" again.
+- `train_model` now reports weeks 1-4 MAE on every holdout run. The live model
+  and training set are unchanged.
 
 ---
 
