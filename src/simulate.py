@@ -97,6 +97,17 @@ class LiveStart:
 STAT_NAMES = ("pass_att", "pass_cmp", "pass_yds", "pass_td", "pass_int",
               "rush_att", "rush_yds", "rush_td", "tgt", "rec", "rec_yds", "rec_td")
 
+# Why each simulated drive ended, for the engine diagnostic in
+# simulate_nfl.calibrate. The labels match how the same thing is derived from
+# real play-by-play, so the two distributions line up column for column.
+# Tracked only when _Game is built with track_drives=True: the counters are a
+# few integer adds per drive, but the default stays off so an ordinary
+# 10,000-game run does no extra work in the hot loop.
+DRIVE_OUTCOMES = ("TD", "FG made", "FG miss", "punt", "turnover", "downs",
+                  "def TD", "safety", "end of half/game")
+(DR_TD, DR_FG_MADE, DR_FG_MISS, DR_PUNT, DR_TURNOVER, DR_DOWNS,
+ DR_DEF_TD, DR_SAFETY, DR_CLOCK) = range(len(DRIVE_OUTCOMES))
+
 
 @dataclass
 class PlayerPool:
@@ -131,6 +142,10 @@ class SimResult:
     tilt: tuple[float, float]
     checkpoints: np.ndarray   # (n, len(CHECKPOINTS), 2) score at each checkpoint
     players: tuple | None = None   # per side {stat: (n, players)}, when pools were given
+    # {"counts": (len(DRIVE_OUTCOMES),), "plays": (len(DRIVE_OUTCOMES),)} —
+    # drives ending each way and the scrimmage plays they took, summed over
+    # every simulated game. None unless track_drives was set.
+    drives: dict | None = None
 
 
 def solve_tilt(epa: np.ndarray, base: np.ndarray, target: float) -> float:
@@ -225,7 +240,7 @@ class _Sampler:
 class _Game:
     def __init__(self, tables: SimTables, home: Offense, away: Offense,
                  n: int, seed: int, wind_mph: float, pools: tuple | None = None,
-                 game_script: bool = True):
+                 game_script: bool = True, track_drives: bool = False):
         self.t = tables
         self.rng = np.random.default_rng(seed)
         self.samplers = (_sampler(tables, home, game_script), _sampler(tables, away, game_script))
@@ -243,6 +258,16 @@ class _Game:
         self.second_half_receiver = np.zeros(n, dtype=np.int32)
         self.cp_points = z(n, len(CHECKPOINTS), 2)
         self.cp_next = np.ones(n, dtype=np.int32)   # checkpoint 0 is 0-0 by definition
+
+        # Drive diagnostic (off by default). `in_drive` marks games whose drive
+        # is still open, so the two paths that end one without calling _end --
+        # a kneel-out and the clock expiring -- are counted exactly once.
+        self.track_drives = track_drives
+        if track_drives:
+            self.in_drive = np.zeros(n, dtype=bool)
+            self.drive_plays = z(n)
+            self.drive_counts = np.zeros(len(DRIVE_OUTCOMES), dtype=np.int64)
+            self.drive_play_sums = np.zeros(len(DRIVE_OUTCOMES), dtype=np.int64)
 
         self.pools = pools
         self.pstats = self.passer = None
@@ -279,12 +304,22 @@ class _Game:
         self.down[ix] = 1
         self.togo[ix] = np.minimum(10, self.yl[ix])
         self.possessions[ix, side] += 1
+        if self.track_drives and len(ix):
+            self.in_drive[ix] = True
+            self.drive_plays[ix] = 0
 
-    def _end(self, ix):
-        """The side with the ball has finished a possession. Only overtime
-        cares, since both sides must have had the ball before it can end."""
+    def _end(self, ix, outcome=None):
+        """The side with the ball has finished a possession. Overtime cares,
+        since both sides must have had the ball before it can end; the drive
+        diagnostic cares about `outcome`, which says how it finished."""
         ot = ix[self.period[ix] == 3]
         self.ot_poss[ot, self.off[ot]] += 1
+        if self.track_drives and outcome is not None and len(ix):
+            open_ = ix[self.in_drive[ix]]
+            if len(open_):
+                self.drive_counts[outcome] += len(open_)
+                self.drive_play_sums[outcome] += int(self.drive_plays[open_].sum())
+                self.in_drive[open_] = False
 
     def _touchdown(self, ix, side):
         self.points[ix, side] += 6
@@ -326,6 +361,7 @@ class _Game:
         live = ~self.done
         half = np.flatnonzero(live & (self.period == 1) & (self.clock >= 1800))
         if len(half):
+            self._end(half, DR_CLOCK)      # the first-half drive is abandoned here
             self.period[half] = 2
             self.clock[half] = 1800
             self._kickoff(half, self.second_half_receiver[half])
@@ -335,6 +371,10 @@ class _Game:
         self.done |= end & ~tied
         ot = np.flatnonzero(end & tied)
         if len(ot):
+            # Regulation's last drive is abandoned when overtime kicks off.
+            # Counted before the period moves to 3, so it is not also recorded
+            # as an overtime possession.
+            self._end(ot, DR_CLOCK)
             self.period[ot] = 3
             self.clock[ot] = 3600
             self.overtime[ot] = True
@@ -349,6 +389,8 @@ class _Game:
         period = self.period[ix]
 
         kneel = (period == 2) & (lead > 0) & (remaining <= KNEEL_SECONDS)
+        if kneel.any():
+            self._end(ix[kneel], DR_CLOCK)
         self.done[ix[kneel]] = True
 
         late_fg = ~kneel & (remaining <= LATE_FG_SECONDS) & (yl <= LATE_FG_YL) \
@@ -388,8 +430,11 @@ class _Game:
         made = self.rng.random(len(ix)) < self.t.fg_prob(self.yl[ix] + FG_EXTRA, self.wind)
         spot = self.yl[ix] + KICK_SPOT
         self.clock[ix] += 5
-        self._end(ix)
         good, miss = ix[made], ix[~made]
+        # Split the possession-end so the diagnostic can tell a made kick from a
+        # miss; both run before _start below moves the ball.
+        self._end(good, DR_FG_MADE)
+        self._end(miss, DR_FG_MISS)
         self.points[good, kicker[made]] += 3
         self.fgs[good, kicker[made]] += 1
         self._kickoff(good, 1 - kicker[made])
@@ -405,7 +450,7 @@ class _Game:
         receiver = 1 - self.off[ix]
         ret = t.punt_ret_td[row]
         self.clock[ix] += 6
-        self._end(ix)
+        self._end(ix, DR_PUNT)
         self._start(ix[~ret], receiver[~ret], t.punt_start[row[~ret]])
         if ret.any():
             rix, rside = ix[ret], receiver[ret]
@@ -429,6 +474,9 @@ class _Game:
         yl, togo = self.yl[ix], self.togo[ix]
         y = t.yards[rows].astype(np.int32)
         pen = t.is_penalty[rows]
+        if self.track_drives:
+            # Count what play-by-play counts: a penalty no-play is not a snap.
+            self.drive_plays[ix[~pen]] += 1
         # Half the distance to the goal caps any penalty.
         y = np.where(pen & (y < 0), np.maximum(y, -((100 - yl) // 2)), y)
         y = np.where(pen & (y > 0), np.minimum(y, yl // 2), y)
@@ -445,7 +493,7 @@ class _Game:
 
         if dtd.any():
             i, side = ix[dtd], 1 - off[dtd]
-            self._end(i)
+            self._end(i, DR_DEF_TD)
             self._touchdown(i, side)
             self.ret_tds[i, side] += 1
             self._kickoff(i, off[dtd])
@@ -455,7 +503,7 @@ class _Game:
             shifted = t.next_start[r] - (yl[lost] - t.yl_orig[r])
             spot = 100 - np.clip(new[lost], 1, 99)
             opp = np.where(np.isnan(shifted), spot, shifted).astype(np.int32)
-            self._end(ix[lost])
+            self._end(ix[lost], DR_TURNOVER)
             self._start(ix[lost], 1 - off[lost], opp)
 
         if otd.any():
@@ -463,14 +511,14 @@ class _Game:
             kind = np.where(t.is_rush[rows[otd]], RUSH, PASS)
             zone = np.where(yl[otd] <= 5, GOAL_LINE, np.where(yl[otd] <= 20, RED_ZONE, OPEN_FIELD))
             self.td_events[i, side * 6 + kind * 3 + zone] += 1
-            self._end(i)
+            self._end(i, DR_TD)
             self._touchdown(i, side)
             self._kickoff(i, 1 - side)
 
         if safety.any():
             i, side = ix[safety], off[safety]
             self.points[i, 1 - side] += 2
-            self._end(i)
+            self._end(i, DR_SAFETY)
             self._kickoff(i, 1 - side)
 
         if cont.any():
@@ -484,7 +532,7 @@ class _Game:
             downs = down > 4
             if downs.any():
                 j = i[downs]
-                self._end(j)
+                self._end(j, DR_DOWNS)
                 self._start(j, 1 - self.off[j], 100 - nc[downs])
 
     # --- player stats -----------------------------------------------------
@@ -585,6 +633,10 @@ class _Game:
             self.down[:] = s.down
             self.togo[:] = int(np.clip(s.togo or 10, 1, yl))
             self.possessions[:, s.possession] += 1
+            if self.track_drives:
+                # This path opens a drive without going through _start.
+                self.in_drive[:] = True
+                self.drive_plays[:] = 0
             return
         if s.kickoff_receiver is not None:
             receiver = np.full(n, s.kickoff_receiver, dtype=np.int32)
@@ -616,24 +668,38 @@ class _Game:
         for k in range(len(CHECKPOINTS)):
             early = self.cp_next <= k
             self.cp_points[early, k] = self.points[early]
+        drives = None
+        if self.track_drives:
+            # Whatever is still open ran out of clock: end of regulation, or the
+            # end of overtime. Halftime and kneel-outs were closed as they hap-
+            # pened, and in_drive guarantees nothing is counted twice.
+            left = np.flatnonzero(self.in_drive)
+            if len(left):
+                self.drive_counts[DR_CLOCK] += len(left)
+                self.drive_play_sums[DR_CLOCK] += int(self.drive_plays[left].sum())
+                self.in_drive[left] = False
+            drives = {"counts": self.drive_counts, "plays": self.drive_play_sums}
         return SimResult(
             points=self.points, tds=self.tds, fgs=self.fgs, td_events=self.td_events,
             return_tds=self.ret_tds, overtime=self.overtime, possessions=self.possessions,
             tilt=(self.samplers[0].lam, self.samplers[1].lam), checkpoints=self.cp_points,
-            players=self.pstats,
+            players=self.pstats, drives=drives,
         )
 
 
 def simulate_game(tables: SimTables, home: Offense, away: Offense,
                   n: int = 10_000, seed: int = 0, wind_mph: float = 0.0,
                   start: LiveStart | None = None, pools: tuple | None = None,
-                  game_script: bool = True) -> SimResult:
+                  game_script: bool = True, track_drives: bool = False) -> SimResult:
     """Simulate from kickoff, or with `start` from a game already under way
     (same engine, same team strengths; only the initial state differs).
     With `pools` (home, away), every play is also credited to players.
     `game_script=False` draws plays as if the score never mattered (for
-    before/after comparisons)."""
-    return _Game(tables, home, away, n, seed, wind_mph, pools, game_script).run(start)
+    before/after comparisons). `track_drives` adds the drive-outcome counters
+    used by the engine diagnostic; it is off by default so ordinary runs pay
+    nothing for it."""
+    return _Game(tables, home, away, n, seed, wind_mph, pools,
+                 game_script, track_drives).run(start)
 
 
 # --- summaries -------------------------------------------------------------
