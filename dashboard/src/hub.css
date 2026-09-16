@@ -254,6 +254,49 @@ ul.scoring li:last-child { border-bottom: 0; }
 .sc-score { font-weight: 700; font-variant-numeric: tabular-nums; }
 .kp-name { display: inline-flex; align-items: center; gap: 6px; }
 
+/* --- track record: totals, then week by week --- */
+.totals h3 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.totals h3 .muted { font-size: 12px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.total-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; }
+.total-card { padding: 14px 16px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border); }
+.total-card h4 { margin-bottom: 12px; color: var(--text); }
+.total-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.total-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.total-stat em { font-style: normal; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+.total-stat strong { font-family: var(--mono); font-size: 25px; font-weight: 700; line-height: 1.1; }
+.total-stat strong.good { color: var(--good); }
+.total-stat strong.bad { color: var(--bad); }
+.total-stat span { font-size: 11.5px; color: var(--text-dim); }
+.totals > p { margin-bottom: 0; }
+
+.weeks { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); }
+.week { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); margin-top: 10px; }
+.week summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 12px 14px; cursor: pointer; list-style: none;
+}
+.week summary::-webkit-details-marker { display: none; }
+.week summary::before { content: '▸'; color: var(--text-dim); font-size: 11px; }
+.week[open] summary::before { content: '▾'; }
+.week[open] summary { border-bottom: 1px solid var(--border); }
+.week summary:hover { background: var(--surface-2); border-radius: 13px 13px 0 0; }
+.week-name { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.week-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.week-tag {
+  display: inline-flex; align-items: center; gap: 9px; font-size: 12px;
+  padding: 3px 11px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border);
+}
+.week-tag span { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.week .table-wrap { padding: 2px 6px 0; }
+.week table.slate tr.group-head th { padding-bottom: 2px; border-bottom: 0; color: var(--text); }
+.week table.slate tr.group-head th:not(:empty) { border-bottom: 1px solid var(--border); text-align: center; }
+.wk-team { display: inline-flex; align-items: center; gap: 5px; }
+.week-note { padding: 0 14px 12px; margin-top: 8px; }
+@media (max-width: 640px) {
+  .total-pair { grid-template-columns: 1fr; }
+  .week-tags { margin-left: 0; width: 100%; }
+}
+
 /* --- win-probability chart --- */
 .wpchart { margin: 0; }
 .wpchart figcaption { font-size: 13.5px; margin-bottom: 8px; }
