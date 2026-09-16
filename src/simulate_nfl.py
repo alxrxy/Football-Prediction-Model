@@ -548,6 +548,7 @@ def calibrate(n: int = 20_000, game_script: bool = True) -> str:
     out.append(volume_by_margin(r, pbp, sched))
     out.append(drive_report(r, pbp))
     out.append(down_state_report(r, pbp))
+    out.append(series_report(r, pbp))
     return "\n".join(out)
 
 
@@ -647,6 +648,68 @@ def drive_report(r: SimResult, pbp: pd.DataFrame) -> str:
                        f"{sim_share:>8.3f} {real_share:>8.3f}")
         out.append(f"  {'mean':>12} {(np.arange(len(h)) * h).sum() / h.sum():>8.3f} "
                    f"{real['fd'].mean():>8.3f}")
+    return "\n".join(out)
+
+
+def series_report(r: SimResult, pbp: pd.DataFrame) -> str:
+    """Series-level survival: how often a set of downs earns another.
+
+    Drive length is the number of series a drive strings together, so this is
+    the level between "conversions per play" (which matches real) and "plays
+    per drive" (which does not). Real series are counted directly from
+    play-by-play rather than derived: a first down awarded by penalty starts a
+    series without any play gaining the yardage, so an identity built on
+    `yards_gained >= ydstogo` alone undercounts them by ~4%.
+    """
+    d = r.drives or {}
+    started, converted = d.get("series_started"), d.get("series_converted")
+    if not started:
+        return "  series tracking off"
+
+    g = pbp[pbp["posteam"].notna() & pbp["fixed_drive"].notna()].copy()
+    if "season_type" in g.columns:
+        g = g[g["season_type"] == "REG"]
+    scrim = (((g["pass_attempt"] == 1) & (g["sack"] != 1)).astype(int)
+             + (g["sack"] == 1).astype(int)
+             + (g["rush_attempt"] == 1).astype(int))
+    g = g[(scrim > 0) & g["down"].between(1, 4) & g["ydstogo"].notna()]
+    g["off_td"] = ((g["touchdown"] == 1) & (g["td_team"] == g["posteam"])).astype(int)
+    key = ["game_id", "posteam", "fixed_drive"]
+    g["series_no"] = g.groupby(key)["down"].transform(lambda s: (s == 1).cumsum()).clip(lower=1)
+    drv = g.groupby(key).agg(max_series=("series_no", "max"), drive_td=("off_td", "max"))
+    ser = g.groupby(key + ["series_no"]).size().rename("plays").reset_index().merge(drv, on=key)
+    ser["converted"] = ((ser["series_no"] < ser["max_series"])
+                        | ((ser["series_no"] == ser["max_series"]) & (ser["drive_td"] == 1)))
+
+    down_plays = np.asarray(d["down_plays"], dtype=float)
+    drives = float(np.asarray(d["counts"]).sum())
+    plays = float(down_plays.sum())
+    # A series is a set of downs in which a snap was actually taken, and that
+    # is exactly the number of snaps on first down: a drive only returns to
+    # first down by earning one. Real confirms the equivalence -- 44,517
+    # first-down snaps against 44,517 series counted directly over 2023-25 --
+    # whereas `series_started` also counts a set of downs earned as the clock
+    # expired and never played, which is why it is reported but not used as
+    # the denominator.
+    series = float(down_plays[0].sum())
+    # A first down can be earned and never played -- the clock ends the drive
+    # first -- and so can a drive itself, opened by a kickoff as the half
+    # expires. Real counts neither, so neither can the numerator here, or the
+    # rate is measured against a denominator that excludes them.
+    never_played = started - series
+    no_snap_drives = int(d.get("zero_snap_drives", 0))
+    unplayed_fd = max(never_played - no_snap_drives, 0)
+    converted_played = converted - unplayed_fd
+
+    rows = [
+        ("series / drive", series / drives, len(ser) / len(drv)),
+        ("series conversion", converted_played / series, float(ser["converted"].mean())),
+        ("plays / series", plays / series, float(ser["plays"].mean())),
+    ]
+    out = ["", f"  {'':20} {'sim':>8} {'real':>8} {'diff':>8}"]
+    out += [f"  {k:20} {a:>8.3f} {b:>8.3f} {100 * (a / b - 1):>7.1f}%" for k, a, b in rows]
+    out.append(f"  first downs by penalty: sim {d.get('fd_by_penalty', 0):,} "
+               f"({d.get('fd_by_penalty', 0) / max(converted, 1):.1%} of conversions)")
     return "\n".join(out)
 
 
