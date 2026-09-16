@@ -302,6 +302,7 @@ def _results(store, sport: str) -> dict:
         "total_graded": len(graded),
         "models": out,
         "last_slate": _last_slate(graded, games),
+        "weeks": _weeks(graded, games),
     }
 
 
@@ -329,28 +330,84 @@ def _last_slate(graded: list[dict], games: dict[str, dict]) -> dict | None:
         return None
 
     day = max(by_day)
-    out = []
-    for game_id, models in by_day[day].items():
-        game = games[game_id]
-        any_row = models.get(config.MODEL_VERSION) or next(iter(models.values()))
-        actual = any_row["actual_margin"]
-        market = any_row.get("market_spread")
-        out.append({
-            "game_id": game_id,
-            "kickoff": game.get("kickoff_time"),
-            "home": game["home_team"],
-            "away": game["away_team"],
-            "neutral": bool(game.get("is_neutral_site")),
-            "home_points": any_row["actual_home_points"],
-            "away_points": any_row["actual_away_points"],
-            "actual_margin": actual,
-            "market_spread": market,
-            "market_error": round(-float(market) - actual, 1) if market is not None else None,
-            "baseline": _graded_pick(models.get(config.MODEL_VERSION), actual),
-            "ml": _graded_pick(models.get("ml-v1"), actual),
-        })
+    out = [_game_row(games[gid], models) for gid, models in by_day[day].items()]
     out.sort(key=lambda g: g["kickoff"] or "")
     return {"date": day, "games": out}
+
+
+def _game_row(game: dict, models: dict[str, dict]) -> dict:
+    """One graded game with both models' results, as the tables render it."""
+    any_row = models.get(config.MODEL_VERSION) or next(iter(models.values()))
+    actual = any_row["actual_margin"]
+    market = any_row.get("market_spread")
+    return {
+        "game_id": game["game_id"],
+        "kickoff": game.get("kickoff_time"),
+        "home": game["home_team"],
+        "away": game["away_team"],
+        "neutral": bool(game.get("is_neutral_site")),
+        "home_points": any_row["actual_home_points"],
+        "away_points": any_row["actual_away_points"],
+        "actual_margin": actual,
+        "market_spread": market,
+        "market_error": round(-float(market) - actual, 1) if market is not None else None,
+        "baseline": _graded_pick(models.get(config.MODEL_VERSION), actual),
+        "ml": _graded_pick(models.get("ml-v1"), actual),
+    }
+
+
+def _weeks(graded: list[dict], games: dict[str, dict]) -> list[dict]:
+    """Every graded week, newest first: each model's record plus every game.
+
+    `by_slate` is one row per slate day, which splits a single NFL week across
+    Thursday, Sunday and Monday and never carries the games themselves. A week
+    is the unit a season is actually read in, so it is grouped that way here
+    and keeps the game rows, letting the page show the misses next to the
+    hits without the reader opening anything.
+    """
+    from .grade import correctness_score, evaluate
+
+    buckets: dict[tuple, dict[str, dict[str, dict]]] = {}
+    for row in graded:
+        game = games.get(row["game_id"])
+        if not game or game.get("week") is None:
+            continue
+        key = (game.get("season"), game.get("week"))
+        buckets.setdefault(key, {}).setdefault(row["game_id"], {})[row["model_version"]] = row
+
+    out = []
+    for (season, week), by_game in sorted(buckets.items(), reverse=True):
+        rows_by_model: dict[str, list] = {}
+        for versions in by_game.values():
+            for version, row in versions.items():
+                rows_by_model.setdefault(version, []).append(row)
+
+        model_stats = {}
+        for version, rows in sorted(rows_by_model.items()):
+            stats = evaluate(rows)
+            model_stats[version] = {
+                "n": stats["n"],
+                "su": stats["su"],
+                "ats": stats["ats"],
+                "mae": stats["mae"],
+                "market_mae": stats["market_mae"],
+                "brier": stats["brier"],
+                "score": correctness_score(stats),
+            }
+
+        rows = [_game_row(games[gid], versions) for gid, versions in by_game.items()]
+        rows.sort(key=lambda g: g["kickoff"] or "")
+        days = sorted(d for gid in by_game if (d := _slate_day(games[gid])))
+        out.append({
+            "season": season,
+            "week": week,
+            "start": days[0] if days else None,
+            "end": days[-1] if days else None,
+            "n_games": len(rows),
+            "models": model_stats,
+            "games": rows,
+        })
+    return out
 
 
 def _graded_pick(row: dict | None, actual: int) -> dict | None:
