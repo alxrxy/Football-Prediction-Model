@@ -44,7 +44,9 @@ from .predict_baseline import predict_game, slate_window
 from .sim_data import (
     USAGE_CATEGORIES, SimTables, build_tables, load_pbp, pass_rate_oe, player_roles,
 )
-from .simulate import Offense, PlayerPool, SimResult, allocate_scorers, simulate_game, summarize
+from .simulate import (
+    DRIVE_OUTCOMES, Offense, PlayerPool, SimResult, allocate_scorers, simulate_game, summarize,
+)
 
 SIM_VERSION = "sim-v1"
 N_SIMS = 10_000
@@ -502,7 +504,8 @@ def calibrate(n: int = 20_000, game_script: bool = True) -> str:
     pool = PlayerPool(names=["QB", "RB", "WR"],
                       cum={c: np.cumsum([0.1, 0.6, 0.3]) for c in POOL_CATEGORIES},
                       passer_weights=np.array([1.0, 0.0, 0.0]))
-    r = simulate_game(tables, avg, avg, n=n, seed=1, pools=(pool, pool), game_script=game_script)
+    r = simulate_game(tables, avg, avg, n=n, seed=1, pools=(pool, pool),
+                      game_script=game_script, track_drives=True)
     s = summarize(r)
     pbp = load_pbp(POOL_SEASONS)
     games = pbp["game_id"].nunique()
@@ -542,6 +545,86 @@ def calibrate(n: int = 20_000, game_script: bool = True) -> str:
     out.append(f"  sim possessions/team {np.mean(s['possessions']):.2f}")
     out.append(f"  game script {'on' if game_script else 'off'}")
     out.append(volume_by_margin(r, pbp, sched))
+    out.append(drive_report(r, pbp))
+    return "\n".join(out)
+
+
+def real_drive_outcomes(pbp: pd.DataFrame) -> pd.DataFrame:
+    """Every real drive's end reason and snap count, labelled the way the
+    engine now labels its own, so the two distributions are comparable.
+
+    Derived from play-by-play rather than written down as constants: the point
+    of the diagnostic is to keep being true after the library seasons roll.
+    """
+    g = pbp[pbp["posteam"].notna() & pbp["fixed_drive"].notna()].copy()
+    if "season_type" in g.columns:
+        g = g[g["season_type"] == "REG"]
+    play_type = g["play_type"].astype(str)
+    g["scrim"] = (((g["pass_attempt"] == 1) & (g["sack"] != 1)).astype(int)
+                  + (g["sack"] == 1).astype(int)
+                  + (g["rush_attempt"] == 1).astype(int))
+    g["is_punt"] = (play_type == "punt").astype(int)
+    last = lambda s: s.dropna().iloc[-1] if s.notna().any() else None  # noqa: E731
+    d = g.groupby(["game_id", "posteam", "fixed_drive"]).agg(
+        plays=("scrim", "sum"), td=("touchdown", "max"), td_team=("td_team", "last"),
+        fg=("field_goal_result", last), punt=("is_punt", "max"),
+        intc=("interception", "max"), fum=("fumble_lost", "max"),
+        saf=("safety", "max"), last_down=("down", "last"),
+    ).reset_index()
+
+    def label(row) -> str:
+        if row.punt:
+            return "punt"
+        if row.fg == "made":
+            return "FG made"
+        if row.fg in ("missed", "blocked"):
+            return "FG miss"
+        if row.td == 1:
+            return "TD" if row.td_team == row.posteam else "def TD"
+        if row.intc == 1 or row.fum == 1:
+            return "turnover"
+        if row.saf == 1:
+            return "safety"
+        if row.last_down == 4:
+            return "downs"
+        return "end of half/game"
+
+    d["outcome"] = d.apply(label, axis=1)
+    return d[d["plays"] > 0]
+
+
+def drive_report(r: SimResult, pbp: pd.DataFrame) -> str:
+    """How simulated drives end, against how real ones do.
+
+    The engine can match points per team and still be wrong here, which is
+    what the 2026-09-16 diagnostic found: it ran more possessions of fewer
+    plays each, and that is where the pass-attempt shortfall comes from. A
+    rush happens on early downs whatever else is true, while pass attempts
+    need drives that keep going.
+    """
+    if not r.drives:
+        return "  drive tracking off"
+    counts = np.asarray(r.drives["counts"], dtype=float)
+    plays = np.asarray(r.drives["plays"], dtype=float)
+    total = counts.sum()
+    if not total:
+        return "  no drives tracked"
+
+    real = real_drive_outcomes(pbp)
+    real_share = real["outcome"].value_counts(normalize=True)
+    real_plays = real.groupby("outcome")["plays"].mean()
+
+    out = ["", f"  {'drive outcome':18} {'sim':>7} {'real':>7}   {'sim p/d':>8} {'real p/d':>9}"]
+    for i, name in enumerate(DRIVE_OUTCOMES):
+        share = counts[i] / total
+        per = plays[i] / counts[i] if counts[i] else float("nan")
+        out.append(f"  {name:18} {share:>7.3f} {real_share.get(name, 0.0):>7.3f}   "
+                   f"{per:>8.2f} {real_plays.get(name, float('nan')):>9.2f}")
+    out.append(f"  {'ALL':18} {1.0:>7.3f} {1.0:>7.3f}   "
+               f"{plays.sum() / total:>8.2f} {real['plays'].mean():>9.2f}")
+    sim_per_team = total / (2 * len(r.points))
+    real_per_team = len(real) / real.groupby(["game_id", "posteam"]).ngroups
+    out.append(f"  drives / team-game   sim {sim_per_team:.2f}   real {real_per_team:.2f}")
     return "\n".join(out)
 
 
