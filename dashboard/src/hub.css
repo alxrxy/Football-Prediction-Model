@@ -291,6 +291,9 @@ ul.scoring li:last-child { border-bottom: 0; }
 .week table.slate tr.group-head th { padding-bottom: 2px; border-bottom: 0; color: var(--text); }
 .week table.slate tr.group-head th:not(:empty) { border-bottom: 1px solid var(--border); text-align: center; }
 .wk-team { display: inline-flex; align-items: center; gap: 5px; }
+.week tr.unpredicted td { color: var(--text-dim); }
+.week tr.unpredicted .matchup strong { font-weight: 500; opacity: 0.8; }
+.week tr.unpredicted td.why { font-size: 12px; white-space: normal; font-style: italic; }
 .week-note { padding: 0 14px 12px; margin-top: 8px; }
 @media (max-width: 640px) {
   .total-pair { grid-template-columns: 1fr; }

@@ -336,23 +336,41 @@ def _last_slate(graded: list[dict], games: dict[str, dict]) -> dict | None:
 
 
 def _game_row(game: dict, models: dict[str, dict]) -> dict:
-    """One graded game with both models' results, as the tables render it."""
-    any_row = models.get(config.MODEL_VERSION) or next(iter(models.values()))
-    actual = any_row["actual_margin"]
-    market = any_row.get("market_spread")
+    """One game with both models' results, as the tables render it.
+
+    `models` is empty for a game that was never predicted -- the pipeline only
+    ever predicts unplayed games, so anything that kicked off before its first
+    run has a final score and no pick. Those rows still belong in the week:
+    dropping them silently makes a 16-game week look like a 14-game one, and
+    the honest reason is worth showing. They are never back-filled, because a
+    "prediction" made after the result is known, from ratings that already
+    contain it, is lookahead rather than a record.
+    """
+    any_row = models.get(config.MODEL_VERSION) or next(iter(models.values()), None)
+    home_pts = any_row["actual_home_points"] if any_row else game.get("home_points")
+    away_pts = any_row["actual_away_points"] if any_row else game.get("away_points")
+    actual = (
+        any_row["actual_margin"] if any_row
+        else int(home_pts) - int(away_pts) if home_pts is not None and away_pts is not None
+        else None
+    )
+    market = any_row.get("market_spread") if any_row else None
     return {
         "game_id": game["game_id"],
         "kickoff": game.get("kickoff_time"),
         "home": game["home_team"],
         "away": game["away_team"],
         "neutral": bool(game.get("is_neutral_site")),
-        "home_points": any_row["actual_home_points"],
-        "away_points": any_row["actual_away_points"],
+        "predicted": bool(models),
+        "home_points": home_pts,
+        "away_points": away_pts,
         "actual_margin": actual,
         "market_spread": market,
-        "market_error": round(-float(market) - actual, 1) if market is not None else None,
-        "baseline": _graded_pick(models.get(config.MODEL_VERSION), actual),
-        "ml": _graded_pick(models.get("ml-v1"), actual),
+        "market_error": (
+            round(-float(market) - actual, 1) if market is not None and actual is not None else None
+        ),
+        "baseline": _graded_pick(models.get(config.MODEL_VERSION), actual) if actual is not None else None,
+        "ml": _graded_pick(models.get("ml-v1"), actual) if actual is not None else None,
     }
 
 
@@ -395,15 +413,23 @@ def _weeks(graded: list[dict], games: dict[str, dict]) -> list[dict]:
                 "score": correctness_score(stats),
             }
 
-        rows = [_game_row(games[gid], versions) for gid, versions in by_game.items()]
+        # Every game of the week, not only the graded ones, so the week's real
+        # size is on screen and a missing pick has to explain itself.
+        all_ids = [
+            gid for gid, g in games.items()
+            if g.get("season") == season and g.get("week") == week
+        ]
+        rows = [_game_row(games[gid], by_game.get(gid, {})) for gid in all_ids]
         rows.sort(key=lambda g: g["kickoff"] or "")
-        days = sorted(d for gid in by_game if (d := _slate_day(games[gid])))
+        days = sorted(d for gid in all_ids if (d := _slate_day(games[gid])))
         out.append({
             "season": season,
             "week": week,
             "start": days[0] if days else None,
             "end": days[-1] if days else None,
             "n_games": len(rows),
+            "n_predicted": sum(1 for r in rows if r["predicted"]),
+            "n_graded": len(by_game),
             "models": model_stats,
             "games": rows,
         })
