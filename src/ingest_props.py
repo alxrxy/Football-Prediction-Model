@@ -1,13 +1,24 @@
 """NFL player-prop lines from The Odds API, for the coming week's games.
 
-    python -m src.ingest_props            # cached for ODDS_CACHE_MINUTES
-    python -m src.ingest_props --fresh    # bypass the cache (costs quota)
+    python -m src.ingest_props                   # cached for ODDS_CACHE_MINUTES
+    python -m src.ingest_props --fresh           # bypass the cache (costs quota)
+    python -m src.ingest_props --only-missing    # just the games with no props yet
 
 Props are only served one game at a time (/events/{id}/odds). The event list
 is free; each game costs one credit per market per region, so the default
 four markets (PROP_MARKETS) across a 16-game week cost 64 credits a pull. The
 cache makes re-runs free. Games already under way are skipped: their props
 are in-play prices, not pregame lines.
+
+Books post player props game by game rather than all at once, so mid-week a
+pull typically returns markets for some games and nothing for the rest --
+on 2026-09-16, 11 of 16. `--only-missing` re-pulls only the games that came
+back empty, carrying the rest forward from the last file untouched: 4 credits
+a game instead of 64 for the slate. It always makes a live call for the games
+it does fetch, since a cached empty response is exactly what it exists to get
+past, and it leaves the carried games on their older prices -- each game
+records its own `pulled_at` so the mix is visible. Use a plain `--fresh` when
+every game's prices need to be current.
 
 Writes data/props_lines.json, which src/props.py ranks against the
 simulations.
@@ -97,7 +108,7 @@ def fetch_alternates(needs: dict[str, set[str]], lines: dict,
     return out, datetime.now(timezone.utc).isoformat()
 
 
-def run(cache_minutes: int | None = None) -> dict:
+def run(cache_minutes: int | None = None, only_missing: bool = False) -> dict:
     store = db.get_store()
     cache_minutes = config.ODDS_CACHE_MINUTES if cache_minutes is None else cache_minutes
     key = config.require("ODDS_API_KEY")
@@ -126,30 +137,56 @@ def run(cache_minutes: int | None = None) -> dict:
     else:
         params["regions"] = "us"
 
-    out = {"pulled_at": datetime.now(timezone.utc).isoformat(), "season": games[0].get("season"),
+    # Under --only-missing, a game that already has players is carried forward
+    # from the previous file and never requested again.
+    prev: dict = {}
+    if only_missing and PROPS_LINES_JSON.exists():
+        try:
+            prev = json.loads(PROPS_LINES_JSON.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            prev = {}
+    prev_games = prev.get("games") or {}
+
+    now = datetime.now(timezone.utc).isoformat()
+    out = {"pulled_at": now, "season": games[0].get("season"),
            "week": games[0].get("week"), "markets": markets, "games": {}}
     meta: dict = {}
-    live_calls = 0
+    live_calls = carried = 0
     for i, game in matched.items():
         event = events[i]
+        prior = prev_games.get(game["game_id"]) or {}
+        if only_missing and (prior.get("players") or {}):
+            entry = dict(prior)
+            entry.setdefault("pulled_at", prev.get("pulled_at"))
+            out["games"][game["game_id"]] = entry
+            carried += 1
+            continue
+
         meta = {}
         data = get_json(f"{config.ODDS_BASE}/sports/{sport_key}/events/{event['id']}/odds",
-                        params=params, cache_minutes=cache_minutes,
+                        params=params, cache_minutes=0 if only_missing else cache_minutes,
                         cache_tag=f"props_{game['game_id']}", capture_meta=meta)
         live_calls += 0 if meta.get("from_cache") else 1
         players = parse_event(data if isinstance(data, dict) else {}, set(markets))
         out["games"][game["game_id"]] = {
             "home": game["home_team"], "away": game["away_team"], "kickoff": game.get("kickoff_time"),
-            "event_id": event["id"], "books": len((data or {}).get("bookmakers") or []), "players": players,
+            "event_id": event["id"], "books": len((data or {}).get("bookmakers") or []),
+            "players": players, "pulled_at": now,
         }
         if meta.get("quota_remaining") is not None:
             out["quota_remaining"] = meta["quota_remaining"]
+    if "quota_remaining" not in out and prev.get("quota_remaining") is not None:
+        out["quota_remaining"] = prev["quota_remaining"]
 
     config.ensure_dirs()
     PROPS_LINES_JSON.write_text(json.dumps(out), encoding="utf-8")
     priced = sum(len(g["players"]) for g in out["games"].values())
+    still_empty = [g[8:] for g, v in out["games"].items() if not (v.get("players") or {})]
     print(f"[props] week {out['week']}: {len(out['games'])}/{len(games)} games, {priced} players priced "
-          f"({live_calls} live call(s), rest cached); quota remaining: {out.get('quota_remaining')}")
+          f"({live_calls} live call(s), {carried} carried forward, rest cached); "
+          f"quota remaining: {out.get('quota_remaining')}")
+    if still_empty:
+        print(f"  no props posted yet for {len(still_empty)}: {', '.join(sorted(still_empty))}")
     if name_misses:
         print(f"  [warn] unmatched events: {', '.join(name_misses[:5])}")
     print(f"  wrote {PROPS_LINES_JSON}")
@@ -159,5 +196,8 @@ def run(cache_minutes: int | None = None) -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pull NFL player-prop lines from The Odds API.")
     parser.add_argument("--fresh", action="store_true", help="bypass the cache (costs quota)")
+    parser.add_argument("--only-missing", action="store_true",
+                        help="only re-pull games with no props yet, carrying the rest forward "
+                             "(4 credits a game instead of 64 for the slate)")
     args = parser.parse_args()
-    run(cache_minutes=0 if args.fresh else None)
+    run(cache_minutes=0 if args.fresh else None, only_missing=args.only_missing)

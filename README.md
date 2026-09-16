@@ -617,6 +617,7 @@ constant in training and held at 0 live to match.
 ```bash
 python -m src.api_server          # local Q&A server on 127.0.0.1:8787 (holds the API key)
 python -m src.ingest_props        # NFL player-prop lines, ~64 Odds API credits a pull (cached)
+python -m src.ingest_props --only-missing   # just the games with no props yet, ~4 credits each
 python -m src.props               # rank props vs the simulations; top 25, Claude explains each
 python -m src.props --alts        # also pull alternate lines (extra Odds API credits; off by default)
 cd dashboard && npm run dev       # http://localhost:5174, proxies /api to the server
