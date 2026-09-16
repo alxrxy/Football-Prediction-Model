@@ -36,7 +36,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .sim_data import FG, GO, N_BUCKETS, N_PUNT_BINS, PUNT, SimTables, bucket_index
+from .sim_data import DIST_EDGES, FG, GO, N_BUCKETS, N_DIST, N_PUNT_BINS, PUNT
+from .sim_data import SimTables, bucket_index
 from .sim_data import FOURTH_TOGO_EDGES, script_state, segment_cdf
 
 PERIOD_END = np.array([0.0, 1800.0, 3600.0, 4200.0])   # indexed by period; 3 = overtime
@@ -107,6 +108,12 @@ DRIVE_OUTCOMES = ("TD", "FG made", "FG miss", "punt", "turnover", "downs",
                   "def TD", "safety", "end of half/game")
 (DR_TD, DR_FG_MADE, DR_FG_MISS, DR_PUNT, DR_TURNOVER, DR_DOWNS,
  DR_DEF_TD, DR_SAFETY, DR_CLOCK) = range(len(DRIVE_OUTCOMES))
+
+# First downs per drive are histogrammed 0..9 and then 10+. A drive's length
+# is close to a function of this: real drives with no first down average 2.8
+# snaps, one 4.8, two 6.7. Two engines can agree on conversions per play and
+# still disagree here if one clusters them onto fewer drives.
+FD_HIST_MAX = 10
 
 
 @dataclass
@@ -266,8 +273,20 @@ class _Game:
         if track_drives:
             self.in_drive = np.zeros(n, dtype=bool)
             self.drive_plays = z(n)
+            self.drive_fd = z(n)
+            self.fd_hist = np.zeros(FD_HIST_MAX + 1, dtype=np.int64)
             self.drive_counts = np.zeros(len(DRIVE_OUTCOMES), dtype=np.int64)
             self.drive_play_sums = np.zeros(len(DRIVE_OUTCOMES), dtype=np.int64)
+            # Down-state progression, [down 1-4] x [distance bin]. A play is
+            # drawn from a pooled bucket and then tested against the actual
+            # to-go, so togo is summed too: it shows whether the engine sits
+            # at the same place inside a bin as real football does, which a
+            # wide bin like 10.5+ (real to-go 11 to 25) makes matter.
+            shape = (4, N_DIST)
+            self.down_plays = np.zeros(shape, dtype=np.int64)
+            self.down_conv = np.zeros(shape, dtype=np.int64)
+            self.down_yards = np.zeros(shape, dtype=np.int64)
+            self.down_togo = np.zeros(shape, dtype=np.int64)
 
         self.pools = pools
         self.pstats = self.passer = None
@@ -307,6 +326,7 @@ class _Game:
         if self.track_drives and len(ix):
             self.in_drive[ix] = True
             self.drive_plays[ix] = 0
+            self.drive_fd[ix] = 0
 
     def _end(self, ix, outcome=None):
         """The side with the ball has finished a possession. Overtime cares,
@@ -314,12 +334,21 @@ class _Game:
         diagnostic cares about `outcome`, which says how it finished."""
         ot = ix[self.period[ix] == 3]
         self.ot_poss[ot, self.off[ot]] += 1
-        if self.track_drives and outcome is not None and len(ix):
-            open_ = ix[self.in_drive[ix]]
-            if len(open_):
-                self.drive_counts[outcome] += len(open_)
-                self.drive_play_sums[outcome] += int(self.drive_plays[open_].sum())
-                self.in_drive[open_] = False
+        if outcome is not None:
+            self._close_drives(ix, outcome)
+
+    def _close_drives(self, ix, outcome):
+        """Record finished drives. Only games whose drive is still open are
+        counted, so nothing is tallied twice however the drive ended."""
+        if not self.track_drives or not len(ix):
+            return
+        open_ = ix[self.in_drive[ix]]
+        if not len(open_):
+            return
+        self.drive_counts[outcome] += len(open_)
+        self.drive_play_sums[outcome] += int(self.drive_plays[open_].sum())
+        np.add.at(self.fd_hist, np.minimum(self.drive_fd[open_], FD_HIST_MAX), 1)
+        self.in_drive[open_] = False
 
     def _touchdown(self, ix, side):
         self.points[ix, side] += 6
@@ -476,7 +505,18 @@ class _Game:
         pen = t.is_penalty[rows]
         if self.track_drives:
             # Count what play-by-play counts: a penalty no-play is not a snap.
-            self.drive_plays[ix[~pen]] += 1
+            run_ = ~pen
+            self.drive_plays[ix[run_]] += 1
+            # Conversion is measured the way the engine itself decides a first
+            # down below (net yards against the real to-go), so this reports
+            # actual behaviour rather than a second opinion on it.
+            dn = np.clip(self.down[ix][run_], 1, 4) - 1
+            db = np.digitize(togo[run_], DIST_EDGES)
+            np.add.at(self.down_plays, (dn, db), 1)
+            np.add.at(self.down_conv, (dn, db), (y[run_] >= togo[run_]).astype(np.int64))
+            np.add.at(self.down_yards, (dn, db), y[run_].astype(np.int64))
+            np.add.at(self.down_togo, (dn, db), togo[run_].astype(np.int64))
+            self.drive_fd[ix[run_]] += (y[run_] >= togo[run_])
         # Half the distance to the goal caps any penalty.
         y = np.where(pen & (y < 0), np.maximum(y, -((100 - yl) // 2)), y)
         y = np.where(pen & (y > 0), np.minimum(y, yl // 2), y)
@@ -673,12 +713,11 @@ class _Game:
             # Whatever is still open ran out of clock: end of regulation, or the
             # end of overtime. Halftime and kneel-outs were closed as they hap-
             # pened, and in_drive guarantees nothing is counted twice.
-            left = np.flatnonzero(self.in_drive)
-            if len(left):
-                self.drive_counts[DR_CLOCK] += len(left)
-                self.drive_play_sums[DR_CLOCK] += int(self.drive_plays[left].sum())
-                self.in_drive[left] = False
-            drives = {"counts": self.drive_counts, "plays": self.drive_play_sums}
+            self._close_drives(np.flatnonzero(self.in_drive), DR_CLOCK)
+            drives = {"counts": self.drive_counts, "plays": self.drive_play_sums,
+                      "fd_hist": self.fd_hist,
+                      "down_plays": self.down_plays, "down_conv": self.down_conv,
+                      "down_yards": self.down_yards, "down_togo": self.down_togo}
         return SimResult(
             points=self.points, tds=self.tds, fgs=self.fgs, td_events=self.td_events,
             return_tds=self.ret_tds, overtime=self.overtime, possessions=self.possessions,

@@ -42,7 +42,8 @@ from .ingest_injuries import player_key
 from .ingest_nflverse import PLAYS_PER_GAME
 from .predict_baseline import predict_game, slate_window
 from .sim_data import (
-    USAGE_CATEGORIES, SimTables, build_tables, load_pbp, pass_rate_oe, player_roles,
+    DIST_EDGES, N_DIST, USAGE_CATEGORIES, SimTables, build_tables, load_pbp,
+    pass_rate_oe, player_roles,
 )
 from .simulate import (
     DRIVE_OUTCOMES, Offense, PlayerPool, SimResult, allocate_scorers, simulate_game, summarize,
@@ -546,6 +547,7 @@ def calibrate(n: int = 20_000, game_script: bool = True) -> str:
     out.append(f"  game script {'on' if game_script else 'off'}")
     out.append(volume_by_margin(r, pbp, sched))
     out.append(drive_report(r, pbp))
+    out.append(down_state_report(r, pbp))
     return "\n".join(out)
 
 
@@ -564,10 +566,11 @@ def real_drive_outcomes(pbp: pd.DataFrame) -> pd.DataFrame:
                   + (g["sack"] == 1).astype(int)
                   + (g["rush_attempt"] == 1).astype(int))
     g["is_punt"] = (play_type == "punt").astype(int)
+    g["fd"] = ((g["scrim"] > 0) & (g["yards_gained"] >= g["ydstogo"])).astype(int)
     last = lambda s: s.dropna().iloc[-1] if s.notna().any() else None  # noqa: E731
     d = g.groupby(["game_id", "posteam", "fixed_drive"]).agg(
         plays=("scrim", "sum"), td=("touchdown", "max"), td_team=("td_team", "last"),
-        fg=("field_goal_result", last), punt=("is_punt", "max"),
+        fg=("field_goal_result", last), punt=("is_punt", "max"), fd=("fd", "sum"),
         intc=("interception", "max"), fum=("fumble_lost", "max"),
         saf=("safety", "max"), last_down=("down", "last"),
     ).reset_index()
@@ -625,6 +628,83 @@ def drive_report(r: SimResult, pbp: pd.DataFrame) -> str:
     sim_per_team = total / (2 * len(r.points))
     real_per_team = len(real) / real.groupby(["game_id", "posteam"]).ngroups
     out.append(f"  drives / team-game   sim {sim_per_team:.2f}   real {real_per_team:.2f}")
+
+    # First downs per drive. Conversions per play can match exactly while this
+    # does not: the same conversions landing on fewer drives makes every drive
+    # shorter without changing the per-play rate.
+    hist = r.drives.get("fd_hist")
+    if hist is not None and "fd" in real.columns:
+        h = np.asarray(hist, dtype=float)
+        top = len(h) - 1
+        real_h = real["fd"].clip(upper=top).value_counts(normalize=True)
+        out.append("")
+        out.append(f"  {'first downs':>12} {'sim':>8} {'real':>8}")
+        for k in range(len(h)):
+            sim_share, real_share = h[k] / h.sum(), float(real_h.get(k, 0.0))
+            if sim_share < 0.002 and real_share < 0.002:
+                continue
+            out.append(f"  {(str(k) if k < top else f'{k}+'):>12} "
+                       f"{sim_share:>8.3f} {real_share:>8.3f}")
+        out.append(f"  {'mean':>12} {(np.arange(len(h)) * h).sum() / h.sum():>8.3f} "
+                   f"{real['fd'].mean():>8.3f}")
+    return "\n".join(out)
+
+
+def _dist_band(i: int) -> str:
+    edges = list(DIST_EDGES)
+    lo = 0 if i == 0 else edges[i - 1]
+    return f"{lo:g}-{edges[i]:g}" if i < len(edges) else f"{edges[-1]:g}+"
+
+
+def down_state_report(r: SimResult, pbp: pd.DataFrame) -> str:
+    """First-down conversion and yards per play, by down and distance.
+
+    This is where drive length is won or lost. The engine draws a play from a
+    pooled (down, distance bin, field zone) bucket and then tests it against
+    the actual to-go, so a bin whose real to-go spreads wide -- 10.5+ covers
+    11 through 25 -- can convert at a rate the drawn plays never implied. Mean
+    to-go is printed for both sides so it is visible whether the engine sits
+    in the same part of each bin that real football does.
+    """
+    if not r.drives or "down_plays" not in r.drives:
+        return "  down-state tracking off"
+    plays = np.asarray(r.drives["down_plays"], dtype=float)
+    conv = np.asarray(r.drives["down_conv"], dtype=float)
+    yards = np.asarray(r.drives["down_yards"], dtype=float)
+    togo = np.asarray(r.drives["down_togo"], dtype=float)
+
+    d = pbp[pbp["posteam"].notna()].copy()
+    if "season_type" in d.columns:
+        d = d[d["season_type"] == "REG"]
+    scrim = (((d["pass_attempt"] == 1) & (d["sack"] != 1)).astype(int)
+             + (d["sack"] == 1).astype(int)
+             + (d["rush_attempt"] == 1).astype(int))
+    d = d[(scrim > 0) & d["down"].between(1, 4)
+          & d["ydstogo"].notna() & d["yards_gained"].notna()]
+    d = d.assign(dbin=np.digitize(d["ydstogo"].to_numpy(), DIST_EDGES),
+                 conv=(d["yards_gained"] >= d["ydstogo"]).astype(int))
+
+    out = ["", f"  {'dn':>2} {'dist':>9} {'sim n':>9} {'conv sim':>9} {'real':>6}"
+               f"  {'y/p sim':>8} {'real':>6}  {'togo sim':>9} {'real':>6}"]
+    for dn in range(3):                       # downs 1-3; fourth-down goes are rare
+        for b in range(N_DIST):
+            n = plays[dn, b]
+            m = d[(d["down"] == dn + 1) & (d["dbin"] == b)]
+            if n < 500 or len(m) < 300:
+                continue
+            out.append(
+                f"  {dn + 1:>2} {_dist_band(b):>9} {n:>9,.0f} {conv[dn, b] / n:>9.3f} "
+                f"{m['conv'].mean():>6.3f}  {yards[dn, b] / n:>8.2f} "
+                f"{m['yards_gained'].mean():>6.2f}  {togo[dn, b] / n:>9.2f} "
+                f"{m['ydstogo'].mean():>6.2f}")
+    tot = plays[:3].sum()
+    rm = d[d["down"].between(1, 3)]
+    if tot:
+        out.append(
+            f"  {'ALL 1-3':>12} {tot:>9,.0f} {conv[:3].sum() / tot:>9.3f} "
+            f"{rm['conv'].mean():>6.3f}  {yards[:3].sum() / tot:>8.2f} "
+            f"{rm['yards_gained'].mean():>6.2f}  {togo[:3].sum() / tot:>9.2f} "
+            f"{rm['ydstogo'].mean():>6.2f}")
     return "\n".join(out)
 
 
