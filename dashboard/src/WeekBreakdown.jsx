@@ -73,6 +73,9 @@ export default function WeekBreakdown({ weeks }) {
             <span className="muted small">
               {dateRange(week.start, week.end)} · {week.n_games} game
               {week.n_games === 1 ? '' : 's'}
+              {week.n_predicted < week.n_games
+                ? ` · ${week.n_predicted} predicted`
+                : ''}
             </span>
             <span className="week-tags">
               {Object.entries(week.models || {}).map(([version, stats]) => (
@@ -108,8 +111,8 @@ export default function WeekBreakdown({ weeks }) {
                   const b = game.baseline
                   const ml = game.ml
                   const homeWon = game.home_points > game.away_points
-                  return (
-                    <tr key={game.game_id}>
+                  const matchup = (
+                    <>
                       <td className="muted">{kickoffLabel(game.kickoff, true)}</td>
                       <td className="matchup">
                         <span className="wk-team">
@@ -128,6 +131,26 @@ export default function WeekBreakdown({ weeks }) {
                         {'–'}
                         <span className={homeWon ? 'won' : ''}>{game.home_points}</span>
                       </td>
+                    </>
+                  )
+
+                  // Played before the pipeline's first run, so there is no pick
+                  // to grade. Shown rather than dropped, and never back-filled:
+                  // a pick made after the result is known is not a record.
+                  if (!game.predicted) {
+                    return (
+                      <tr key={game.game_id} className="unpredicted">
+                        {matchup}
+                        <td colSpan={8} className="why muted">
+                          not predicted — kicked off before the first pipeline run
+                        </td>
+                      </tr>
+                    )
+                  }
+
+                  return (
+                    <tr key={game.game_id}>
+                      {matchup}
                       <SpreadCell spread={game.market_spread} game={game} />
                       <SpreadCell spread={b?.model_spread} game={game} />
                       <td className="lean">
