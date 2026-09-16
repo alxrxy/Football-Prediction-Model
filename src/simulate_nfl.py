@@ -46,7 +46,8 @@ from .sim_data import (
     pass_rate_oe, player_roles,
 )
 from .simulate import (
-    DRIVE_OUTCOMES, Offense, PlayerPool, SimResult, allocate_scorers, simulate_game, summarize,
+    DR_CLOCK, DRIVE_OUTCOMES, Offense, PlayerPool, SimResult, allocate_scorers,
+    simulate_game, summarize,
 )
 
 SIM_VERSION = "sim-v1"
@@ -569,12 +570,18 @@ def real_drive_outcomes(pbp: pd.DataFrame) -> pd.DataFrame:
     g["is_punt"] = (play_type == "punt").astype(int)
     g["fd"] = ((g["scrim"] > 0) & (g["yards_gained"] >= g["ydstogo"])).astype(int)
     last = lambda s: s.dropna().iloc[-1] if s.notna().any() else None  # noqa: E731
-    d = g.groupby(["game_id", "posteam", "fixed_drive"]).agg(
+    key = ["game_id", "posteam", "fixed_drive"]
+    # Field position comes off the first scrimmage snap. A drive's first row
+    # can be a kickoff or a punt, whose yardline is not where the offence
+    # actually took over -- reading that instead puts the average drive start
+    # near midfield, which is nonsense.
+    start = g[g["scrim"] > 0].groupby(key)["yardline_100"].first().rename("start_yl")
+    d = g.groupby(key).agg(
         plays=("scrim", "sum"), td=("touchdown", "max"), td_team=("td_team", "last"),
         fg=("field_goal_result", last), punt=("is_punt", "max"), fd=("fd", "sum"),
         intc=("interception", "max"), fum=("fumble_lost", "max"),
         saf=("safety", "max"), last_down=("down", "last"),
-    ).reset_index()
+    ).join(start).reset_index()
 
     def label(row) -> str:
         if row.punt:
@@ -608,8 +615,14 @@ def drive_report(r: SimResult, pbp: pd.DataFrame) -> str:
     """
     if not r.drives:
         return "  drive tracking off"
-    counts = np.asarray(r.drives["counts"], dtype=float)
+    counts = np.asarray(r.drives["counts"], dtype=float).copy()
     plays = np.asarray(r.drives["plays"], dtype=float)
+    # Real drives come from play-by-play, where a possession that never ran a
+    # scrimmage snap leaves nothing to count. The engine does record one, so
+    # drop them or every ratio here is measured against a denominator real
+    # does not have -- worth ~2% of drives, enough to make the engine look
+    # worse than it is. They are all clock-ended by construction.
+    counts[DR_CLOCK] = max(counts[DR_CLOCK] - float(r.drives.get("zero_snap_drives", 0)), 0.0)
     total = counts.sum()
     if not total:
         return "  no drives tracked"
@@ -618,14 +631,21 @@ def drive_report(r: SimResult, pbp: pd.DataFrame) -> str:
     real_share = real["outcome"].value_counts(normalize=True)
     real_plays = real.groupby("outcome")["plays"].mean()
 
-    out = ["", f"  {'drive outcome':18} {'sim':>7} {'real':>7}   {'sim p/d':>8} {'real p/d':>9}"]
+    real_start = real.groupby("outcome")["start_yl"].mean()
+    starts = np.asarray(r.drives.get("drive_start_sum", np.zeros(len(counts))), dtype=float)
+    nan = float("nan")
+    out = ["", f"  {'drive outcome':18} {'sim':>7} {'real':>7}   {'sim p/d':>8} {'real p/d':>9}"
+               f"   {'sim start':>9} {'real':>6}"]
     for i, name in enumerate(DRIVE_OUTCOMES):
         share = counts[i] / total
-        per = plays[i] / counts[i] if counts[i] else float("nan")
+        per = plays[i] / counts[i] if counts[i] else nan
+        start_yl = starts[i] / counts[i] if counts[i] else nan
         out.append(f"  {name:18} {share:>7.3f} {real_share.get(name, 0.0):>7.3f}   "
-                   f"{per:>8.2f} {real_plays.get(name, float('nan')):>9.2f}")
+                   f"{per:>8.2f} {real_plays.get(name, nan):>9.2f}   "
+                   f"{start_yl:>9.1f} {real_start.get(name, nan):>6.1f}")
     out.append(f"  {'ALL':18} {1.0:>7.3f} {1.0:>7.3f}   "
-               f"{plays.sum() / total:>8.2f} {real['plays'].mean():>9.2f}")
+               f"{plays.sum() / total:>8.2f} {real['plays'].mean():>9.2f}   "
+               f"{starts.sum() / total:>9.1f} {real['start_yl'].mean():>6.1f}")
     sim_per_team = total / (2 * len(r.points))
     real_per_team = len(real) / real.groupby(["game_id", "posteam"]).ngroups
     out.append(f"  drives / team-game   sim {sim_per_team:.2f}   real {real_per_team:.2f}")
@@ -682,7 +702,12 @@ def series_report(r: SimResult, pbp: pd.DataFrame) -> str:
                         | ((ser["series_no"] == ser["max_series"]) & (ser["drive_td"] == 1)))
 
     down_plays = np.asarray(d["down_plays"], dtype=float)
-    drives = float(np.asarray(d["counts"]).sum())
+    # Same basis as drive_report: a possession with no snap is not a drive real
+    # can count, so it is not one here either.
+    drive_counts = np.asarray(d["counts"], dtype=float).copy()
+    drive_counts[DR_CLOCK] = max(
+        drive_counts[DR_CLOCK] - float(d.get("zero_snap_drives", 0)), 0.0)
+    drives = drive_counts.sum()
     plays = float(down_plays.sum())
     # A series is a set of downs in which a snap was actually taken, and that
     # is exactly the number of snaps on first down: a drive only returns to

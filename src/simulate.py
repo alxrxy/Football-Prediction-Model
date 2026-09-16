@@ -287,6 +287,11 @@ class _Game:
             self.series_started = 0
             self.series_converted = 0
             self.fd_by_penalty = 0
+            # Where each drive started, summed per outcome. Scoring drives
+            # begin nearer the end zone, so a drive that runs short may simply
+            # have had less field to cover.
+            self.drive_start_yl = z(n)
+            self.drive_start_sum = np.zeros(len(DRIVE_OUTCOMES), dtype=np.int64)
             # Drives closed without a single counted snap -- a kickoff as the
             # half expires, say. Needed to split `series_started - series with
             # a snap` into its two causes, which is the only way to state a
@@ -344,6 +349,7 @@ class _Game:
             self.in_drive[ix] = True
             self.drive_plays[ix] = 0
             self.drive_fd[ix] = 0
+            self.drive_start_yl[ix] = self.yl[ix]
             self.series_started += len(ix)     # a new drive opens a series
 
     def _end(self, ix, outcome=None):
@@ -366,6 +372,12 @@ class _Game:
         self.drive_counts[outcome] += len(open_)
         self.drive_play_sums[outcome] += int(self.drive_plays[open_].sum())
         self.zero_snap_drives += int((self.drive_plays[open_] == 0).sum())
+        played = open_[self.drive_plays[open_] > 0]
+        if len(played):
+            # Only drives that ran a snap, which is how real drive starts are
+            # read (off the first scrimmage play) and what the adjusted drive
+            # counts in the report divide by.
+            self.drive_start_sum[outcome] += int(self.drive_start_yl[played].sum())
         np.add.at(self.fd_hist, np.minimum(self.drive_fd[open_], FD_HIST_MAX), 1)
         self.in_drive[open_] = False
 
@@ -758,7 +770,8 @@ class _Game:
                       "series_started": self.series_started,
                       "series_converted": self.series_converted,
                       "fd_by_penalty": self.fd_by_penalty,
-                      "zero_snap_drives": self.zero_snap_drives}
+                      "zero_snap_drives": self.zero_snap_drives,
+                      "drive_start_sum": self.drive_start_sum}
         return SimResult(
             points=self.points, tds=self.tds, fgs=self.fgs, td_events=self.td_events,
             return_tds=self.ret_tds, overtime=self.overtime, possessions=self.possessions,
