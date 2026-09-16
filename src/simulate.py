@@ -275,6 +275,18 @@ class _Game:
             self.drive_plays = z(n)
             self.drive_fd = z(n)
             self.fd_hist = np.zeros(FD_HIST_MAX + 1, dtype=np.int64)
+            # Series = one set of downs. A series is earned by a first down,
+            # which includes one awarded by penalty -- those never show up in
+            # down_conv, because a penalty is a no-play and is not counted as
+            # a snap at all. Counted here where the engine actually decides it.
+            self.series_started = 0
+            self.series_converted = 0
+            self.fd_by_penalty = 0
+            # Drives closed without a single counted snap -- a kickoff as the
+            # half expires, say. Needed to split `series_started - series with
+            # a snap` into its two causes, which is the only way to state a
+            # series conversion rate comparable with the real one.
+            self.zero_snap_drives = 0
             self.drive_counts = np.zeros(len(DRIVE_OUTCOMES), dtype=np.int64)
             self.drive_play_sums = np.zeros(len(DRIVE_OUTCOMES), dtype=np.int64)
             # Down-state progression, [down 1-4] x [distance bin]. A play is
@@ -327,6 +339,7 @@ class _Game:
             self.in_drive[ix] = True
             self.drive_plays[ix] = 0
             self.drive_fd[ix] = 0
+            self.series_started += len(ix)     # a new drive opens a series
 
     def _end(self, ix, outcome=None):
         """The side with the ball has finished a possession. Overtime cares,
@@ -347,6 +360,7 @@ class _Game:
             return
         self.drive_counts[outcome] += len(open_)
         self.drive_play_sums[outcome] += int(self.drive_plays[open_].sum())
+        self.zero_snap_drives += int((self.drive_plays[open_] == 0).sum())
         np.add.at(self.fd_hist, np.minimum(self.drive_fd[open_], FD_HIST_MAX), 1)
         self.in_drive[open_] = False
 
@@ -551,6 +565,10 @@ class _Game:
             kind = np.where(t.is_rush[rows[otd]], RUSH, PASS)
             zone = np.where(yl[otd] <= 5, GOAL_LINE, np.where(yl[otd] <= 20, RED_ZONE, OPEN_FIELD))
             self.td_events[i, side * 6 + kind * 3 + zone] += 1
+            if self.track_drives:
+                # A series that ends in a touchdown converted; it just does not
+                # open another one.
+                self.series_converted += len(i)
             self._end(i, DR_TD)
             self._touchdown(i, side)
             self._kickoff(i, 1 - side)
@@ -565,6 +583,11 @@ class _Game:
             i = ix[cont]
             yc, nc, tc = y[cont], new[cont], togo[cont]
             first = (yc >= tc) | t.fd_penalty[rows[cont]]
+            if self.track_drives:
+                earned = int(first.sum())
+                self.series_converted += earned      # this set of downs succeeded
+                self.series_started += earned        # and the next one begins
+                self.fd_by_penalty += int((first & ~(yc >= tc)).sum())
             down = np.where(first, 1, self.down[i] + 1)
             self.yl[i] = nc
             self.down[i] = down
@@ -717,7 +740,11 @@ class _Game:
             drives = {"counts": self.drive_counts, "plays": self.drive_play_sums,
                       "fd_hist": self.fd_hist,
                       "down_plays": self.down_plays, "down_conv": self.down_conv,
-                      "down_yards": self.down_yards, "down_togo": self.down_togo}
+                      "down_yards": self.down_yards, "down_togo": self.down_togo,
+                      "series_started": self.series_started,
+                      "series_converted": self.series_converted,
+                      "fd_by_penalty": self.fd_by_penalty,
+                      "zero_snap_drives": self.zero_snap_drives}
         return SimResult(
             points=self.points, tds=self.tds, fgs=self.fgs, td_events=self.td_events,
             return_tds=self.ret_tds, overtime=self.overtime, possessions=self.possessions,
