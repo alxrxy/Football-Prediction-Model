@@ -63,8 +63,13 @@ NAME_MATCH = 0.88
 # Alt lines: for each top prop, an easier alternate line on the same side
 # where the simulation gives at least ALT_MIN_P, priced no shorter than
 # ALT_MIN_PRICE, with the best expected return among those. "Safe, but still
-# decent odds", in numbers. Books post most alternates as overs only, so an
-# under pick often has none.
+# decent odds", in numbers.
+#
+# OFF BY DEFAULT (opt in with --alts). Books post alternates as overs only, and
+# the simulation's usage bias means the ranking is currently all unders, so a
+# pull costs ~1 credit per (game, stat) pair and attaches nothing: on 2026-09-16
+# it spent 9 credits for zero alt lines. Worth turning back on if the top of the
+# list stops being one-sided -- see P17 in nfl-modeling-research.md.
 ALT_OF = {m: f"{m}_alternate" for m in MARKETS}
 ALT_MIN_P = 0.65
 ALT_MIN_PRICE = -250
@@ -315,7 +320,7 @@ def explain(top: list[dict]) -> dict[int, str]:
 
 # --- export ----------------------------------------------------------------
 
-def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = True) -> dict:
+def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = False) -> dict:
     if not PROPS_LINES_JSON.exists():
         raise SystemExit("No prop lines yet. Run: python -m src.ingest_props")
     lines = json.loads(PROPS_LINES_JSON.read_text(encoding="utf-8"))
@@ -358,7 +363,9 @@ def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = Tr
         "more": result["ranked"][top_n:],
         "held_out": result["held_out"],
         "alts_pulled_at": alts_pulled,
-        "alt_rule": {"min_p": ALT_MIN_P, "min_price": ALT_MIN_PRICE},
+        # Only describe the rule when it was actually applied, so the payload
+        # never advertises alt lines that were never pulled.
+        "alt_rule": {"min_p": ALT_MIN_P, "min_price": ALT_MIN_PRICE} if with_alts else None,
     }
     config.ensure_dirs()
     PROPS_JSON.write_text(json.dumps(payload), encoding="utf-8")
@@ -379,6 +386,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Rank NFL player props against the simulations.")
     parser.add_argument("--no-explain", action="store_true", help="skip the Claude explanations")
     parser.add_argument("--top", type=int, default=TOP_N)
-    parser.add_argument("--no-alts", action="store_true", help="skip alt lines (no extra Odds API credits)")
+    parser.add_argument("--alts", action="store_true",
+                        help="also pull alternate lines (~1 Odds API credit per game/stat pair); "
+                             "off by default because an all-unders list qualifies for none")
     args = parser.parse_args()
-    run(with_explanations=not args.no_explain, top_n=args.top, with_alts=not args.no_alts)
+    run(with_explanations=not args.no_explain, top_n=args.top, with_alts=args.alts)
