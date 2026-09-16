@@ -110,6 +110,48 @@ def p_over(q: dict, line: float) -> float:
     return 1.0 - cdf
 
 
+# --- empirical bias correction (display only) ------------------------------
+# The simulator projects individual skill players under their market lines. On
+# 2026-09-16 the simulated P(over) averaged .38-.43 against a market .50 for
+# receptions, receiving yards and rushing yards, while passing yards ran
+# slightly the other way. The cause is not fixed -- the open work is bucket
+# composition and the within-bucket run/pass mix -- so this removes the
+# measured systematic component and nothing else.
+#
+# One log-odds offset per category, fitted so that category's mean simulated
+# P(over) matches the market's mean over that week's priced props. Two things
+# to be honest about: it is fitted IN SAMPLE, so it is guaranteed to look
+# right on the week it came from, and the per-category samples are small
+# (25-69 props). Re-derive rather than trust these once the engine changes.
+BIAS_FIT = {
+    "measured_at": "2026-09-16",
+    "method": "per-category log-odds offset, fitted so mean simulated P(over) "
+              "matches mean market P(over) on that week's priced props",
+    "in_sample": True,
+    "offsets": {
+        "player_pass_yds": -0.0930,
+        "player_rush_yds": +0.3457,
+        "player_reception_yds": +0.4009,
+        "player_receptions": +0.5214,
+    },
+    "n": {"player_pass_yds": 25, "player_rush_yds": 33,
+          "player_reception_yds": 68, "player_receptions": 69},
+    "raw_bias_pp": {"player_pass_yds": +2.18, "player_rush_yds": -7.44,
+                    "player_reception_yds": -9.24, "player_receptions": -11.61},
+}
+
+
+def bias_adjust(p: float, market_key: str) -> float:
+    """The simulation's P(over), shifted by that category's measured offset."""
+    if not config.PROPS_BIAS_ADJUST:
+        return p
+    shift = BIAS_FIT["offsets"].get(market_key)
+    if not shift:
+        return p
+    p = min(max(p, 1e-6), 1 - 1e-6)
+    return 1.0 / (1.0 + math.exp(-(math.log(p / (1 - p)) + shift)))
+
+
 def market_view(books: dict) -> dict | None:
     """Vig-free P(over) at the line most books post, and each side's best price."""
     priced = {b: v for b, v in books.items()
@@ -149,7 +191,9 @@ def pick_alt(row: dict, q: dict, offers: list[dict]) -> dict | None:
         easier = o["point"] < row["line"] if row["pick"] == "over" else o["point"] > row["line"]
         if not easier or o["price"] < ALT_MIN_PRICE:
             continue
-        pm = p_over(q, o["point"])
+        # .get: a row without a market key (as in the unit test) simply gets no
+        # adjustment, since bias_adjust no-ops on an unknown category.
+        pm = bias_adjust(p_over(q, o["point"]), row.get("market"))
         p = pm if row["pick"] == "over" else 1 - pm
         if p < ALT_MIN_P:
             continue
@@ -220,10 +264,17 @@ def rank(lines: dict, sims: dict[str, dict]) -> dict:
                 mv = market_view(books)
                 if not q or mv is None:
                     continue
-                pm = p_over(q, mv["point"])
-                pick = "over" if pm >= mv["p_over"] else "under"
-                p_model = pm if pick == "over" else 1 - pm
+                pm_raw = p_over(q, mv["point"])
+                pm_adj = bias_adjust(pm_raw, mkey)
+                # The pick and the ranking come from the RAW disagreement. The
+                # correction is one constant per category, so it cannot order
+                # players within a category: three ranking variants built on it
+                # all promoted props that sat near the market beforehand. It
+                # earns its place on the display, not in the sort.
+                pick = "over" if pm_raw >= mv["p_over"] else "under"
                 p_market = mv["p_over"] if pick == "over" else 1 - mv["p_over"]
+                p_model_raw = pm_raw if pick == "over" else 1 - pm_raw
+                p_model = pm_adj if pick == "over" else 1 - pm_adj
                 price, book = mv["best"][pick]
                 breakeven = market.implied(price)
                 blended = market.blend(p_model, p_market, config.MODEL_MARKET_WEIGHT)
@@ -234,7 +285,13 @@ def rank(lines: dict, sims: dict[str, dict]) -> dict:
                     "market": mkey, "label": label, "line": mv["point"], "pick": pick,
                     "price": price, "book": book, "books": mv["books"],
                     "p_model": round(p_model, 4), "p_market": round(p_market, 4),
-                    "gap": round(p_model - p_market, 4),
+                    # `gap` is the raw disagreement, and is what rank() sorts and
+                    # holds out on, so the ordering is identical whether the
+                    # correction is on or off. `gap_adjusted` is the same
+                    # distance after correction, carried for the display only.
+                    "gap": round(p_model_raw - p_market, 4),
+                    "p_model_raw": round(p_model_raw, 4),
+                    "gap_adjusted": round(p_model - p_market, 4),
                     "blended": round(blended, 4), "breakeven": round(breakeven, 4),
                     "passes_stage1": blended - breakeven >= config.EDGE_BUFFER,
                     "sim": {k: q.get(k) for k in ("median", "mean", "p10", "p25", "p75", "p90")},
@@ -366,6 +423,7 @@ def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = Fa
         # Only describe the rule when it was actually applied, so the payload
         # never advertises alt lines that were never pulled.
         "alt_rule": {"min_p": ALT_MIN_P, "min_price": ALT_MIN_PRICE} if with_alts else None,
+        "bias_adjust": {**BIAS_FIT, "applied": config.PROPS_BIAS_ADJUST},
     }
     config.ensure_dirs()
     PROPS_JSON.write_text(json.dumps(payload), encoding="utf-8")
