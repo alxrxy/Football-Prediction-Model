@@ -10,6 +10,32 @@ import { PageHead, TeamLogo, pct } from './ui.jsx'
 // across books) and the simulation's chance for that player; ranked by the gap.
 // Claude writes the explanations once per export; the Q&A asks about the list.
 
+// A prop shows two simulation numbers only when the correction actually moved it.
+const adjusted = (r) => r.p_model_raw != null && r.p_model_raw !== r.p_model
+
+// Says plainly what the adjustment is and what it is not: a measured shift with
+// a small in-sample fit behind it, not a fixed simulator.
+function BiasNote({ fit }) {
+  const n = fit.n || {}
+  const sizes = Object.values(n).sort((a, b) => a - b)
+  return (
+    <div className="caveat">
+      <strong>Bias-adjusted.</strong> These are not raw simulation output. The simulator projects skill
+      players under their lines, so each category&rsquo;s probability is shifted by a measured offset
+      (pass yards {fit.raw_bias_pp?.player_pass_yds > 0 ? '+' : ''}
+      {fit.raw_bias_pp?.player_pass_yds}pp, rush {fit.raw_bias_pp?.player_rush_yds}pp, receiving{' '}
+      {fit.raw_bias_pp?.player_reception_yds}pp, receptions {fit.raw_bias_pp?.player_receptions}pp).
+      It is a statistical correction, not a fix: the underlying cause is still open. The offsets were
+      fitted <b>in sample</b> on {fit.measured_at} from{' '}
+      {sizes.length ? `${sizes[0]}–${sizes[sizes.length - 1]}` : 'a few dozen'} props per category, so
+      they are provisional and unvalidated out of sample.
+      {' '}<b>Ranked by the raw simulation&rsquo;s disagreement; the probability shown is
+      bias-adjusted.</b>{' '}The offset is one constant per category, so it cannot order players within
+      one — it makes the number honest, not the ranking better. Each card shows the raw number alongside.
+    </div>
+  )
+}
+
 const price = (p) => (p == null ? '' : p > 0 ? `+${p}` : `${p}`)
 const num = (v) => (v == null ? '—' : Math.abs(v) >= 10 ? Math.round(v) : v)
 
@@ -51,11 +77,13 @@ export default function PropsPage() {
             </div>
           ) : (
             <>
-              <div className="caveat">
-                Ranked by how far the simulation&rsquo;s chance sits from the market&rsquo;s. Known bias this week (P17):
-                the simulator gives every player league-typical yards per catch and carry, so star receivers tend to project
-                under their lines and the gaps run large. Treat these as a check on the simulator, not picks.
-              </div>
+              {data.bias_adjust?.applied ? <BiasNote fit={data.bias_adjust} /> : (
+                <div className="caveat">
+                  Ranked by how far the simulation&rsquo;s chance sits from the market&rsquo;s. Known bias this week (P17):
+                  the simulator gives every player league-typical yards per catch and carry, so star receivers tend to project
+                  under their lines and the gaps run large. Treat these as a check on the simulator, not picks.
+                </div>
+              )}
               <p className="muted small alt-rule">
                 Alt line: an easier line on the same side (lower for an over, higher for an under) that the simulation
                 gives {Math.round((data.alt_rule?.min_p ?? 0.65) * 100)}%+, priced {data.alt_rule?.min_price ?? -250} or
@@ -131,7 +159,8 @@ function PropCard({ r }) {
           </p>
         )}
         <div className="compare" role="img" aria-label={`Simulation ${pct(r.p_model)}, market ${pct(r.p_market)}`}>
-          <CompareRow label="Simulation" value={r.p_model} cls="sim" />
+          {adjusted(r) ? <CompareRow label="Raw simulation" value={r.p_model_raw} cls="raw" /> : null}
+          <CompareRow label={adjusted(r) ? 'Bias-adjusted' : 'Simulation'} value={r.p_model} cls="sim" />
           <CompareRow label="Market" value={r.p_market} cls="mkt" />
         </div>
         <p className="pc-range muted">
@@ -142,7 +171,10 @@ function PropCard({ r }) {
       </div>
       <div className="pc-gap">
         <strong>+{(r.gap * 100).toFixed(1)}</strong>
-        <em>point gap</em>
+        <em>{adjusted(r) ? 'raw point gap' : 'point gap'}</em>
+        {adjusted(r) && r.gap_adjusted != null ? (
+          <em className="muted">{(r.gap_adjusted * 100).toFixed(1)} adjusted</em>
+        ) : null}
       </div>
     </li>
   )

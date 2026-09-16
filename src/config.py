@@ -97,6 +97,13 @@ QB_CONDITIONAL_PRIOR = os.getenv("QB_CONDITIONAL_PRIOR", "0").strip().lower() in
 # stale and must be regenerated.
 PENALTY_REPLAY = os.getenv("PENALTY_REPLAY", "0").strip().lower() in ("1", "true", "yes")
 
+# Shift each prop category's simulated probability by its measured bias
+# (src/props.py BIAS_FIT). Display-only: it never touches the simulation
+# engine or the game-level predictions, which are calibrated separately and do
+# not have this problem. A stopgap over an unfixed root cause, fitted in sample
+# on one week, so it is off unless asked for.
+PROPS_BIAS_ADJUST = os.getenv("PROPS_BIAS_ADJUST", "0").strip().lower() in ("1", "true", "yes")
+
 # Claude API: the one metered piece of the stack. Low effort suits short,
 # data-grounded answers; the daily cap stops a runaway page or loop from
 # running up a bill (src/claude_ai.py refuses calls past it).

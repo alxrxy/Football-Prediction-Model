@@ -182,6 +182,8 @@
 .compare-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; }
 .compare-fill.sim { background: var(--accent); }
 .compare-fill.mkt { background: var(--neutral-mark); }
+/* The uncorrected simulation, shown beside the adjusted one so the shift is visible. */
+.compare-fill.raw { background: var(--neutral-mark); opacity: 0.45; }
 .compare-mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--text-dim); opacity: 0.5; }
 .compare-value { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 .pc-range { font-size: 12px; margin: 8px 0 0; }
