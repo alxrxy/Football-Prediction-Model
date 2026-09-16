@@ -617,7 +617,8 @@ constant in training and held at 0 live to match.
 ```bash
 python -m src.api_server          # local Q&A server on 127.0.0.1:8787 (holds the API key)
 python -m src.ingest_props        # NFL player-prop lines, ~64 Odds API credits a pull (cached)
-python -m src.props               # rank props vs the simulations; top 25 with alt lines, Claude explains each
+python -m src.props               # rank props vs the simulations; top 25, Claude explains each
+python -m src.props --alts        # also pull alternate lines (extra Odds API credits; off by default)
 cd dashboard && npm run dev       # http://localhost:5174, proxies /api to the server
 python -m tests.test_props
 ```
@@ -644,10 +645,12 @@ The one metered piece of the stack. The key is read from `Claude_API_KEY` in
   across books and compared with that player's simulated chance; ranked by
   the gap. The top 25 are shown as cards, the rest (and the props held out
   for gaps past 25 pp, likely usage misses) in a dropdown beneath. Each top
-  prop gets an alt line where one qualifies: an easier line on the same side
-  that the simulation gives 65%+, priced −250 or longer, with the best
-  expected return. Books post alternates as overs only, so unders get none;
-  only the (game, stat) pairs the top 25 use are pulled, ~1 credit each.
+  prop used to get an alt line; alternates are now **off by default**. Books
+  post them as overs only, and the simulator's usage bias (P17) makes the
+  ranking all unders, so a pull costs ~1 credit per (game, stat) pair and
+  attaches nothing — on 2026-09-16 it spent 9 credits for zero alt lines.
+  `--alts` turns them back on: the easier line on the pick's side that the
+  simulation gives 65%+, priced −250 or longer, with the best expected return.
   Claude writes the explanations once per export (cached), not per
   page view. See P17:
   the simulator doesn't yet model each player's own efficiency, so treat
