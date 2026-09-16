@@ -36,6 +36,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from . import config
 from .sim_data import DIST_EDGES, FG, GO, N_BUCKETS, N_DIST, N_PUNT_BINS, PUNT
 from .sim_data import SimTables, bucket_index
 from .sim_data import FOURTH_TOGO_EDGES, script_state, segment_cdf
@@ -247,11 +248,15 @@ class _Sampler:
 class _Game:
     def __init__(self, tables: SimTables, home: Offense, away: Offense,
                  n: int, seed: int, wind_mph: float, pools: tuple | None = None,
-                 game_script: bool = True, track_drives: bool = False):
+                 game_script: bool = True, track_drives: bool = False,
+                 penalty_replay: bool | None = None):
         self.t = tables
         self.rng = np.random.default_rng(seed)
         self.samplers = (_sampler(tables, home, game_script), _sampler(tables, away, game_script))
         self.wind = wind_mph
+        # Explicit argument wins, so one process can run the comparison both
+        # ways; otherwise the config flag decides.
+        self.penalty_replay = config.PENALTY_REPLAY if penalty_replay is None else penalty_replay
         self.n = n
         z = lambda *shape: np.zeros(shape, dtype=np.int32)  # noqa: E731
         self.off, self.yl, self.down, self.togo = z(n), z(n), z(n), z(n)
@@ -588,7 +593,16 @@ class _Game:
                 self.series_converted += earned      # this set of downs succeeded
                 self.series_started += earned        # and the next one begins
                 self.fd_by_penalty += int((first & ~(yc >= tc)).sum())
-            down = np.where(first, 1, self.down[i] + 1)
+            # A nullified penalty replays the down in real football -- 69.8% of
+            # them do, and almost none consume one -- while this engine has
+            # always advanced the down regardless, which shortens every drive.
+            # Distance needs no special case: togo below is tc - yc, and yc is
+            # the net change in field position with the penalty yardage in it.
+            if self.penalty_replay:
+                repeat = t.is_penalty[rows[cont]] & ~first
+                down = np.where(first, 1, np.where(repeat, self.down[i], self.down[i] + 1))
+            else:
+                down = np.where(first, 1, self.down[i] + 1)
             self.yl[i] = nc
             self.down[i] = down
             self.togo[i] = np.maximum(np.where(first, np.minimum(10, nc), tc - yc), 1)
@@ -756,7 +770,8 @@ class _Game:
 def simulate_game(tables: SimTables, home: Offense, away: Offense,
                   n: int = 10_000, seed: int = 0, wind_mph: float = 0.0,
                   start: LiveStart | None = None, pools: tuple | None = None,
-                  game_script: bool = True, track_drives: bool = False) -> SimResult:
+                  game_script: bool = True, track_drives: bool = False,
+                  penalty_replay: bool | None = None) -> SimResult:
     """Simulate from kickoff, or with `start` from a game already under way
     (same engine, same team strengths; only the initial state differs).
     With `pools` (home, away), every play is also credited to players.
@@ -765,7 +780,7 @@ def simulate_game(tables: SimTables, home: Offense, away: Offense,
     used by the engine diagnostic; it is off by default so ordinary runs pay
     nothing for it."""
     return _Game(tables, home, away, n, seed, wind_mph, pools,
-                 game_script, track_drives).run(start)
+                 game_script, track_drives, penalty_replay).run(start)
 
 
 # --- summaries -------------------------------------------------------------

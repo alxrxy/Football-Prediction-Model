@@ -88,6 +88,15 @@ DEVIG_METHOD = os.getenv("DEVIG_METHOD", "shin").strip().lower()
 # built differently from the ones it was trained on.
 QB_CONDITIONAL_PRIOR = os.getenv("QB_CONDITIONAL_PRIOR", "0").strip().lower() in ("1", "true", "yes")
 
+# A nullified penalty replays the down instead of consuming one
+# (src/simulate.py). Measured 2026-09-16: real football replays 69.8% of them
+# and consumes almost none, while the engine consumes 71.7%, which shortens
+# every drive and is the cause of its pass-attempt shortfall. Off until the
+# calibration comparison has been reviewed -- turning it on changes simulated
+# output, so stored game_simulations and any props ranked against them go
+# stale and must be regenerated.
+PENALTY_REPLAY = os.getenv("PENALTY_REPLAY", "0").strip().lower() in ("1", "true", "yes")
+
 # Claude API: the one metered piece of the stack. Low effort suits short,
 # data-grounded answers; the daily cap stops a runaway page or loop from
 # running up a bill (src/claude_ai.py refuses calls past it).

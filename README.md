@@ -321,6 +321,15 @@ Known gaps:
   because each simulated game holds both teams' strength fixed.
 - **Not modelled:** timeouts, the two-minute drill, onside kicks, fakes, and
   two-point decisions by chart (tries happen at the league base rate).
+- **A nullified penalty consumes a down.** Real football replays 69.8% of them
+  and consumes almost none; the engine advances the down regardless, which
+  shortens every drive and is the measured cause of its pass-attempt
+  shortfall (`python -m src.simulate_nfl --calibrate` prints drive outcomes,
+  series survival and down-state progression against real play-by-play).
+  `PENALTY_REPLAY=1` switches to replaying the down; it is off by default
+  until the calibration comparison has been reviewed, because it changes
+  simulated output and makes stored `game_simulations` and any props ranked
+  against them stale.
 - **The modal exact score is weak.** It typically carries 0.5–1% and is usually
   within sampling noise of several others; the report says how many. The median
   is the steadier headline.
