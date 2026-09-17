@@ -199,6 +199,10 @@ def qb_availability_loss(rows: list[dict]) -> float:
     return float(share) * (1.0 - float(play_prob))
 
 
+# Sources whose report arrives team by team through the week (P19).
+PER_TEAM_SOURCES = {"nflverse"}
+
+
 def latest_injury_report(rows: list[dict]) -> list[dict]:
     """Only the rows from each source's most recent pull.
 
@@ -210,14 +214,48 @@ def latest_injury_report(rows: list[dict]) -> list[dict]:
     source is exactly the current report. Per source rather than overall, so a
     run in which one feed failed falls back to that feed's previous report
     instead of silently dropping it.
+
+    nflverse is the exception (P19). Its weekly report fills in team by team --
+    Thursday's teams file first -- so a pull can hold only a few teams, and
+    taking it whole would retire the reports every other team already filed
+    that week. For nflverse the report is its latest week only, and within
+    that week each team's latest pull. A team with nothing filed for that week
+    has no nflverse rows; last week's statuses are not carried forward. The
+    one case this cannot see: a team whose whole report clears mid-week writes
+    no rows at all, so its earlier same-week rows stay in force.
     """
     latest: dict = {}
+    week: dict = {}
     for row in rows:
         pulled = parse_dt(row.get("pulled_at"))
         source = row.get("source")
-        if pulled and (source not in latest or pulled > latest[source]):
+        if not pulled:
+            continue
+        if source in PER_TEAM_SOURCES:
+            wk = (row.get("season"), row.get("week"))
+            if source not in week or wk > week[source]:
+                week[source] = wk
+        elif source not in latest or pulled > latest[source]:
             latest[source] = pulled
-    return [r for r in rows if parse_dt(r.get("pulled_at")) == latest.get(r.get("source"))]
+
+    for row in rows:
+        pulled = parse_dt(row.get("pulled_at"))
+        source = row.get("source")
+        if pulled and source in PER_TEAM_SOURCES \
+                and (row.get("season"), row.get("week")) == week[source]:
+            key = (source, row.get("team"))
+            if key not in latest or pulled > latest[key]:
+                latest[key] = pulled
+
+    def current(r) -> bool:
+        source = r.get("source")
+        if source in PER_TEAM_SOURCES:
+            if (r.get("season"), r.get("week")) != week.get(source):
+                return False
+            source = (source, r.get("team"))
+        return parse_dt(r.get("pulled_at")) == latest.get(source)
+
+    return [r for r in rows if current(r)]
 
 
 class FeatureContext:

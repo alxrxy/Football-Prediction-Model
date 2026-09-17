@@ -26,8 +26,9 @@ def check(label: str, got, want) -> None:
         print(f"  FAIL  {label}: got {got!r}, want {want!r}")
 
 
-def row(player, source, pulled_at):
-    return {"player": player, "source": source, "pulled_at": pulled_at}
+def row(player, source, pulled_at, team="NE", week=2):
+    return {"player": player, "source": source, "pulled_at": pulled_at,
+            "team": team, "season": 2026, "week": week}
 
 
 def players(rows):
@@ -65,6 +66,46 @@ def test_mixed_timestamp_formats():
     check("same instant kept", players(latest_injury_report(rows)), ["A", "B", "C"])
 
 
+def test_partial_pull_keeps_other_teams():
+    """P19: a pull covering 2 teams leaves every other team's report in force."""
+    rows = [
+        row("Hou Earlier", "nflverse", "2026-09-17T08:00:00+00:00", team="HOU"),
+        row("Kc Earlier", "nflverse", "2026-09-17T08:00:00+00:00", team="KC"),
+        row("Buf Later", "nflverse", "2026-09-18T08:00:00+00:00", team="BUF"),
+        row("Det Later", "nflverse", "2026-09-18T08:00:00+00:00", team="DET"),
+    ]
+    check("other teams kept", players(latest_injury_report(rows)),
+          ["Buf Later", "Det Later", "Hou Earlier", "Kc Earlier"])
+
+
+def test_per_team_latest_still_clears():
+    """Within one team, only its latest pull counts."""
+    rows = [
+        row("Cleared", "nflverse", "2026-09-17T08:00:00+00:00", team="HOU"),
+        row("Still Out", "nflverse", "2026-09-18T08:00:00+00:00", team="HOU"),
+    ]
+    check("team's latest pull", players(latest_injury_report(rows)), ["Still Out"])
+
+
+def test_last_week_not_carried_forward():
+    """A team yet to file this week has no nflverse rows, not last week's."""
+    rows = [
+        row("Wk1 Stale", "nflverse", "2026-09-16T07:42:00+00:00", team="ATL", week=1),
+        row("Wk2 Buf", "nflverse", "2026-09-17T00:36:00+00:00", team="BUF", week=2),
+        row("Espn Atl", "espn", "2026-09-17T00:36:00+00:00", team="ATL", week=2),
+    ]
+    check("latest week only", players(latest_injury_report(rows)), ["Espn Atl", "Wk2 Buf"])
+
+
+def test_espn_stays_whole_pull():
+    """ESPN is one league-wide call: a team missing from it has nobody listed."""
+    rows = [
+        row("Espn Old Hou", "espn", "2026-09-16T08:00:00+00:00", team="HOU"),
+        row("Espn New Kc", "espn", "2026-09-17T08:00:00+00:00", team="KC"),
+    ]
+    check("espn latest pull only", players(latest_injury_report(rows)), ["Espn New Kc"])
+
+
 def test_empty():
     check("empty table", latest_injury_report([]), [])
 
@@ -92,6 +133,10 @@ if __name__ == "__main__":
         test_dropped_player_not_charged,
         test_latest_is_per_source,
         test_mixed_timestamp_formats,
+        test_partial_pull_keeps_other_teams,
+        test_per_team_latest_still_clears,
+        test_last_week_not_carried_forward,
+        test_espn_stays_whole_pull,
         test_empty,
         test_snap_share_falls_back_per_player,
     ]:
