@@ -36,7 +36,7 @@ status only when its adoption test is met.
 | P6 | CFB home field 2.4 → ~2.8 | weight | 2026-09-12 | slate: model leaned away 30/47, -2.1 pts vs market; history: market-implied HFA 3.2 (2017-25) but 0.5 in 2025 | mean signed edge on non-neutral games < -1.0 across 4+ weeks | watch |
 | P7 | Do not use the CFB ML model's margins until its compression is explained | investigate | 2026-09-12 | mean \|ML margin\| 9.5 vs actual 24.7; MAE 20.6. *Correction 09-15: the "Georgia −27 vs market −69.5" example below used an in-play line (P15); DK closed −40.5* | n/a, diagnose first | investigate |
 | P8 | NFL: consider the ML margin (or a blend) as the headline number | model selection | 2026-09-14 | 9/13: ML SU 10/13 vs baseline 6/13, MAE 11.46 vs 13.10, Brier 0.214 vs 0.256; ATS both poor (4-8, 3-10) | ML MAE below baseline MAE over 4+ NFL weeks (~60 games), and not worse vs market | watch |
-| P9 | NFL injury term: check its magnitude | weight | 2026-09-14 | 9/13: \|injury adj\| ≥ 1 went 0-5 ATS, MAE 12.3 vs market 8.8; corr(injury term, cover residual) −0.00. 9/14 DEN@KC: term −0.95 toward DEN (−2.63 with real snap shares, P14), market already −2.5 with the same report; lost | fitted coefficient on the injury term (actual − market ~ injury) positive and significant over 100+ games | watch |
+| P9 | NFL injury term: check its magnitude | weight | 2026-09-14 | 9/13: \|injury adj\| ≥ 1 went 0-5 ATS, MAE 12.3 vs market 8.8; corr(injury term, cover residual) −0.00. 9/14 DEN@KC: term −0.95 toward DEN (−2.63 with real snap shares, P14), market already −2.5 with the same report; lost | fitted coefficient on the injury term (actual − market ~ injury) positive and significant over 100+ games. **Exclude 2026-09-17 DET@BUF**: its term (1.56) was set before P20, which understates DET's side (Pacheco on IR uncounted), and before P10/P21 — four players priced at the flat 0.55 with the official inactives already public. The fixed code would not produce that number, so the game cannot speak to this coefficient | watch |
 | P10 | Props: apply game-day inactives before simulating | data | 2026-09-14 | DAL@NYG: 4 projected players recorded nothing (N. Harris 5.3 car, Beckham, Cambre, Abanikanda), none on the injury list; Singletary took 10 touches + TD unprojected. **Widened 2026-09-17 (DET@BUF):** this is not a sequencing problem. There is no inactives ingestion path anywhere in the pipeline, and the ESPN feed structurally cannot supply one — a full league pull at 22:50Z returned only `Active` (614), `Questionable` (134), `Injured Reserve` (40), `Out` (9), `Doubtful` (3), with no gameday inactive designation. `ingest_injuries._status` would discard one anyway (see P20, P21). Consequence at T-75 min, with the official list already public: DET@BUF still priced 4 players at the flat questionable/limited 0.55 (D.J. Reed 0.75 pts, Cole Bishop, T.J. Sanders, Ty Johnson) when each was by then resolved to 0 or 1 | acquire a real inactives source first (ESPN gameday roster endpoint or equivalent), then re-sim after it lands; track "projected, no stats" rate weekly | proposed; **queued for the week of 2026-09-22** alongside 2A/P23 |
 | P11 | Props: rushing volume bands too narrow (game script) | investigate | 2026-09-14 | DAL@NYG: rush att in the 50% band 2/8, rush yds 1/8; team rush att −8 (trailing DAL), +9 (leading NYG). DEN@KC: leading KC 38 rush att vs median 25 (p90 31), trailing DEN 15 | 50% band hit rate for rush att in 40-60% over 10+ simulated games | **engine change applied 2026-09-15** (game-script play-calling): calibration rush att by final margin 21.4 → 32.5 vs real 20.7 → 31.6, was flat 24.1 → 27.9; league totals within 3%. The band test itself still needs 10+ graded games |
 | P12 | Run pregame sims before the first kickoff | process | 2026-09-14 | 12/13 week-1 sims written 23:11Z, after kickoff, so only DAL@NYG props are gradeable | n/a | proposed |
@@ -97,6 +97,58 @@ NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
 
 ---
+
+## 2026-09-17 — NFL (week 2, Thursday) DET @ BUF, pre-kickoff snapshot
+
+Full freshness pass run 22:48–23:00Z, about 75 minutes before the 00:15Z
+kickoff: odds re-pulled (32/32 events, quota 370), injuries re-pulled
+(185 rows, 32/32 teams), baseline re-predicted, game re-simulated, prop lines
+re-pulled fresh (16/16 games, quota 306) and edges re-ranked. No code changed
+and `PENALTY_REPLAY` stayed off, so this is a data refresh only.
+
+**What moved.** The injury term carried all of it:
+
+| | before (9/17 00:36Z) | after (9/17 22:50Z) |
+|---|---|---|
+| injury layer | 0.04 | 1.56 |
+| model spread | −4.94 | −6.46 |
+| market | −5 | −5.5 |
+| home win prob | 64.8% | 69.0% |
+| `is_value` | false | false |
+
+DET's burden went 1.22 → 2.72 (Blake Miller, T, 1.0 snap share, ruled **out**
+1.80; Mahogany out 0.17; D.J. Reed questionable 0.75); BUF's was flat at 1.15.
+The sim followed: BUF win prob .651 → .690, margin p50 5 → 6, total p90 64 →
+65. 34 DET@BUF props re-ranked at 23:00Z.
+
+**Grading caveat — do not use this game as evidence about P9.** The stored
+prediction is graded against a **pre-P20 injury term**. Two known defects
+understate DET's side of that 1.56 specifically:
+
+- **P20:** Isiah Pacheco (DET) is on Injured Reserve and contributes nothing,
+  because `_status` discards the IR designation. DET's burden is understated,
+  so the true term favours BUF by more than 1.56.
+- **P10 / P21:** four players in this game are priced at the flat
+  questionable/limited 0.55 (Reed 0.75 pts, Bishop, Sanders, Ty Johnson) even
+  though the official inactive list was public before kickoff and resolved each
+  to 0 or 1.
+
+Once P20 lands in the week of 2026-09-22, the fixed code would not produce
+1.56 for this game. Whatever this result says about the injury layer's
+calibration is therefore about a number the pipeline no longer generates. Grade
+the game for the record, but exclude it from the P9 fitted-coefficient sample.
+
+**A retracted diagnosis, recorded so it is not repeated.** During the refresh,
+two BUF players (Tyrell Shavers, Dorian Strong — both previously `out`, both
+~0.40 snap share) disappeared from the injury layer, and their stale
+`pulled_at` stamps looked like a P19-style dedup fault. They were not. The live
+ESPN payload showed both had cleared the feed entirely — absent as Active, as
+IR, as anything — so `latest_injury_report` retiring them is the documented
+behaviour that `test_espn_stays_whole_pull` pins. The proposed "fix" would have
+resurrected two healthy players, broken that test, and shipped a wrong number
+inside the last hour before kickoff. **`pulled_at` alone cannot distinguish
+"cleared from the feed" from "not re-stamped by a partial upsert"; read the
+upstream payload before concluding a row was wrongly dropped.**
 
 ## 2026-09-16 — Usage shares: scramble/kneel confirmation run (P23–P26)
 
