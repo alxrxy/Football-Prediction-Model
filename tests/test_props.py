@@ -7,6 +7,8 @@ No network and no Claude calls: synthetic lines and simulations.
 
 from __future__ import annotations
 
+import math
+
 from src import game_context
 from src.props import MAX_GAP, market_view, match_player, p_over, pick_alt, pnorm, rank
 
@@ -83,9 +85,70 @@ def test_rank():
     top = out["ranked"][0]
     check("ranked by gap: receiving yards over first", (top["player"], top["market"], top["pick"]),
           ("Star Receiver", "player_reception_yds", "over"))
-    check("gap = model minus market", round(top["gap"], 3), round(top["p_model"] - top["p_market"], 3))
+    check("gap = raw model minus market", round(top["gap"], 3), round(top["p_model_raw"] - top["p_market"], 3))
     check(f"gaps over {MAX_GAP:.0%} held out", [r["player"] for r in out["held_out"]], ["Bad Role Back"])
     check("unmatched names counted", out["unmatched_players"], 1)
+    check("no defect note by default", top.get("defect_note"), None)
+
+    from src import props
+    props.KNOWN_DEFECTS[("g1", "Star Receiver")] = "Known defect (test)"
+    try:
+        out = rank(lines, {"g1": _sim(75.0)})
+        top = out["ranked"][0]
+        check("a known defect is labelled, not removed", (top["player"], top["defect_note"]),
+              ("Star Receiver", "Known defect (test)"))
+        check("and reaches the explanation prompt", "Known defect (test)" in props._describe(top), True)
+    finally:
+        del props.KNOWN_DEFECTS[("g1", "Star Receiver")]
+
+
+def test_qb_rushing_held_out_and_rb_offset():
+    from src import config, props
+
+    q = {"median": 20, "mean": 20, "p10": 5, "p25": 12, "p75": 28, "p90": 36}
+    sim = {"home_win_prob": 0.6, "margin": {"p50": 3}, "total": {"p50": 45}, "generated_at": "x",
+           "box_score": {"home": {"players": [
+               {"player": "Pocket Passer", "position": "QB", "depth_rank": 1, "touches": 4, "rushing": {"yds": q}},
+               {"player": "Lead Back", "position": "RB", "depth_rank": 1, "touches": 18, "rushing": {"yds": q}},
+           ]}, "away": {"players": []}}}
+    book = {"dk": {"point": 19.5, "over": -110, "under": -110}}
+    lines = {"games": {"g1": {"home": "BUF", "away": "DET", "kickoff": "k", "players": {
+        "Pocket Passer": {"player_rush_yds": book}, "Lead Back": {"player_rush_yds": book}}}}}
+    out = rank(lines, {"g1": sim})
+    check("QB rushing never ranked", [r["player"] for r in out["ranked"]], ["Lead Back"])
+    check("QB rushing held out as an engine defect",
+          [(r["player"], r["held_reason"]) for r in out["held_out"]], [("Pocket Passer", "structural")])
+    saved = config.PROPS_BIAS_ADJUST
+    config.PROPS_BIAS_ADJUST = True
+    try:
+        rb = props.bias_adjust(0.5, "player_rush_yds", "RB")
+        check("RB rushing gets its own offset", round(rb, 4), round(1 / (1 + math.exp(-0.107)), 4))
+        check("QB rushing gets none", props.bias_adjust(0.5, "player_rush_yds", "QB"), 0.5)
+        by_pos = props.BIAS_FIT["position_offsets"]["player_reception_yds"]
+        check("receiving yards: RB and WR get different offsets",
+              props.bias_adjust(0.5, "player_reception_yds", "RB") < props.bias_adjust(0.5, "player_reception_yds", "WR"),
+              True)
+        check("receiving yards: a position it was not fitted on stays raw",
+              props.bias_adjust(0.5, "player_reception_yds", "FB"), 0.5)
+        check("receiving yards has no category offset left to fall back on",
+              "player_reception_yds" in props.BIAS_FIT["offsets"], False)
+        check("every split position has an n", set(by_pos) == set(props.BIAS_FIT["position_n"]["player_reception_yds"]), True)
+    finally:
+        config.PROPS_BIAS_ADJUST = saved
+
+
+def test_started_games_not_ranked():
+    from datetime import datetime, timezone
+
+    book = {"dk": {"point": 60.5, "over": -110, "under": -110}}
+    game = lambda kick: {"home": "BUF", "away": "DET", "kickoff": kick, "players": {  # noqa: E731
+        "Star Receiver": {"player_reception_yds": book}}}
+    lines = {"games": {"done": game("2026-09-18T00:15:00+00:00"), "later": game("2026-09-20T17:00:00+00:00")}}
+    now = datetime(2026, 9, 18, 12, tzinfo=timezone.utc)
+    out = rank(lines, {"done": _sim(75.0), "later": _sim(75.0)}, now=now)
+    check("a kicked-off game is not ranked", [r["game_id"] for r in out["ranked"]], ["later"])
+    check("nor held out", out["held_out"], [])
+    check("but its rows are kept", [r["game_id"] for r in out["started"]], ["done"])
 
 
 def test_pick_alt():
@@ -140,7 +203,7 @@ def test_context():
 
 
 if __name__ == "__main__":
-    for fn in [test_p_over, test_market_view, test_names, test_rank, test_pick_alt, test_context]:
+    for fn in [test_p_over, test_market_view, test_names, test_rank, test_qb_rushing_held_out_and_rb_offset, test_started_games_not_ranked, test_pick_alt, test_context]:
         print(f"\n{fn.__name__}")
         fn()
     print(f"\n{PASS} passed, {FAIL} failed")

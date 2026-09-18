@@ -18,20 +18,44 @@ const adjusted = (r) => r.p_model_raw != null && r.p_model_raw !== r.p_model
 function BiasNote({ fit }) {
   const n = fit.n || {}
   const sizes = Object.values(n).sort((a, b) => a - b)
+  const rb = fit.position_offsets?.player_rush_yds?.RB
+  const rbBias = fit.position_raw_bias_pp?.player_rush_yds?.RB
+  const recYds = fit.position_raw_bias_pp?.player_reception_yds
+  const recYdsN = fit.position_n?.player_reception_yds || {}
+  const dates = fit.measured_at_by_market
   return (
     <div className="caveat">
       <strong>Bias-adjusted.</strong> These are not raw simulation output. The simulator projects skill
       players under their lines, so each category&rsquo;s probability is shifted by a measured offset
       (pass yards {fit.raw_bias_pp?.player_pass_yds > 0 ? '+' : ''}
-      {fit.raw_bias_pp?.player_pass_yds}pp, rush {fit.raw_bias_pp?.player_rush_yds}pp, receiving{' '}
+      {fit.raw_bias_pp?.player_pass_yds}pp, receiving{' '}
       {fit.raw_bias_pp?.player_reception_yds}pp, receptions {fit.raw_bias_pp?.player_receptions}pp).
       It is a statistical correction, not a fix: the underlying cause is still open. The offsets were
-      fitted <b>in sample</b> on {fit.measured_at} from{' '}
+      fitted <b>in sample</b>{' '}
+      {dates
+        ? `(receiving ${dates.player_reception_yds}, receptions ${dates.player_receptions}, pass yards ${dates.player_pass_yds})`
+        : `on ${fit.measured_at}`}{' '}
+      from{' '}
       {sizes.length ? `${sizes[0]}–${sizes[sizes.length - 1]}` : 'a few dozen'} props per category, so
       they are provisional and unvalidated out of sample.
       {' '}<b>Ranked by the raw simulation&rsquo;s disagreement; the probability shown is
       bias-adjusted.</b>{' '}The offset is one constant per category, so it cannot order players within
       one — it makes the number honest, not the ranking better. Each card shows the raw number alongside.
+      {rb != null ? (
+        <>
+          {' '}<b>Rushing is corrected by position.</b>{' '}Running backs get their own offset
+          ({rbBias}pp raw, n = {fit.position_n?.player_rush_yds?.RB}, refitted {fit.position_measured_at}).{' '}
+          {fit.position_notes?.player_rush_yds?.RB}{' '}Quarterback rushing props get no offset and are not ranked
+          at all: they are held out below as an engine defect.
+        </>
+      ) : null}
+      {recYds ? (
+        <>
+          {' '}<b>Receiving yards are corrected by position</b>{' '}(raw: WR {recYds.WR}pp, n = {recYdsN.WR};
+          TE {recYds.TE}pp, n = {recYdsN.TE}; RB {recYds.RB}pp, n = {recYdsN.RB}), because backs sit about
+          half as far under as receivers.{' '}{fit.position_notes?.player_reception_yds?.ALL}
+        </>
+      ) : null}
     </div>
   )
 }
@@ -95,7 +119,8 @@ export default function PropsPage() {
                   <PropCard key={`${r.game_id}-${r.player}-${r.market}`} r={r} />
                 ))}
               </ol>
-              <MoreProps more={data.more || []} held={data.held_out || []} maxGap={data.max_gap} />
+              <MoreProps more={data.more || []} held={data.held_out || []} maxGap={data.max_gap}
+                structural={data.structural_holdouts || []} />
             </>
           )}
         </div>
@@ -167,6 +192,7 @@ function PropCard({ r }) {
           Simulated {r.label.toLowerCase()}: median <b>{num(r.sim?.median)}</b> · middle 50% {num(r.sim?.p25)}–{num(r.sim?.p75)} ·
           80% {num(r.sim?.p10)}–{num(r.sim?.p90)}
         </p>
+        {r.defect_note ? <div className="caveat">{r.defect_note}</div> : null}
         {r.explanation ? <p className="pc-why">{r.explanation}</p> : null}
       </div>
       <div className="pc-gap">
@@ -182,8 +208,10 @@ function PropCard({ r }) {
 
 // Everything below the top list: the rest of the ranking, then the props held
 // out for gaps too big to believe.
-function MoreProps({ more, held, maxGap }) {
+function MoreProps({ more, held, maxGap, structural }) {
   if (!more.length && !held.length) return null
+  const gapHeld = held.filter((r) => r.held_reason !== 'structural')
+  const defectHeld = held.filter((r) => r.held_reason === 'structural')
   const row = (r, rank) => (
     <tr key={`${r.game_id}-${r.player}-${r.market}`}>
       <td className="num muted">{rank}</td>
@@ -193,6 +221,7 @@ function MoreProps({ more, held, maxGap }) {
           <strong>{r.player}</strong>
         </span>
         <em className="sub">{r.game}</em>
+        {r.defect_note ? <em className="sub">Known defect (P28): starter mismatch, not a read on the player</em> : null}
       </td>
       <td>{r.label}</td>
       <td>
@@ -228,14 +257,23 @@ function MoreProps({ more, held, maxGap }) {
           </thead>
           <tbody>
             {more.map((r) => row(r, r.rank))}
-            {held.length ? (
+            {gapHeld.length ? (
               <tr className="group">
                 <td colSpan={8}>
                   Held out · gaps over {Math.round(maxGap * 100)} points, more likely a usage miss than a mispriced line
                 </td>
               </tr>
             ) : null}
-            {held.map((r) => row(r, '—'))}
+            {gapHeld.map((r) => row(r, '—'))}
+            {defectHeld.length ? (
+              <tr className="group">
+                <td colSpan={8}>
+                  Held out · engine defect, not player signal
+                  {structural.map((s) => <em key={s.market + s.position} className="sub">{s.note}</em>)}
+                </td>
+              </tr>
+            ) : null}
+            {defectHeld.map((r) => row(r, '—'))}
           </tbody>
         </table>
       </div>

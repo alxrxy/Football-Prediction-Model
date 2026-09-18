@@ -256,7 +256,9 @@ def props_text() -> str | None:
     if held:
         lines.append("Held out: " + "; ".join(
             f"{h['player']} {h['label']} {h['pick']} {h['line']} (sim {_pct(h.get('p_model'))} vs "
-            f"market {_pct(h.get('p_market'))})" for h in held[:6]))
+            f"market {_pct(h.get('p_market'))}"
+            + ("; engine defect, not player signal" if h.get("held_reason") == "structural" else "") + ")"
+            for h in held[:6]))
     return "\n".join(lines)
 
 
