@@ -43,17 +43,19 @@ status only when its adoption test is met.
 | P13 | NFL prior-season rating must be QB-conditional (weight the prior by the expected starter's games, or add a QB-change term) | logic | 2026-09-15 | DEN@KC: KC's 2025 rating includes 146 backup-QB plays at −0.347 EPA; Mahomes-only prior moves KC +2.9 pts, edge −3.46 → −0.56, flag off. Scope: 11/32 teams shift ≥ 1 pt from non-primary starts (NYJ +5.1, IND +3.8, KC +2.9) | rebuild NFL training with QB-conditioned prior; holdout MAE vs line must not get worse, and weeks 1-4 MAE should improve | **tested 2026-09-15, not adopted.** Starter-games prior (≥ 4 starts): baseline wks 1-4 2016-25 MAE 10.46 → 10.56 (moved games 10.08 → 10.53); ML 2025 holdout MAE 10.08 → 10.10, wks 1-4 8.98 → 9.13. Fails both parts. Code kept behind `QB_CONDITIONAL_PRIOR=0` |
 | P14 | Snap-share fallback is per dataset, not per player | bug fix | 2026-09-15 | `_snap_shares` stops at 2026 once it has > 500 rows, so teams that hadn't played and players who sat out week 1 get no share: 78/154 latest NFL injury rows; every DEN/KC row. DEN@KC injury term −0.95 → −2.63 with real shares | none needed; correctness bug | **applied 2026-09-15** (`ingest_injuries.merge_snap_shares`); NFL rows without a share 78/154 → 32/161 on the week-2 pull |
 | P15 | Never grade a prediction made after kickoff; never store in-play lines | bug fix | 2026-09-15 | 19 of 80 CFB predictions on 09-12 were generated at 18:37Z, after 16:00–17:00 kickoffs, against in-play Odds API lines (Georgia −69.5 vs DK close −40.5). The old rule flagged 8 of them, 6-2. Pregame-only flagged record is 15-25, not 21-27 | none needed | **applied**: predict-side guard since 2026-09-14 (`ba6d7f3`); `ingest_odds` skips in-play events and CLV marks late leans `after_kickoff`, 2026-09-15 |
-| P17 | Props: model each player's own efficiency and target share before trusting the prop ranking (research Stage 4) | logic | 2026-09-15 | Week 2, first pull (1-5 books, Tuesday): 46 props priced, top 10 gaps 17-25 pp, 15 more held out past 25 pp. One-sided pattern: star receivers under (J. Williams rec yds sim 37 vs 56.5, St. Brown rec 5 vs 7.5, Nabers rec 3 vs 5.5); QB pass yds off both ways (Goff 222 vs 265.5, Stafford 285 vs 242.5). The engine gives every player league-typical yards per play and splits targets by depth-chart share | prop gaps centre near 0 across a week (mean \|gap\| < 8 pp), then prop CLV ≥ 0 over 65+ leans | proposed |
+| P17 | Props: model each player's own efficiency and target share before trusting the prop ranking (research Stage 4) | logic | 2026-09-15 | Week 2, first pull (1-5 books, Tuesday): 46 props priced, top 10 gaps 17-25 pp, 15 more held out past 25 pp. One-sided pattern: star receivers under (J. Williams rec yds sim 37 vs 56.5, St. Brown rec 5 vs 7.5, Nabers rec 3 vs 5.5); QB pass yds off both ways (Goff 222 vs 265.5, Stafford 285 vs 242.5). The engine gives every player league-typical yards per play and splits targets by depth-chart share **Confirmed as a cause 2026-09-18 (week-1 actuals, n=174 receivers with 8+ games in 2025):** yards per target are drawn from league plays by situation, so efficiency is compressed toward average. Top tercile by own 2025 yds/target (9.12): sim 7.63 vs week-1 actual 8.56, yards 0.80x actual; bottom tercile (5.33): sim 6.60 vs 6.47, 1.24x. Zero-sum against calibrated team pass yards, so the priced starters lose what the low-efficiency receivers gain | prop gaps centre near 0 across a week (mean \|gap\| < 8 pp), then prop CLV ≥ 0 over 65+ leans | proposed; **banked for the week of 2026-09-22** alongside P25 `k32+fb` (user, 2026-09-18: a real modelling feature, not to be built before Sunday). After P27 it is the main remaining receiving cause: with the offset applied, low lines sit over the market and high lines under at every position (Spearman line vs gap −0.25 to −0.71) |
 | P18 | Simulator: first-and-short (goal-to-go) conversion far below real | bug | 2026-09-16 | Engine diagnostic, `--calibrate` over 20k league-average sims: 1st & 0-2.5 converts .323 vs real .486 (y/p 0.34 vs 0.43); 1st & 2.5-5.5 .216 vs .329 (y/p 1.41 vs 2.64); 1st & 5.5-9.5 .119 vs .163. On 1st down a to-go under 10 means the ball is inside the 10, so these are almost all goal-to-go snaps. Consistent with sim TD share .196 vs real .220. At ~1% of all snaps it does **not** explain the 11% plays-per-drive shortfall, which was measured separately and traced to possession count | 1st-down conversion within 3 pp of real in each sub-10 distance bin, and sim TD share within 1 pp of real | proposed; **deliberately deferred 2026-09-16** so it does not pull focus from the punt / three-and-out investigation |
 | P16 | Baseline model weight to 0 if its NFL leans show no CLV | weight | 2026-09-15 | backfill: 75 pregame baseline leans −0.22 pp (t −1.22), but 61 are CFB and priced at an assumed −110 against DK's close; NFL n=14 | NFL lean CLV ≤ 0 at 65+ NFL leans (≈ week 5) → set `MODEL_MARKET_WEIGHT=0` for the baseline | watch |
 | P19 | A partial injury pull must not retire other teams' reports: `latest_injury_report` keeps the latest pull *per source*, not per team/week as P1 intended | bug fix | 2026-09-16 | The 19:46Z week-2 nflverse pull held only BUF/DET (8 rows, the Thursday game). Because it was the newest nflverse pull, the week-1 nflverse report (91 rows) was silently dropped for the other 30 teams, which fell back to ESPN only. This time it helped by accident: the week-1 statuses were stale, e.g. Penix OUT, and CAR@ATL moved 0.60 → 4.77 when that row fell away. The same mechanism can just as easily drop a current report for most of the league in a future week, with no warning | none needed; correctness bug. Test: a pull covering 2 teams leaves every other team's latest report in force | **applied 2026-09-16** (`features.latest_injury_report`). Kept apart from the engine-change sequence because it is a data-pipeline correctness fix. For nflverse the report is now the latest week only, and within that week each team's latest pull; ESPN is unchanged (latest whole pull). Last week's statuses are deliberately not carried forward, so the 9/16 outcome (30 teams on ESPN until they file week 2) was the right one. Validated before landing: identical 137 selected rows on the live table, and injury_adj unchanged on all 16 week-2 games. The old code fails the new partial-pull test. Residual: a team whose whole report clears mid-week writes no rows, so its earlier same-week rows stay in force |
 | P20 | ESPN "Injured Reserve" status is discarded, so IR'd starters vanish instead of counting as out | bug fix | 2026-09-16 | `ingest_injuries._status` keeps only out/doubtful/questionable/probable. HOU LB To'oTo'o (0.88 snaps) went to IR 09-16 and dropped out of the injury layer, instead of costing HOU ~1.06 pts. **Scope measured 2026-09-17:** the 22:50Z league-wide pull carried **40** players at `Injured Reserve`, every one of them silently dropped — this is league-wide, not a one-team case. Tonight's DET@BUF: Isiah Pacheco (DET, IR) contributed nothing to the injury layer, so DET's burden is understated and the true term favours BUF by more than the 1.56 served | none needed; correctness bug | proposed (after P19); **queued for the week of 2026-09-22** alongside 2A/P23 |
 | P21 | ESPN rows carry no practice participation, so every Questionable player plays at a flat 0.55 | logic | 2026-09-16 | Penix: full practice, charged 2.52 (0.80 → 1.12). Terrell: DNP, charged 0.70 (0.25 → 1.17). Burrow: "says he will play", charged 2.70. ESPN's `shortComment` states the practice level in plain text | practice-aware play probability does not worsen NFL injury-term fit (P9) | proposed (after P19) |
 | P22 | NFL power rating: no opponent adjustment; defense regressed the same as offense (×0.75); prior season carries ~94% in week 2 | logic | 2026-09-16 | CIN@HOU baseline −16.37 vs market −2.5. Of the +10.93 rating gap, +12.98 is the 2025 defensive EPA gap alone, −0.98 offense, −1.08 week 1. The only value flag on the week-2 slate comes from this. See also P5, P13 | rebuild with separate off/def regression (and opponent adjustment); weeks 1-4 and holdout MAE vs line must improve | proposed (after P19) |
-| P23 | Usage shares: drop scrambles and kneels from carry shares (issue 2A) | bug fix | 2026-09-16 | `sim_data._usage_events` counts every `rush_attempt`, including 1,224 scrambles and 487 kneels (2025-26), while the engine separately credits every scramble to the QB. Read-only week-2 re-sim, 10k sims, 195 priced props: QB rush att 5.42 → 3.33 per team-game (real 2025 3.25), RB carries 20.54 → 22.61 (+10%), team rush att/yds and game totals/margins unchanged to 3 decimals. RB rush yds P(over) 0.329 → 0.393 vs market 0.500, about 40% of the RB gap. Receiving unchanged. See the 2026-09-16 entry | QB rush att ≈ 3.3 per team-game; RB carries up ≈ 10%; team rush totals, game totals and margins unchanged; rushing props correction re-fit with separate QB and RB offsets (P26) | proposed; **first engine change for the week of 2026-09-22**, measured on its own before `PENALTY_REPLAY` is switched on |
+| P23 | Usage shares: drop scrambles and kneels from carry shares (issue 2A) | bug fix | 2026-09-16 | `sim_data._usage_events` counts every `rush_attempt`, including 1,224 scrambles and 487 kneels (2025-26), while the engine separately credits every scramble to the QB. Read-only week-2 re-sim, 10k sims, 195 priced props: QB rush att 5.42 → 3.33 per team-game (real 2025 3.25), RB carries 20.54 → 22.61 (+10%), team rush att/yds and game totals/margins unchanged to 3 decimals. RB rush yds P(over) 0.329 → 0.393 vs market 0.500, about 40% of the RB gap. Receiving unchanged. See the 2026-09-16 entry | QB rush att ≈ 3.3 per team-game; RB carries up ≈ 10%; team rush totals, game totals and margins unchanged; rushing props correction re-fit with separate QB and RB offsets (P26) | **applied 2026-09-18** (moved ahead of the 9/22 plan at the user's call). Validated before landing, read-only week-2 re-sim: QB rush att 5.41 → 3.26 per team-game (real 3.25), RB carries 20.47 → 22.53 (+10.1%), team rush att/yds, game totals and margins identical to 4 decimals. See the 2026-09-18 entry |
 | P24 | Usage shares: QB-specific scramble rate (issue 2B) | logic | 2026-09-16 | The engine credits scrambles at the league rate (5.9% of dropbacks) whatever the QB (Goff 0.9%, Stafford 1.2%). With P23 applied, QB rush yds split both ways: runners well under (Lamar Jackson P(over) 0.146, Daniels 0.219), pocket QBs still over (D. Jones sim 19.4 vs 8.5 line, Purdy 21.6 vs 13.5) | QB rush att and rush yds P(over) centre near market for both running and pocket QBs, with no change to team totals | proposed (after P23 and `PENALTY_REPLAY`); low confidence |
-| P25 | Usage shares: use backups' own history beyond the playing slots; FB prior is zero (issue 1) | logic | 2026-09-16 | `blend_roles` gives players beyond QB1/RB2/WR3/TE1/FB1 only the slot average: 76 have their own red-zone share at least 2x that average (TE2s Njoku, Freiermuth, Mayer, Kmet all a flat 3.2%). D. Waller (CAR TE3, 14.1% of targets) is simulated at 2.3%, falls under `MIN_TOUCHES` and drops out of the box score. FBs are zeroed even with history (Heyward 14% of goal-line carries) | per-player target and carry shares closer to realised week-by-week shares, and starters not pushed further under their prop lines | proposed (after P23 and `PENALTY_REPLAY`, alongside P24); risk: re-creating the demoted-starter problem |
-| P26 | Props bias correction: fit offsets by position, not one per category | logic | 2026-09-16 | The single rushing offset (+0.346) hides two biases pulling in opposite directions: QB rush yds lean over (P(over) 0.649, 7/9 overs), RB rush yds lean under (0.329, 2/24). Their mean (0.416) looked like one under-bias. Receiving and passing corrections may hide the same thing, and not moving under P23 is no evidence either way | rebuild with P23: separate QB/RB rushing offsets; before trusting the receiving and passing offsets, check each by position (WR/TE/RB for receptions and rec yds; pocket vs running QBs for pass yds) and split any that disagree | proposed (with P23). **Until then the current correction stays displayed unchanged; read rushing yards with extra caution** |
+| P25 | Usage shares: use backups' own history beyond the playing slots; FB prior is zero (issue 1) | logic | 2026-09-16 | `blend_roles` gives players beyond QB1/RB2/WR3/TE1/FB1 only the slot average: 76 have their own red-zone share at least 2x that average (TE2s Njoku, Freiermuth, Mayer, Kmet all a flat 3.2%). D. Waller (CAR TE3, 14.1% of targets) is simulated at 2.3%, falls under `MIN_TOUCHES` and drops out of the box score. FBs are zeroed even with history (Heyward 14% of goal-line carries) | **revised 2026-09-18:** per-player target and carry shares closer to realised week-by-week shares (walk-forward, squared error). The original second clause, "starters not pushed further under their prop lines", assumed starters' shares were too low; the 2025 backtest shows they are already slightly too high (WR starters +5%, TE +3% against realised). A fix that corrects toward reality is the right direction even if it moves starters further under the market; that residual gap is the receiving investigation's to explain, not this item's | **validated 2026-09-18, banked, ship week of 2026-09-22** as `k32+fb`: backups beyond the playing slots get their own history at weight games/(games+32) instead of 0, and FBs with no slot prior keep their own history unclipped. 2025 walk-forward MSE vs production: tgt_all −4.5% (better in 15/16 weeks), car_all −2.1%, tgt_rz −0.6%, car_gl −0.8%; K chosen on weeks 3-10 holds on 11-18. Needs the receiving offsets refitted when it ships. See the 2026-09-18 entry |
+| P26 | Props bias correction: fit offsets by position, not one per category | logic | 2026-09-16 | The single rushing offset (+0.346) hides two biases pulling in opposite directions: QB rush yds lean over (P(over) 0.649, 7/9 overs), RB rush yds lean under (0.329, 2/24). Their mean (0.416) looked like one under-bias. Receiving and passing corrections may hide the same thing, and not moving under P23 is no evidence either way | rebuild with P23: separate QB/RB rushing offsets; before trusting the receiving and passing offsets, check each by position (WR/TE/RB for receptions and rec yds; pocket vs running QBs for pass yds) and split any that disagree | **rushing half applied 2026-09-18:** RB offset +0.107 (n=39, mean-fitted, starters still under); QB rushing gets no offset and is held out of the ranking as an engine defect until P24, because a QB offset averages runners (far under) with pocket passers (far over). Receiving and passing by-position checks still open (receiving investigation, 2026-09-18). **Receiving half applied 2026-09-18 (after P27):** receptions stay one offset (+0.510, n=127; WR/TE/RB intervals overlap); receiving yards split by position (WR +0.418 n=63, TE +0.553 n=28, RB +0.212 n=28; RB's 90% CI +0.08 to +0.34 excludes the category's +0.40). **Passing refitted 2026-09-18 (evening):** −0.093 → **+0.005** (n=20, raw −0.12pp; the 9/16 fit came from the 25-prop first pull). One offset: the pocket-vs-running split was not tested, and with the category mean on the market there is nothing for it to separate yet |
+| P27 | Engine: throwaways are credited as receiver targets | bug fix | 2026-09-18 | 4.25% of library pass attempts (2023-25) have no intended receiver and are all incomplete, yet `simulate._Game._credit` gives every attempt a target. Catch rate over all attempts is 0.645 and the sim's week-1 starter catch rate is 0.643; real catch rate over true targets is 0.674 (week-1 actual 0.676). Sim team targets 32.2 vs actual 29.6. See the 2026-09-18 receiving entry. **Corrected 2026-09-18 (fix run):** the diagnosis said this accounted for the ~4-5% receptions shortfall. It cannot: a throwaway was credited as an *incomplete* target, so removing it lowers targets and nothing else. Receptions and receiving yards per player are unchanged by construction, and every priced prop's raw P(over) was unchanged (324/324). Team receiving is calibrated (sim 20.33 completions / 30.03 true targets per team-game vs 2025 20.62 / 30.70, week 1 20.47 / 29.74), so the per-player receptions shortfall is in how catches are split between players (P17, P25), not P27 | sim catch rate ≈ 0.674; team targets ≈ 95.8% of pass attempts; QB pass att/cmp/yds, team totals, game totals and margins unchanged; receiving offsets refitted | **applied 2026-09-18** (`TABLES_VERSION` 5: `targeted` library field; `_credit` still draws a receiver for every attempt, so the random stream is untouched, then drops the credit on throwaways). Validated read-only on the 15 weekend games, 10k sims, against a same-code control with the field stripped: catch rate 0.6487 → **0.6771** (library over true targets 0.6773), targets/attempt 1.000 → **0.9581**, QB pass att/cmp/yds per player, team totals, game totals and margins identical (max diff 0.0). Receiving offsets refitted (P26). See the 2026-09-18 P27 entry |
+| P28 | Starter designation: the SEA passing market is priced on Drew Lock starting while the sim runs him as QB2 | investigate | 2026-09-18 | Week 2, SEA @ ARI. Books price only Lock for SEA pass yds (207.5), with no Sam Darnold line posted. The stored sim has Darnold QB1 (17.8 att, median 172 yds) and Lock QB2 (12.0 att, **median 0**, mean 93), so the raw sim reads Lock's under at 0.746 against a market 0.500, and he sits **#2 on the ranked list**. His rushing prop (6.5) is held out as QB rushing. Looks like a depth-chart / starter-designation or injury-status mismatch, distinct from the usage and efficiency items. Not diagnosed | the sim's QB1 for every team matches the market's priced passer (or the confirmed starter) before props are ranked; a priced QB2 with sim median 0 is flagged, not ranked | proposed; **own diagnosis later**. Deliberately not folded into the P27 run (user, 2026-09-18). **Labelled on the page 2026-09-18 (evening)** via `props.KNOWN_DEFECTS`: Lock's pass-yds card (#2) and table row carry a known-defect note, which also goes into the explanation prompt. It stays in the ranking, not held out. Remove the entry once this is fixed or the game kicks off |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -97,6 +99,155 @@ NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
 
 ---
+
+## 2026-09-18 (evening) — Passing-yds offset refitted, P28 labelled, TD tab unwired
+
+Display-only; the engine and stored sims are untouched.
+
+- **Pass-yds offset −0.093 → +0.005** (P26). Same in-sample method, week-2 slate, n=20, raw bias −0.12pp. It now moves
+  no pass-yds probability by more than 0.13pp.
+- **P28 labelled.** New `props.KNOWN_DEFECTS` (keyed by game and the books' player name) attaches a `defect_note` to
+  every row for that player. The card shows it as a caveat, the table row as a sub-line, and the Claude explanation
+  prompt gets it too; the generated #2 explanation now leads with the defect. The prop stays ranked (#2); it is not
+  held out.
+- **TD tab no longer reachable.** `NflHub.jsx` is back to its committed version, so it routes props to `PropsPage` and
+  `#/nfl/props/td` falls through to the ordinary props page. The wiring is kept in the untracked `td-tab-wiring.patch`
+  (`git apply td-tab-wiring.patch` restores it). `PropsSection.jsx`, `TdPropsPage.jsx`, the `tabs` prop on
+  `PropsPage` and the TD styles in `hub.css` stay uncommitted and are not in the built bundle.
+  `dashboard/public/td_props.json` is still in `public/`, so the file itself is fetchable by URL, but no page shows it.
+
+Props re-ranked (no odds pull) and dashboard exported after these changes. Tests: props 48/48, with the correction
+on and off.
+
+## 2026-09-18 — P27 applied: throwaways no longer credited as targets; receiving offsets refitted
+
+**Change.** `sim_data.TABLES_VERSION` 4 → 5 adds `targeted` (a pass attempt with an intended receiver). The v5 library
+is identical to v4 in every existing array (112,518 plays). 4.23% of attempts are throwaways; none are completions,
+27 are interceptions. `simulate._Game._credit` still draws a receiver for every attempt, so the random stream and
+every game outcome are unchanged, then drops the receiver credit where `targeted` is false.
+
+**Validation**, read-only, on the 15 weekend week-2 games at 10k sims. Same code in both runs, with the control
+run's `targeted` stripped (the control reproduced the stored sims exactly):
+
+| criterion | target | control | P27 |
+|---|---|---|---|
+| catch rate (rec / tgt) | ≈ 0.674 | 0.6487 | **0.6771** |
+| targets / pass attempt | ≈ 95.8% | 100% | **95.81%** |
+| QB pass att / cmp / yds (per player) | unchanged | | identical (max diff 0.0) |
+| team totals, game totals, margins | unchanged | 44.749 / +3.694 | identical (max diff 0.0) |
+| receptions = completions, rec yds = pass yds | holds | yes | yes |
+
+Tests: new `test_throwaways_are_not_targets` (box score); all 12 suites pass with the props correction on and off.
+`test_rank`'s gap check compared against the bias-adjusted probability, so it failed whenever `.env` turned the
+correction on. That predates this run. It now compares against `p_model_raw`, which is what `gap` is.
+
+**What P27 did not do: move any prop.** Receptions and receiving yards per player are identical by construction,
+and raw P(over) is unchanged on 324/324 priced props. The 9/18 diagnosis said P27 "accounts for the ~4-5%
+receptions shortfall". That was wrong: the throwaway was an incomplete target, so it lowered the catch rate without
+costing anyone a catch. Team receiving is calibrated (per team-game, sim 20.33 completions and 30.03 true targets;
+2025 20.62 / 30.70; 2026 week 1 20.47 / 29.74). The per-player receptions shortfall comes from how catches are split
+between players (P17 efficiency and catch-rate compression, and P25's shares), not from the team total.
+This reopens one item from the 9/18 diagnosis: its week-1 "targets 1.003" compared throwaway-inflated sim targets
+against true actual targets, so on true targets the starters sit about 4% under (one week, n=138, SE ≈ 5%). That is
+within noise, and it points the same way as the receptions gap.
+
+**Receiving offsets refitted**, in sample on the week-2 priced props (the method is unchanged: a log-odds shift so
+that the mean P(over) matches the market; 90% bootstrap CI):
+
+| | n | raw P(over) | mkt | offset | 90% CI | old |
+|---|---|---|---|---|---|---|
+| receptions (all) | 127 | 0.386 | 0.499 | **+0.510** | +0.40, +0.62 | +0.521 |
+| rec yds WR | 63 | 0.404 | 0.500 | **+0.418** | +0.32, +0.53 | +0.401 (one offset for the whole category) |
+| rec yds TE | 28 | 0.374 | 0.502 | **+0.553** | +0.37, +0.73 | |
+| rec yds RB | 28 | 0.451 | 0.501 | **+0.212** | +0.08, +0.34 | |
+
+Receptions positions (WR +0.46, TE +0.57, RB +0.59) overlap, so they stay as one offset. Receiving yards split under
+the P26 rule, because RB's interval excludes the category fit (+0.400). In every group the low lines end up over
+after correction and the high lines under, so starters are still under-projected. That is P17, and no constant fixes it.
+The pass-yds offset (−0.093 from 9/16) is now stale: the refit is +0.005. It was left alone, out of scope.
+
+**Live, 21:30Z:** weekend sims re-stored (15 rows, supabase), `export_sims`, `props` re-ranked (no odds pull),
+`export_dashboard`. The stored boxes equal the validated run. The ranking order is unchanged, since it sorts on the
+raw gap. Displayed targets drop ~4%. The displayed receiving-yards probabilities move by position (RB less, TE more).
+
+Side item logged separately as **P28** (SEA / Drew Lock starter mismatch). Not diagnosed here.
+
+## 2026-09-18 — Receiving under-bias: diagnosis (P27, P17), nothing changed
+
+Read-only, current engine (post-P23, pre-P25). Question: why do priced receivers sit ~10-18% under their lines?
+
+**Ruled out:**
+- *Team pass volume.* Sim QB pass-yds mean 218.7 vs market line 222.9 across 21 teams (−2%); week-1 sim pass att
+  32.2 vs actual 31.4.
+- *Shares.* 2025 walk-forward (P25 entry): starters' shares are slightly high, not low. Week-1 starters' simulated
+  targets 4.65 vs actual 4.63 per game (ratio 1.003, n=138, SE 0.22).
+- *Distribution shape.* Sim median/mean for receiving yards 0.847 vs real 2025 0.853. The sim is ~18% wider (IQR/mean
+  1.01 vs 0.85), but that is not what puts it under.
+- *The market.* Lines track each player's own 2025 median (ratio 0.989), and week-1 actuals landed at 0.97 (targets),
+  0.99 (receptions) and 1.01 (yards) of those players' 2025 per-game averages. The market's anchor held up; the sim's
+  did not.
+
+**What it is: conversion, not volume.** Week-1 starters, sim/actual: targets 1.003, receptions 0.954, yards 0.913.
+1. **Throwaway targets (P27, new).** 4.25% of library attempts have no intended receiver; the engine credits each to a
+   receiver as an incomplete target. Sim catch rate 0.643 = league catch rate over all attempts 0.645; real over true
+   targets 0.674. A plain accounting bug, same class as P23.
+2. **Efficiency compression (P17).** League yards per target by situation for every receiver: top tercile by own
+   2025 yds/target gets 0.80x of actual yards, bottom tercile 1.24x. Zero-sum against calibrated team yards, and the
+   priced players are mostly in the upper terciles.
+3. **Availability leak (minor, overlaps P10/P20).** Live roles hold 2.5% of team target share on reserve/IR players and
+   0.2% on inactives (week-2 roster status), before the injury layer.
+
+Caveat: the reality checks lean on one week of actuals (n=138 starters) and 2025 per-game averages computed over games
+with at least one target.
+
+Side finding: SEA's pass-yds market is priced on Drew Lock (207.5) while the sim has him as QB2 (median 0), which puts
+him at #2 in the ranked list. A depth-chart/injury mismatch, not investigated.
+
+## 2026-09-18 — Props backlog: P23 shipped, P26 rushing split, P25 validated and banked
+
+**P23 (issue 2A) applied.** `sim_data._usage_events` now excludes scrambles and kneels from carry shares. Validated
+read-only against the locked criteria before anything was stored (pre-change state snapshotted in
+`data/snapshots/pre-2A_2026-09-18/`, which also keeps the week-2 out-of-sample check of the 9/16 correction possible):
+
+| criterion | target | before | after |
+|---|---|---|---|
+| QB rush att per team-game | ≈ 3.3 (real 3.25) | 5.41 | 3.26 |
+| RB carries per team-game | up ≈ 10% | 20.47 | 22.53 (+10.1%) |
+| team rush att / yds, totals, margins | unchanged | | identical to 4 decimals |
+
+Props, raw, 324 paired: RB rush yds P(over) 0.414 → 0.477, QB 0.707 → 0.539; receiving and passing unmoved.
+
+**P26 rushing rebuild: only half validates.** Fitted by position on the week-2 priced props (same method):
+
+| | n | offset | P(over) low-line half | high-line half | Spearman(line, P(over)) |
+|---|---|---|---|---|---|
+| QB rush | 19 | −0.184 | 0.667 | 0.423 | −0.79 (p < 0.001) |
+| RB rush | 39 | +0.107 | 0.521 | 0.435 | −0.33 (p = 0.04) |
+
+Simulated QB rushing sits at 15-30 yards whatever the QB against lines of 0.5-40.5 (P24), so a QB offset averages two
+opposite errors and barely changes the distance from market (0.173 → 0.164). Shipped: RB +0.107 labelled as mean-fitted
+with starters still under; QB rushing props held out of the ranking entirely (`props.STRUCTURAL_HOLDOUTS`).
+
+**P25 (issue 1) diagnosed, fix validated, banked for the week of 2026-09-22.** 2025 walk-forward, weeks 3-18: each
+week's roles built from pbp before it and the last depth-chart snapshot before its first kickoff, availability from
+weekly rosters (status ACT, broader than game-day actives), renormalised per team as `team_shares` does, scored
+against realised shares.
+
+- Production under-credits backups with a real role: 110 players / 425 player-weeks, predicted 2.9% of targets vs 6.0%
+  realised.
+- Full own history for backups (P25 as first written) overshoots them 16-52% and worsens carries, red-zone targets and
+  goal-line carries: the demoted-starter problem, measured.
+- FB zero: nflverse seasonal rosters label no one FB, so no ('FB', rank) prior exists and the history clip forces 0.
+- `k32+fb` (backup history at games/(games+32); FBs keep their own history) beats production on squared error in every
+  category: tgt_all −4.5% (15/16 weeks), car_all −2.1% (8/16), tgt_rz −0.6% (15/16), car_gl −0.8% (10/16); out of
+  sample on weeks 11-18 with K chosen on 3-10, −5.3 / −3.1 / −0.8 / −1.7%. MAE prefers production for FBs only
+  because FB carries are mostly zero; MAE rewards predicting the median, which is the wrong target for props.
+- **Starters' shares are already slightly too high** against realised (WR +5%, TE +3%, RB carries ≈ 0). The fix lowers
+  them. P25's original "starters not pushed further under" criterion rested on the opposite assumption and is revised
+  in the tracker. It also means the ~10% receiving volume gap against the market is **not** a share problem.
+
+Held for 9/22 rather than shipped before Sunday: the benefit is mostly backup/TD accuracy (the TD tab is held), and it
+would move the receiving baseline mid-investigation and leave the in-sample receiving offsets mis-fitted on the slate.
 
 ## 2026-09-17 — NFL (week 2, Thursday) DET @ BUF, pre-kickoff snapshot
 
