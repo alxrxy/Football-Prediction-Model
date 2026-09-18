@@ -128,24 +128,83 @@ BIAS_FIT = {
     "method": "per-category log-odds offset, fitted so mean simulated P(over) "
               "matches mean market P(over) on that week's priced props",
     "in_sample": True,
+    # Receptions refitted 2026-09-18 after throwaways stopped counting as
+    # targets (P27), on the week-2 priced props. P27 moves targets only, not
+    # receptions or yards, so the refit landed where the old fit was
+    # (+0.5214 -> +0.5104). Receiving yards are split by position below.
+    # Passing yards refitted the same day: the 9/16 fit (-0.0930, n=25, first
+    # pull) had gone stale, and on the full week-2 slate the simulation sits
+    # on the market (-0.12pp raw), so the offset is now all but zero.
     "offsets": {
-        "player_pass_yds": -0.0930,
-        "player_rush_yds": +0.3457,
-        "player_reception_yds": +0.4009,
-        "player_receptions": +0.5214,
+        "player_pass_yds": +0.0050,
+        "player_receptions": +0.5104,
     },
-    "n": {"player_pass_yds": 25, "player_rush_yds": 33,
-          "player_reception_yds": 68, "player_receptions": 69},
-    "raw_bias_pp": {"player_pass_yds": +2.18, "player_rush_yds": -7.44,
-                    "player_reception_yds": -9.24, "player_receptions": -11.61},
+    "measured_at_by_market": {"player_pass_yds": "2026-09-18", "player_receptions": "2026-09-18",
+                              "player_reception_yds": "2026-09-18"},
+    "n": {"player_pass_yds": 20, "player_reception_yds": 119, "player_receptions": 127},
+    "raw_bias_pp": {"player_pass_yds": -0.12, "player_reception_yds": -9.28, "player_receptions": -11.32},
+    # Rushing is corrected by position (P26). The single category offset hid two
+    # biases pulling opposite ways, QBs over and backs under. Refitted
+    # 2026-09-18 after scrambles and kneels left the carry shares (P23), on the
+    # week-2 priced props, same method. QBs get no offset: their rushing props
+    # are held out of the ranking instead (STRUCTURAL_HOLDOUTS).
+    #
+    # Receiving yards split too (P26 by-position check, 2026-09-18): backs run
+    # about half as far under as WRs and TEs (RB +0.21, 90% CI +0.08 to +0.34,
+    # which excludes the category fit of +0.40). Receptions did not split: all
+    # three positions sit within each other's intervals.
+    "position_offsets": {
+        "player_rush_yds": {"RB": +0.1070},
+        "player_reception_yds": {"WR": +0.4177, "TE": +0.5530, "RB": +0.2116},
+    },
+    "position_n": {"player_rush_yds": {"RB": 39}, "player_reception_yds": {"WR": 63, "TE": 28, "RB": 28}},
+    "position_raw_bias_pp": {"player_rush_yds": {"RB": -2.34},
+                             "player_reception_yds": {"WR": -9.63, "TE": -12.73, "RB": -5.05}},
+    "position_measured_at": "2026-09-18",
+    "position_notes": {
+        "player_rush_yds": {"RB": (
+            "Mean-fitted: it lifts every back by the same amount, but starters (the higher lines) still run "
+            "under and backups sit near the market. That starter/backup split may overlap with the "
+            "backup-usage defect (issue 1, P25), so the offset may need refitting once that is diagnosed."
+        )},
+        "player_reception_yds": {"ALL": (
+            "Same pattern at every position: after the offset, low lines sit over the market and high lines "
+            "under, so starters are still under-projected. That is efficiency compression (P17), which a "
+            "constant cannot fix."
+        )},
+    },
+}
+
+# Props whose simulated probability measures a known engine defect rather than
+# the player, kept out of the ranking entirely until the defect is fixed.
+STRUCTURAL_HOLDOUTS = {
+    ("player_rush_yds", "QB"): (
+        "QB rushing yards: every quarterback is simulated scrambling at the league rate (issue 2B, P24), "
+        "so the simulation puts nearly every QB at 15-30 yards whatever his line; runners read far under "
+        "and pocket passers far over. Held out of the ranking until 2B is fixed."
+    ),
+}
+
+# Individual props known to be measuring a defect, labelled on the page but left
+# in the ranking. Keyed by (game_id, the books' player name). Remove each entry
+# once its item is fixed or the game has kicked off.
+KNOWN_DEFECTS = {
+    ("2026_02_SEA_ARI", "Drew Lock"): (
+        "Known defect (P28): books price Lock as SEA's passer and post no Darnold line, but the simulation "
+        "has him as QB2 behind Darnold (median 0 passing yards). This gap is a starter-designation mismatch, "
+        "not a read on Lock. Not yet diagnosed."
+    ),
 }
 
 
-def bias_adjust(p: float, market_key: str) -> float:
-    """The simulation's P(over), shifted by that category's measured offset."""
+def bias_adjust(p: float, market_key: str, position: str | None = None) -> float:
+    """The simulation's P(over), shifted by the measured offset for that
+    category, or for that position within it where the category is split."""
     if not config.PROPS_BIAS_ADJUST:
         return p
-    shift = BIAS_FIT["offsets"].get(market_key)
+    by_pos = BIAS_FIT["position_offsets"].get(market_key)
+    shift = by_pos.get(position) if by_pos is not None else BIAS_FIT["offsets"].get(market_key)
+    # A split category leaves any position it did not fit (a FB, say) raw.
     if not shift:
         return p
     p = min(max(p, 1e-6), 1 - 1e-6)
@@ -193,7 +252,7 @@ def pick_alt(row: dict, q: dict, offers: list[dict]) -> dict | None:
             continue
         # .get: a row without a market key (as in the unit test) simply gets no
         # adjustment, since bias_adjust no-ops on an unknown category.
-        pm = bias_adjust(p_over(q, o["point"]), row.get("market"))
+        pm = bias_adjust(p_over(q, o["point"]), row.get("market"), row.get("position", "").rstrip("0123456789"))
         p = pm if row["pick"] == "over" else 1 - pm
         if p < ALT_MIN_P:
             continue
@@ -239,7 +298,18 @@ def _sims() -> dict[str, dict]:
     return out
 
 
-def rank(lines: dict, sims: dict[str, dict]) -> dict:
+def _kicked_off(kickoff: str | None, now: datetime) -> bool:
+    try:
+        return kickoff is not None and datetime.fromisoformat(kickoff) <= now
+    except ValueError:
+        return False
+
+
+def rank(lines: dict, sims: dict[str, dict], now: datetime | None = None) -> dict:
+    """Rank every priced prop by the raw simulation's disagreement with the
+    market. Props for games that have kicked off are kept, under `started`,
+    but never ranked or held out: their pregame lines can no longer be bet."""
+    now = now or datetime.now(timezone.utc)
     rows, unmatched, unprojected = [], 0, 0
     for gid, g in (lines.get("games") or {}).items():
         sim = sims.get(gid)
@@ -265,7 +335,8 @@ def rank(lines: dict, sims: dict[str, dict]) -> dict:
                 if not q or mv is None:
                     continue
                 pm_raw = p_over(q, mv["point"])
-                pm_adj = bias_adjust(pm_raw, mkey)
+                pos = p.get("position") or ""
+                pm_adj = bias_adjust(pm_raw, mkey, pos)
                 # The pick and the ranking come from the RAW disagreement. The
                 # correction is one constant per category, so it cannot order
                 # players within a category: three ranking variants built on it
@@ -300,12 +371,23 @@ def rank(lines: dict, sims: dict[str, dict]) -> dict:
                                  "total": (sim.get("total") or {}).get("p50")},
                     "sim_generated_at": sim.get("generated_at"),
                     "_q": q,   # the full stat summary, for pricing alt lines; not exported
+                    "_structural": STRUCTURAL_HOLDOUTS.get((mkey, pos)),
+                    "defect_note": KNOWN_DEFECTS.get((gid, name)),
                 })
-    held = [r for r in rows if r["gap"] > MAX_GAP]
-    ranked = sorted((r for r in rows if r["gap"] <= MAX_GAP), key=lambda r: -r["gap"])
+    started = [r for r in rows if _kicked_off(r["kickoff"], now)]
+    rows = [r for r in rows if not _kicked_off(r["kickoff"], now)]
+    for r in started:
+        r.pop("_structural")
+    for r in rows:
+        why = r.pop("_structural")
+        r["held_reason"] = "structural" if why else "gap" if r["gap"] > MAX_GAP else None
+        if why:
+            r["held_note"] = why
+    held = sorted((r for r in rows if r["held_reason"]), key=lambda r: (r["held_reason"] != "gap", -r["gap"]))
+    ranked = sorted((r for r in rows if not r["held_reason"]), key=lambda r: -r["gap"])
     for i, r in enumerate(ranked, 1):
         r["rank"] = i
-    return {"ranked": ranked, "held_out": sorted(held, key=lambda r: -r["gap"]),
+    return {"ranked": ranked, "held_out": held, "started": started,
             "unmatched_players": unmatched, "unprojected_players": unprojected}
 
 
@@ -334,7 +416,8 @@ def _describe(r: dict) -> str:
     alt = r.get("alt")
     extra = (f" | alt line: {r['pick']} {alt['line']} at {alt['price']:+d} ({alt['book']}), simulation "
              f"{alt['p_model']:.0%}" if alt else "")
-    return _describe_base(r) + extra
+    defect = f" | {r['defect_note']}" if r.get("defect_note") else ""
+    return _describe_base(r) + extra + defect
 
 
 def _describe_base(r: dict) -> str:
@@ -407,7 +490,7 @@ def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = Fa
             notes = {}
         for r in top:
             r["explanation"] = notes.get(r["rank"])
-    for r in result["ranked"] + result["held_out"]:
+    for r in result["ranked"] + result["held_out"] + result["started"]:
         r.pop("_q", None)
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -419,19 +502,25 @@ def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = Fa
         "props": top,
         "more": result["ranked"][top_n:],
         "held_out": result["held_out"],
+        # Games already under way or finished: kept for reference, never ranked.
+        "started": result["started"],
         "alts_pulled_at": alts_pulled,
         # Only describe the rule when it was actually applied, so the payload
         # never advertises alt lines that were never pulled.
         "alt_rule": {"min_p": ALT_MIN_P, "min_price": ALT_MIN_PRICE} if with_alts else None,
         "bias_adjust": {**BIAS_FIT, "applied": config.PROPS_BIAS_ADJUST},
+        "structural_holdouts": [{"market": m, "position": pos, "note": note}
+                                for (m, pos), note in STRUCTURAL_HOLDOUTS.items()],
     }
     config.ensure_dirs()
     PROPS_JSON.write_text(json.dumps(payload), encoding="utf-8")
     if PUBLIC_PROPS_JSON.parent.exists():
         shutil.copy(PROPS_JSON, PUBLIC_PROPS_JSON)
     print(f"[props] week {payload['week']}: {payload['priced']} props priced, top {len(top)} written "
-          f"({len(result['held_out'])} held out as likely usage misses, "
-          f"{result['unmatched_players']} names unmatched) -> {PROPS_JSON}")
+          f"({sum(r['held_reason'] == 'gap' for r in result['held_out'])} held out as likely usage misses, "
+          f"{sum(r['held_reason'] == 'structural' for r in result['held_out'])} held out as engine defects, "
+          f"{result['unmatched_players']} names unmatched, "
+          f"{len(result['started'])} from games already kicked off, not ranked) -> {PROPS_JSON}")
     for r in top:
         alt = r.get("alt")
         print(f"  {r['rank']:>2}. {r['player']:<22} {r['label']:<10} {r['pick']:<5} {r['line']:>6} "
