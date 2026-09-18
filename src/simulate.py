@@ -648,7 +648,8 @@ class _Game:
         A designed run goes to a ball carrier by carry share for its field
         zone (goal line, red zone, open field); a scramble and every pass
         attempt to that simulated game's quarterback; a target to a receiver
-        by red-zone, short or deep target share. Yards are the play's
+        by red-zone, short or deep target share, unless the attempt was a
+        throwaway with no intended receiver. Yards are the play's
         official yards, capped short of the goal line, and exactly the
         distance to it on a touchdown, which is credited on the play itself.
         """
@@ -687,6 +688,11 @@ class _Game:
                     self._add(st, key, s_, qb, v)
                 rz, deep = za <= 20, t.deep[ra]
                 who = self._pick(pool, ("tgt_rz", "tgt_deep", "tgt_short"), (rz, ~rz & deep, ~rz & ~deep))
+                # A throwaway has no intended receiver: the QB keeps the
+                # attempt, nobody gets a target. The draw above still happens
+                # so the random stream, and every game outcome, is unchanged.
+                if t.targeted is not None:
+                    who = np.where(t.targeted[ra], who, -1)
                 for key, v in (("tgt", 1), ("rec", comp), ("rec_yds", gained), ("rec_td", scored)):
                     self._add(st, key, s_, who, v)
 

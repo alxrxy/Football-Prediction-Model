@@ -34,7 +34,7 @@ warnings.filterwarnings("ignore")
 
 POOL_SEASONS = (2023, 2024, 2025)
 KICKOFF_SEASONS = (2025,)
-TABLES_VERSION = 4
+TABLES_VERSION = 5
 
 # --- situation buckets -----------------------------------------------------
 # down: 1st, 2nd, 3rd/4th (a 4th-down attempt is drawn from the same pool as a
@@ -199,6 +199,9 @@ class SimTables:
     stat_yards: np.ndarray | None = None
     complete: np.ndarray | None = None
     attempt: np.ndarray | None = None       # pass attempt; sacks and scrambles excluded
+    # An attempt with an intended receiver. Throwaways (4.2% of attempts)
+    # have none, are never completed, and must not be credited as targets.
+    targeted: np.ndarray | None = None
     scramble: np.ndarray | None = None
     interception: np.ndarray | None = None
     deep: np.ndarray | None = None          # air yards >= DEEP_AIR_YARDS
@@ -321,6 +324,7 @@ def _scrimmage(s: pd.DataFrame) -> pd.DataFrame:
     p["cmp"] = (p["complete_pass"] == 1) & ~p["pen"]
     p["att"] = (p["pass_attempt"] == 1) & (p["sack"] != 1) & ~p["scr"] & ~p["pen"]
     p["int"] = (p["interception"] == 1) & p["att"]
+    p["tgt"] = p["att"] & p["receiver_player_id"].notna()
     p["deep"] = p["air_yards"].fillna(0) >= DEEP_AIR_YARDS
     p["bucket"] = bucket_index(p["down"].astype(int), p["ydstogo"].astype(int), yl)
     return p.sort_values("bucket", kind="stable").reset_index(drop=True)
@@ -504,6 +508,7 @@ def build_tables(refresh: bool = False) -> SimTables:
         stat_yards=p["stat_y"].to_numpy(np.int16),
         complete=p["cmp"].to_numpy(bool),
         attempt=p["att"].to_numpy(bool),
+        targeted=p["tgt"].to_numpy(bool),
         scramble=p["scr"].to_numpy(bool),
         interception=p["int"].to_numpy(bool),
         deep=p["deep"].to_numpy(bool),
@@ -530,7 +535,12 @@ def build_tables(refresh: bool = False) -> SimTables:
 
 def _usage_events(pbp: pd.DataFrame) -> pd.DataFrame:
     tg = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] != 1) & pbp["receiver_player_id"].notna()]
-    ru = pbp[(pbp["rush_attempt"] == 1) & pbp["rusher_player_id"].notna()]
+    # Carry shares are for designed runs only. The engine credits every
+    # scramble to the quarterback separately, and kneels are not in the play
+    # library, so counting either here inflates the QB's share of designed
+    # runs and dilutes every back's.
+    ru = pbp[(pbp["rush_attempt"] == 1) & pbp["rusher_player_id"].notna()
+             & (pbp["qb_scramble"] != 1) & (pbp["play_type"] != "qb_kneel")]
     ev = pd.concat([
         pd.DataFrame({"season": tg["season"], "game_id": tg["game_id"], "team": tg["posteam"],
                       "pid": tg["receiver_player_id"], "tgt": 1, "yl": tg["yardline_100"],

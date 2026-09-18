@@ -218,6 +218,24 @@ def test_depth_slot_governs_volume():
     check("a rookie rides the slot norm", round(float(roles.loc["rb1", "car_gl"]), 6), 0.5)
 
 
+def test_carry_shares_are_designed_runs_only():
+    from src.sim_data import usage_rates
+
+    def play(pid, **kw):
+        base = dict(season=2025, game_id="g1", posteam="KC", yardline_100=50, air_yards=None,
+                    pass_attempt=0, sack=0, receiver_player_id=None, passer_player_id=None,
+                    rush_attempt=1, rusher_player_id=pid, qb_scramble=0, play_type="run")
+        return {**base, **kw}
+
+    pbp = pd.DataFrame(
+        [play("rb")] * 3 + [play("qb")]
+        + [play("qb", qb_scramble=1)] * 4 + [play("qb", play_type="qb_kneel")] * 2
+    )
+    rates = usage_rates(pbp, 2025)
+    check("scrambles and kneels are not designed carries", round(float(rates.loc["qb", "car_all"]), 6), 0.25)
+    check("the back's share is over designed runs", round(float(rates.loc["rb", "car_all"]), 6), 0.75)
+
+
 def test_injury_split():
     detail = [{"position": "QB", "points": 4.0}, {"position": "CB", "points": 1.0},
               {"position": "K", "points": 1.0}]
@@ -249,7 +267,7 @@ if __name__ == "__main__":
         test_bucket_index, test_scorer_allocation_conserves_tds, test_summary_shapes,
         test_injured_starter_shifts_to_next_man, test_questionable_starter_splits,
         test_suffix_names_match_injury_report, test_depth_slot_governs_volume,
-        test_injury_split, test_storage_roundtrip,
+        test_carry_shares_are_designed_runs_only, test_injury_split, test_storage_roundtrip,
     ]:
         print(f"\n{fn.__name__}")
         fn()
