@@ -16,6 +16,7 @@ import pandas as pd
 
 from src.box_score import POOL_CATEGORIES, box_score, passer_weights
 from src.export_sims import attach_actuals
+from src.sim_data import N_ZONE
 from src.simulate import STAT_NAMES, Offense, PlayerPool, simulate_game
 from tests.test_simulate import tables
 
@@ -68,6 +69,30 @@ def test_passing_game():
         yds = st["pass_yds"].sum(1)
         check(f"side {side}: a TD drive from the 30 is exactly 70 yards (+ unfinished drives)",
               bool((yds >= 70 * tds).all() and (yds < 70 * (tds + 3)).all()), True)
+
+
+def test_throwaways_are_not_targets():
+    """P27: an attempt with no intended receiver stays on the QB's line and is
+    nobody's target. Every other attempt is still exactly one target, and the
+    game itself does not change at all."""
+    t = stat_tables(True)
+    n = len(t.yards)
+    # The fixture's drives live on 1st & 10; throw away every snap in one field zone.
+    throwaway = np.arange(n) % N_ZONE == 3
+    t.complete = ~throwaway            # throwaways are never completed
+    base = simulate_game(t, Offense(0.0), Offense(0.0), n=300, seed=5, pools=(pool(), pool()))
+    t.targeted = ~throwaway
+    r = simulate_game(t, Offense(0.0), Offense(0.0), n=300, seed=5, pools=(pool(), pool()))
+    for side in (0, 1):
+        st, st0 = r.players[side], base.players[side]
+        check(f"side {side}: fewer targets than attempts", int(st["tgt"].sum()) < int(st["pass_att"].sum()), True)
+        check(f"side {side}: targets = attempts minus throwaways", int(st["tgt"].sum()),
+              int(st0["tgt"].sum()) - (int(st0["pass_att"].sum()) - int(st0["pass_cmp"].sum())))
+        check(f"side {side}: receptions and receiving yards unchanged",
+              bool((st["rec"] == st0["rec"]).all() and (st["rec_yds"] == st0["rec_yds"]).all()), True)
+        check(f"side {side}: passing line unchanged",
+              all(bool((st[k] == st0[k]).all()) for k in ("pass_att", "pass_cmp", "pass_yds", "pass_td")), True)
+    check("scores unchanged", bool((r.points == base.points).all()), True)
 
 
 def test_running_game():
@@ -141,7 +166,7 @@ def test_attach_actuals():
 
 
 if __name__ == "__main__":
-    for fn in [test_passing_game, test_running_game, test_passer_weights, test_box_score_summary,
+    for fn in [test_passing_game, test_throwaways_are_not_targets, test_running_game, test_passer_weights, test_box_score_summary,
                test_attach_actuals]:
         print(f"\n{fn.__name__}")
         fn()
