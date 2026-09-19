@@ -51,7 +51,7 @@ status only when its adoption test is met.
 | P21 | ESPN rows carry no practice participation, so every Questionable player plays at a flat 0.55 | logic | 2026-09-16 | Penix: full practice, charged 2.52 (0.80 → 1.12). Terrell: DNP, charged 0.70 (0.25 → 1.17). Burrow: "says he will play", charged 2.70. ESPN's `shortComment` states the practice level in plain text | practice-aware play probability does not worsen NFL injury-term fit (P9) | proposed (after P19) |
 | P22 | NFL power rating: no opponent adjustment; defense regressed the same as offense (×0.75); prior season carries ~94% in week 2 | logic | 2026-09-16 | CIN@HOU baseline −16.37 vs market −2.5. Of the +10.93 rating gap, +12.98 is the 2025 defensive EPA gap alone, −0.98 offense, −1.08 week 1. The only value flag on the week-2 slate comes from this. See also P5, P13 | rebuild with separate off/def regression (and opponent adjustment); weeks 1-4 and holdout MAE vs line must improve | proposed (after P19) |
 | P23 | Usage shares: drop scrambles and kneels from carry shares (issue 2A) | bug fix | 2026-09-16 | `sim_data._usage_events` counts every `rush_attempt`, including 1,224 scrambles and 487 kneels (2025-26), while the engine separately credits every scramble to the QB. Read-only week-2 re-sim, 10k sims, 195 priced props: QB rush att 5.42 → 3.33 per team-game (real 2025 3.25), RB carries 20.54 → 22.61 (+10%), team rush att/yds and game totals/margins unchanged to 3 decimals. RB rush yds P(over) 0.329 → 0.393 vs market 0.500, about 40% of the RB gap. Receiving unchanged. See the 2026-09-16 entry | QB rush att ≈ 3.3 per team-game; RB carries up ≈ 10%; team rush totals, game totals and margins unchanged; rushing props correction re-fit with separate QB and RB offsets (P26) | **applied 2026-09-18** (moved ahead of the 9/22 plan at the user's call). Validated before landing, read-only week-2 re-sim: QB rush att 5.41 → 3.26 per team-game (real 3.25), RB carries 20.47 → 22.53 (+10.1%), team rush att/yds, game totals and margins identical to 4 decimals. See the 2026-09-18 entry |
-| P24 | Usage shares: QB-specific scramble rate (issue 2B) | logic | 2026-09-16 | The engine credits scrambles at the league rate (5.9% of dropbacks) whatever the QB (Goff 0.9%, Stafford 1.2%). With P23 applied, QB rush yds split both ways: runners well under (Lamar Jackson P(over) 0.146, Daniels 0.219), pocket QBs still over (D. Jones sim 19.4 vs 8.5 line, Purdy 21.6 vs 13.5) | QB rush att and rush yds P(over) centre near market for both running and pocket QBs, with no change to team totals | proposed (after P23 and `PENALTY_REPLAY`); low confidence |
+| P24 | Usage shares: QB-specific scramble rate (issue 2B) | logic | 2026-09-16 | The engine credits scrambles at the league rate (5.9% of dropbacks) whatever the QB (Goff 0.9%, Stafford 1.2%). With P23 applied, QB rush yds split both ways: runners well under (Lamar Jackson P(over) 0.146, Daniels 0.219), pocket QBs still over (D. Jones sim 19.4 vs 8.5 line, Purdy 21.6 vs 13.5) **Design walk-forward and read-only engine prototype 2026-09-19 (criteria written down first): all pass.** Scramble rate is a stable QB trait (r 0.87). A shrunk per-QB rate cuts scramble MSE 25.8% out of sample (8/8 weeks). The per-offense sampler factor leaves dropbacks, points and margins unchanged and moves QB rush att toward real for pocket QBs (err 1.22 → 0.26) and runners (1.51 → 0.64); QB rush-yds |gap| 0.163 → 0.116. See the 2026-09-19 P24 entry | QB rush att and rush-yds P(over) move toward real and market for both running and pocket QBs, with dropbacks, points and margins unchanged (**revised 2026-09-19** from "no change to team totals": running QBs' teams are meant to swap some pass attempts for scrambles). Full criteria in the 2026-09-19 P24 entry | **design validated 2026-09-19; not built.** Awaiting the user's go-ahead (est. 2-3 h build + re-validation) |
 | P25 | Usage shares: use backups' own history beyond the playing slots; FB prior is zero (issue 1) | logic | 2026-09-16 | `blend_roles` gives players beyond QB1/RB2/WR3/TE1/FB1 only the slot average: 76 have their own red-zone share at least 2x that average (TE2s Njoku, Freiermuth, Mayer, Kmet all a flat 3.2%). D. Waller (CAR TE3, 14.1% of targets) is simulated at 2.3%, falls under `MIN_TOUCHES` and drops out of the box score. FBs are zeroed even with history (Heyward 14% of goal-line carries) | **revised 2026-09-18:** per-player target and carry shares closer to realised week-by-week shares (walk-forward, squared error). The original second clause, "starters not pushed further under their prop lines", assumed starters' shares were too low; the 2025 backtest shows they are already slightly too high (WR starters +5%, TE +3% against realised). A fix that corrects toward reality is the right direction even if it moves starters further under the market; that residual gap is the receiving investigation's to explain, not this item's | **applied 2026-09-19** as `k32+fb` (moved ahead of the 9/22 plan at the user's call): `sim_data.BACKUP_HISTORY_GAMES = 32`, and an FB with no slot prior keeps his own history. Re-validated before landing with the shipped `blend_roles`: identical shares to the 9/18 reference (max diff 0.0), and the 2025 walk-forward reproduces every locked number (tgt_all −4.5% 15/16 weeks, car_all −2.1% 8/16, tgt_rz −0.6% 15/16, car_gl −0.8% 10/16; weeks 11-18 −5.3 / −3.0 / −0.8 / −1.7). Live check: game totals, margins and team volume identical. Receiving offsets refitted (P26). See the 2026-09-19 entry |
 | P26 | Props bias correction: fit offsets by position, not one per category | logic | 2026-09-16 | The single rushing offset (+0.346) hides two biases pulling in opposite directions: QB rush yds lean over (P(over) 0.649, 7/9 overs), RB rush yds lean under (0.329, 2/24). Their mean (0.416) looked like one under-bias. Receiving and passing corrections may hide the same thing, and not moving under P23 is no evidence either way | rebuild with P23: separate QB/RB rushing offsets; before trusting the receiving and passing offsets, check each by position (WR/TE/RB for receptions and rec yds; pocket vs running QBs for pass yds) and split any that disagree | **rushing half applied 2026-09-18:** RB offset +0.107 (n=39, mean-fitted, starters still under); QB rushing gets no offset and is held out of the ranking as an engine defect until P24, because a QB offset averages runners (far under) with pocket passers (far over). Receiving and passing by-position checks still open (receiving investigation, 2026-09-18). **Receiving half applied 2026-09-18 (after P27):** receptions stay one offset (+0.510, n=127; WR/TE/RB intervals overlap); receiving yards split by position (WR +0.418 n=63, TE +0.553 n=28, RB +0.212 n=28; RB's 90% CI +0.08 to +0.34 excludes the category's +0.40). **Passing refitted 2026-09-18 (evening):** −0.093 → **+0.005** (n=20, raw −0.12pp; the 9/16 fit came from the 25-prop first pull). One offset: the pocket-vs-running split was not tested, and with the category mean on the market there is nothing for it to separate yet. **Caveat 2026-09-19:** that pass-yds fit is provisional. P29 dropped about a third of starting QBs from its sample; refit after P29. **Refitted 2026-09-19 after P25:** receptions +0.5104 → +0.5517 (n=138); rec yds WR +0.4560, TE +0.5586, RB +0.2389 (RB interval +0.11 to +0.36 still excludes the category +0.43, so the split stays). **RB rushing refitted the same day at the user's call:** +0.107 → **+0.195** (n=41, raw −4.32pp, 90% CI +0.02 to +0.39), because k32+fb moves carries from RB1/RB2 to RB3+ |
 | P27 | Engine: throwaways are credited as receiver targets | bug fix | 2026-09-18 | 4.25% of library pass attempts (2023-25) have no intended receiver and are all incomplete, yet `simulate._Game._credit` gives every attempt a target. Catch rate over all attempts is 0.645 and the sim's week-1 starter catch rate is 0.643; real catch rate over true targets is 0.674 (week-1 actual 0.676). Sim team targets 32.2 vs actual 29.6. See the 2026-09-18 receiving entry. **Corrected 2026-09-18 (fix run):** the diagnosis said this accounted for the ~4-5% receptions shortfall. It cannot: a throwaway was credited as an *incomplete* target, so removing it lowers targets and nothing else. Receptions and receiving yards per player are unchanged by construction, and every priced prop's raw P(over) was unchanged (324/324). Team receiving is calibrated (sim 20.33 completions / 30.03 true targets per team-game vs 2025 20.62 / 30.70, week 1 20.47 / 29.74), so the per-player receptions shortfall is in how catches are split between players (P17, P25), not P27 | sim catch rate ≈ 0.674; team targets ≈ 95.8% of pass attempts; QB pass att/cmp/yds, team totals, game totals and margins unchanged; receiving offsets refitted | **applied 2026-09-18** (`TABLES_VERSION` 5: `targeted` library field; `_credit` still draws a receiver for every attempt, so the random stream is untouched, then drops the credit on throwaways). Validated read-only on the 15 weekend games, 10k sims, against a same-code control with the field stripped: catch rate 0.6487 → **0.6771** (library over true targets 0.6773), targets/attempt 1.000 → **0.9581**, QB pass att/cmp/yds per player, team totals, game totals and margins identical (max diff 0.0). Receiving offsets refitted (P26). See the 2026-09-18 P27 entry |
@@ -101,6 +101,69 @@ NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
 
 ---
+
+## 2026-09-19 — P24 (issue 2B) design stage: criteria written down before running
+
+Written before any result was seen, per the process rule.
+
+**How the engine does it now.** A scramble is a library dropback play. Every offense draws dropbacks from the league
+library, so scrambles come at the league rate (~5.9% of dropbacks) whatever the QB. Designed QB runs are already
+player-specific through carry shares (since P23).
+
+**Design under test.** A per-offense scramble factor in the play sampler: within each bucket, scramble plays are
+weighted by (the offense's expected QB scramble rate ÷ league rate), and the bucket's other dropback plays are rescaled
+so the bucket's total dropback mass is unchanged. Dropback rate, game script, PROE and the EPA tilt carry through, and
+the margin anchor holds. The expected QB rate is the passer-weighted mix of the team's QBs (play probabilities, as the
+box score assigns passers). The per-QB rate is own scrambles/dropbacks shrunk to the league rate: (scr + k·league) /
+(dropbacks + k), with 2024 at weight 1 or 0.5. Scramble yardage stays league (a v2 question, measured below only to
+decide whether it is needed).
+
+**Criteria.**
+- *Trait stability (stop if it fails):* 2024 → 2025 correlation of QB scramble rate ≥ 0.5 among QBs with 150+
+  dropbacks in both seasons.
+- *Estimator walk-forward, 2025 (k and recency chosen on weeks 3-10, judged on 11-18),* scrambles per QB-game given
+  actual dropbacks: (1) MSE below the league-rate baseline overall and in at least 6 of 8 weeks; (2) terciles by
+  pre-week own rate: predicted/actual scrambles within 0.85-1.15 for the low and high terciles.
+- *Engine prototype, read-only, week-2 weekend slate (scratch monkeypatch, nothing stored):* (3) dropbacks, points
+  and margins per team unchanged within noise; (4) QB rush attempts per team-game move toward each QB's own real
+  per-game figure in both the running and pocket groups; (5) QB rush-yards P(over) moves toward the market for both
+  groups (mean |gap| shrinks in each).
+- *Revision to P24's written adoption test:* "no change to team totals" becomes "dropbacks, points and margins
+  unchanged". Running QBs' teams are meant to swap some pass attempts for scrambles, as in real football.
+
+**Stop rule.** If the trait is unstable, or the estimator improves scramble MSE by less than 5% out of sample, stop
+and report.
+
+**Results (added after the run; the criteria above were not changed).** Read-only throughout: nothing in src/
+changed, nothing was stored.
+
+| criterion | result | verdict |
+|---|---|---|
+| trait stability | 2024 → 2025 r = **0.87** (n=31); 2025 rates 1.1%-8.8% (10th-90th pct) | pass |
+| 1. scramble MSE, weeks 11-18 | **−25.8%** vs league rate, better in **8/8** weeks (k = 25, prior season weight 1) | pass |
+| 2. terciles, pred/actual | low **0.98**, high **1.07** (baseline 2.19 / 0.73) | pass |
+| 3. dropbacks / points / margins | dropbacks 36.01 → 35.97 per team-game (max 0.6); points −0.15 per game (max 0.78); anchor error 0.24 → 0.18 | pass |
+| 4. QB rush att vs own real per game | pocket (rate ≤ 3.7%, n=5): mean \|sim−real\| 1.22 → **0.26**; running (≥ 6.4%, n=13): 1.51 → **0.64**; middle: 0.38 → 0.27 | pass |
+| 5. QB rush-yds P(over) vs market | pocket (n=3) mean \|gap\| 0.225 → **0.103**; running (n=7) 0.179 → **0.128**; middle 0.135 → 0.112; all 0.163 → 0.116; Spearman(line, P(over)) −0.68 → **−0.19** | pass |
+
+The control run (same patched path, factor 1) reproduced the stored sims exactly. Scramble factors applied ranged
+0.23 (Stafford) to 2.57 (Willis), median 0.99. Team pass att 31.69 → 31.50 and rush att 27.00 → 27.15, the intended
+swap of pass attempts for scrambles.
+
+**Yards per scramble is not a QB trait** (2024 → 2025 r = 0.00, n=17), so scramble yardage stays league-wide. No v2
+is needed for it.
+
+**Residuals, not part of this item:** running QBs still sit ~0.4 rush att a game under their real figure (the
+designed-run side), and some big-line runners stay well under (Lamar Jackson P(over) 0.146 → 0.231 at 40.5). QB
+rushing props are still held out of the ranking (`STRUCTURAL_HOLDOUTS`). Whether to lift that and fit a QB rushing
+offset is a separate decision after the build.
+
+**Build scope if approved (est. 2-3 h):** an `Offense.scramble_factor` field; `base_weights` applies it with a
+per-bucket dropback-mass rescale; the sampler cache key includes it; `sim_data` computes shrunk per-QB scramble rates;
+`simulate_nfl` and `live_sim` set each offense's factor from the passer-weighted QB mix; tests. Then re-validate
+against these same criteria with the production code, re-sim, and refit the pass-yds offset (P29 caveat stands).
+Nothing built yet.
+
 
 ## 2026-09-19 — P17 design-stage walk-forward: criteria written down before running
 
