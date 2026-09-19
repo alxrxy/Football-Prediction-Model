@@ -100,8 +100,16 @@ function Hero({ game, entry, lg, home, away }) {
         <Stat label="Sim median" value={pre ? `${away} ${n0(pre.median?.away)} – ${n0(pre.median?.home)} ${home}` : '—'} sub={pre?.total?.p50 != null ? `total ${n0(pre.total.p50)}` : ''} />
         <Stat
           label="Stage 1 value test"
-          value={b?.market_edge ? (b.is_value ? 'Passes' : 'No edge') : '—'}
-          sub={b?.market_edge ? `${pct(b.market_edge.p_side_blend)} vs ${pct(b.market_edge.breakeven)} break-even` : ''}
+          value={b?.market_edge ? (b.is_value ? 'Passes' : 'No edge') : b ? 'Not run' : '—'}
+          // Predictions made before the test existed (2026-09-15) have no
+          // market_edge; say so instead of looking like missing data.
+          sub={
+            b?.market_edge
+              ? `${pct(b.market_edge.p_side_blend)} vs ${pct(b.market_edge.breakeven)} break-even`
+              : b
+                ? `predates the test${b.is_value ? ' · flagged by the earlier edge rule' : ''}`
+                : ''
+          }
         />
       </div>
       <WinBar away={away} home={home} pHome={pHome} label={live ? 'Live win chance' : 'Simulated win chance'} />
