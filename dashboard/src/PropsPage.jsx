@@ -86,7 +86,10 @@ export default function PropsPage() {
         title="Best props"
         sub={
           data
-            ? `Week ${data.week} · ${data.priced} props priced against the simulations · lines pulled ${pulled}`
+            ? `Week ${data.week} · ${data.priced} props priced against the simulations · lines pulled ${pulled}` +
+              (data.lines_refreshed_games?.length
+                ? ` · ${data.lines_refreshed_games.join(', ')} re-pulled ${new Date(data.lines_refreshed_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`
+                : '')
             : 'Player props ranked against the game simulations'
         }
       />

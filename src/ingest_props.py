@@ -3,6 +3,7 @@
     python -m src.ingest_props                   # cached for ODDS_CACHE_MINUTES
     python -m src.ingest_props --fresh           # bypass the cache (costs quota)
     python -m src.ingest_props --only-missing    # just the games with no props yet
+    python -m src.ingest_props --games NYG_LA CAR_ATL   # re-pull just these games
 
 Props are only served one game at a time (/events/{id}/odds). The event list
 is free; each game costs one credit per market per region, so the default
@@ -19,6 +20,13 @@ it does fetch, since a cached empty response is exactly what it exists to get
 past, and it leaves the carried games on their older prices -- each game
 records its own `pulled_at` so the mix is visible. Use a plain `--fresh` when
 every game's prices need to be current.
+
+`--games` is the same carry-forward for a named set of games: re-pull the ones
+whose lines have likely moved (a status change, say) at 4 credits each, and
+leave the rest, including games already played, as they were. Whenever
+anything is carried forward, the file's top-level `pulled_at` is the OLDEST
+game's pull time, not now, so the page never presents a partial refresh as a
+fresh slate; `refreshed_at` and `refreshed_games` record what was re-pulled.
 
 Writes data/props_lines.json, which src/props.py ranks against the
 simulations.
@@ -108,7 +116,8 @@ def fetch_alternates(needs: dict[str, set[str]], lines: dict,
     return out, datetime.now(timezone.utc).isoformat()
 
 
-def run(cache_minutes: int | None = None, only_missing: bool = False) -> dict:
+def run(cache_minutes: int | None = None, only_missing: bool = False,
+        only_games: set[str] | None = None) -> dict:
     store = db.get_store()
     cache_minutes = config.ODDS_CACHE_MINUTES if cache_minutes is None else cache_minutes
     key = config.require("ODDS_API_KEY")
@@ -138,9 +147,11 @@ def run(cache_minutes: int | None = None, only_missing: bool = False) -> dict:
         params["regions"] = "us"
 
     # Under --only-missing, a game that already has players is carried forward
-    # from the previous file and never requested again.
+    # from the previous file and never requested again; under --games, every
+    # game not named is.
+    partial = only_missing or bool(only_games)
     prev: dict = {}
-    if only_missing and PROPS_LINES_JSON.exists():
+    if partial and PROPS_LINES_JSON.exists():
         try:
             prev = json.loads(PROPS_LINES_JSON.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
@@ -155,7 +166,7 @@ def run(cache_minutes: int | None = None, only_missing: bool = False) -> dict:
     for i, game in matched.items():
         event = events[i]
         prior = prev_games.get(game["game_id"]) or {}
-        if only_missing and (prior.get("players") or {}):
+        if (only_missing and (prior.get("players") or {})) or (only_games and game["game_id"] not in only_games):
             entry = dict(prior)
             entry.setdefault("pulled_at", prev.get("pulled_at"))
             out["games"][game["game_id"]] = entry
@@ -164,10 +175,20 @@ def run(cache_minutes: int | None = None, only_missing: bool = False) -> dict:
 
         meta = {}
         data = get_json(f"{config.ODDS_BASE}/sports/{sport_key}/events/{event['id']}/odds",
-                        params=params, cache_minutes=0 if only_missing else cache_minutes,
+                        params=params, cache_minutes=0 if partial else cache_minutes,
                         cache_tag=f"props_{game['game_id']}", capture_meta=meta)
         live_calls += 0 if meta.get("from_cache") else 1
         players = parse_event(data if isinstance(data, dict) else {}, set(markets))
+        if only_games and not players and (prior.get("players") or {}):
+            # A targeted re-pull that comes back empty (books between updates)
+            # must not wipe the lines already on file.
+            print(f"  [warn] {game['game_id']}: re-pull returned no props; keeping the lines from "
+                  f"{prior.get('pulled_at') or prev.get('pulled_at')}")
+            out["games"][game["game_id"]] = {**prior, "pulled_at": prior.get("pulled_at") or prev.get("pulled_at")}
+            carried += 1
+            if meta.get("quota_remaining") is not None:
+                out["quota_remaining"] = meta["quota_remaining"]
+            continue
         out["games"][game["game_id"]] = {
             "home": game["home_team"], "away": game["away_team"], "kickoff": game.get("kickoff_time"),
             "event_id": event["id"], "books": len((data or {}).get("bookmakers") or []),
@@ -177,6 +198,20 @@ def run(cache_minutes: int | None = None, only_missing: bool = False) -> dict:
             out["quota_remaining"] = meta["quota_remaining"]
     if "quota_remaining" not in out and prev.get("quota_remaining") is not None:
         out["quota_remaining"] = prev["quota_remaining"]
+    if only_games:
+        # Games the event list no longer returns (already played) stay on file.
+        for gid, prior in prev_games.items():
+            if gid not in out["games"]:
+                out["games"][gid] = {**prior, "pulled_at": prior.get("pulled_at") or prev.get("pulled_at")}
+                carried += 1
+        missing = only_games - set(out["games"])
+        if missing:
+            print(f"  [warn] not in this week's games: {', '.join(sorted(missing))}")
+    if partial and carried:
+        stamps = [v.get("pulled_at") for v in out["games"].values() if v.get("players") and v.get("pulled_at")]
+        out["pulled_at"] = min(stamps) if stamps else now
+        out["refreshed_at"] = now
+        out["refreshed_games"] = sorted(g for g, v in out["games"].items() if v.get("pulled_at") == now)
 
     config.ensure_dirs()
     PROPS_LINES_JSON.write_text(json.dumps(out), encoding="utf-8")
@@ -199,5 +234,14 @@ if __name__ == "__main__":
     parser.add_argument("--only-missing", action="store_true",
                         help="only re-pull games with no props yet, carrying the rest forward "
                              "(4 credits a game instead of 64 for the slate)")
+    parser.add_argument("--games", nargs="+", metavar="GAME",
+                        help="only re-pull these games (e.g. NYG_LA or 2026_02_NYG_LA), carrying the rest forward "
+                             "(4 credits a game)")
     args = parser.parse_args()
-    run(cache_minutes=0 if args.fresh else None, only_missing=args.only_missing)
+    only = None
+    if args.games:
+        store = db.get_store()
+        week = {g["game_id"] for g in week_games(store)}
+        store.close()
+        only = {next((w for w in week if w == g or w.endswith("_" + g.upper())), g) for g in args.games}
+    run(cache_minutes=0 if args.fresh else None, only_missing=args.only_missing, only_games=only)
