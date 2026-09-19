@@ -3,6 +3,7 @@ import GamesPage from './GamesPage.jsx'
 import GameView from './GameView.jsx'
 import PropsPage from './PropsPage.jsx'
 import LivePage from './LivePage.jsx'
+import PastWeeks from './PastWeeks.jsx'
 import RecordPage from './RecordPage.jsx'
 import { liveGamesOf, useLive } from './simData.js'
 import './hub.css'
@@ -12,6 +13,7 @@ import './hub.css'
 //   #/nfl/props          best props of the week
 //   #/nfl/live           games in progress
 //   #/nfl/record         track record and backtest
+//   #/nfl/past           finished weeks, projected vs actual
 // Routes live in the URL hash so the browser's back button works.
 
 const SECTIONS = [
@@ -72,16 +74,26 @@ export default function NflHub({ sport }) {
           <span className="hub-label">Record</span>
           <em>How the models are doing</em>
         </button>
+        <button
+          className={`record ${route.section === 'past' ? 'active' : ''}`}
+          aria-current={route.section === 'past' ? 'page' : undefined}
+          onClick={() => go('past')}
+        >
+          <span className="hub-label">Past weeks</span>
+          <em>Projected vs actual</em>
+        </button>
       </nav>
 
       {route.gameId ? (
-        <GameView sport={sport} gameId={route.gameId} feed={feed} onBack={() => go('games')} />
+        <GameView sport={sport} gameId={route.gameId} feed={feed} onBack={() => go('games')} onPast={() => go('past')} />
       ) : route.section === 'props' ? (
         <PropsPage />
       ) : route.section === 'live' ? (
         <LivePage feed={feed} sport={sport} onOpen={(id) => go(`game/${encodeURIComponent(id)}`)} />
       ) : route.section === 'record' ? (
         <RecordPage sport={sport} />
+      ) : route.section === 'past' ? (
+        <PastWeeks />
       ) : (
         <GamesPage sport={sport} feed={feed} onOpen={(id) => go(`game/${encodeURIComponent(id)}`)} />
       )}

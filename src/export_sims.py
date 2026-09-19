@@ -1,6 +1,6 @@
 """Per-game simulation detail for the dashboard's game view.
 
-    python -m src.export_sims                          today's slate and the next three
+    python -m src.export_sims                          this week's slates so far, today's, and the next three
     python -m src.export_sims --dates 2026-09-13 2026-09-20
 
 Writes data/sims.json and dashboard/public/sims.json, read by the game view
@@ -13,6 +13,13 @@ behind every NFL row on the dashboard. For each game on each slate:
             player's line from ESPN's box score, matched onto the projections.
   live      not here: games in progress are read from live.json, which the
             live tracker rewrites every poll.
+
+Finished weeks are archived, one file per week, under data/sims_archive/ and
+dashboard/public/sims_archive/, with an index.json that the Past weeks page
+reads. Each archived game also carries its last pregame baseline and ML
+predictions, so it can still be graded after the current slate has moved on.
+A week is archived once its last game kicked off ARCHIVE_AFTER_HOURS ago, and
+rebuilt on later runs until every simulated game in it has an actual result.
 
 The live tracker re-runs this whenever a game it follows goes final, so a
 finished game's actual result appears without anyone re-exporting by hand.
@@ -33,6 +40,9 @@ from .predict_baseline import SLATE_START_UTC_HOUR, slate_window
 
 SIMS_JSON = config.DATA_DIR / "sims.json"
 PUBLIC_SIMS_JSON = config.ROOT / "dashboard" / "public" / "sims.json"
+ARCHIVE_DIR = config.DATA_DIR / "sims_archive"
+PUBLIC_ARCHIVE_DIR = config.ROOT / "dashboard" / "public" / "sims_archive"
+ARCHIVE_AFTER_HOURS = 6        # after a week's last kickoff: the game is over
 FUTURE_SLATES = 3
 FINAL_CACHE_MINUTES = 60 * 24 * 365     # a final box score doesn't change
 BROWSER_UA = {"User-Agent": "Mozilla/5.0"}
@@ -55,9 +65,20 @@ def slate_day(kickoff) -> str | None:
 
 
 def default_dates(games: list[dict], now: datetime) -> list[str]:
+    """Today, the next few slates, and every earlier slate of the NFL week in
+    progress, so a finished Thursday game keeps its final score and its
+    projected-vs-actual box score on the page until the week is over."""
     today = (now - timedelta(hours=SLATE_START_UTC_HOUR)).date().isoformat()
     later = sorted({d for g in games if (d := slate_day(g.get("kickoff_time"))) and d > today})
-    return [today] + later[:FUTURE_SLATES]
+    ahead = [g for g in games if (d := slate_day(g.get("kickoff_time"))) and d >= today]
+    earlier: list[str] = []
+    if ahead:
+        nxt = min(ahead, key=lambda g: parse_dt(g["kickoff_time"]))
+        if nxt.get("week") is not None:
+            earlier = sorted({d for g in games
+                              if g.get("season") == nxt.get("season") and g.get("week") == nxt.get("week")
+                              and (d := slate_day(g.get("kickoff_time"))) and d < today})
+    return earlier + [today] + later[:FUTURE_SLATES]
 
 
 def _read_all(store, table: str) -> list[dict]:
@@ -279,23 +300,152 @@ def build(dates: list[str] | None = None, store=None) -> dict:
     return {"generated_at": now.isoformat(), "slates": slates}
 
 
-def run(dates: list[str] | None = None, quiet: bool = False) -> str:
+# --- past weeks ------------------------------------------------------------
+
+def _week_key(season, week) -> str:
+    return f"{int(season)}_w{int(week):02d}"
+
+
+def _pregame_predictions(rows: list[dict], kickoffs: dict) -> dict[str, dict]:
+    """Per game, the last baseline and ML prediction made before kickoff, in
+    the shape the games page uses."""
+    from .export_dashboard import _pred
+
+    best: dict[tuple, tuple] = {}
+    for r in rows:
+        gid, made = r.get("game_id"), parse_dt(r.get("generated_at"))
+        kick = kickoffs.get(gid)
+        if gid is None or made is None or kick is None or made > kick:
+            continue
+        key = (gid, r.get("model_version"))
+        if key not in best or made > best[key][0]:
+            best[key] = (made, r)
+    out: dict[str, dict] = {}
+    for (gid, version), (_, r) in best.items():
+        slot = "baseline" if version == config.MODEL_VERSION else "ml" if version == "ml-v1" else None
+        if slot:
+            r = dict(r)
+            r["components"] = _json(r.get("components")) or {}
+            out.setdefault(gid, {})[slot] = _pred(r)
+    return out
+
+
+def _complete(path) -> bool:
+    """An archived week needs no rebuild once every simulated game in it has
+    its actual result."""
+    try:
+        week = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return all(g.get("actual") for s in week.get("slates") or [] for g in s.get("games") or []
+               if g.get("pregame"))
+
+
+def finished_weeks(games: list[dict], simulated: set, now: datetime) -> dict[tuple, list[dict]]:
+    """(season, week) -> games, for weeks with at least one stored simulation
+    whose last game kicked off ARCHIVE_AFTER_HOURS ago."""
+    weeks: dict[tuple, list[dict]] = {}
+    for g in games:
+        if g.get("season") is not None and g.get("week") is not None and parse_dt(g.get("kickoff_time")):
+            weeks.setdefault((g["season"], g["week"]), []).append(g)
+    cutoff = now - timedelta(hours=ARCHIVE_AFTER_HOURS)
+    return {k: v for k, v in weeks.items()
+            if any(g["game_id"] in simulated for g in v)
+            and max(parse_dt(g["kickoff_time"]) for g in v) <= cutoff}
+
+
+def archive_weeks(store, games: list[dict], now: datetime, rebuild: bool = False) -> list[str]:
+    """Write every finished week to its own file, then the index. Returns the
+    weeks written this run."""
+    simulated = {r.get("game_id") for r in _read_all(store, "game_simulations")}
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    written, preds = [], None
+    for (season, week), wk in sorted(finished_weeks(games, simulated, now).items()):
+        path = ARCHIVE_DIR / f"{_week_key(season, week)}.json"
+        if path.exists() and not rebuild and _complete(path):
+            continue
+        if preds is None:
+            kickoffs = {g["game_id"]: parse_dt(g.get("kickoff_time")) for g in games}
+            preds = _pregame_predictions(store.select("predictions", {"sport": "nfl"}), kickoffs)
+        days = sorted({d for g in wk if (d := slate_day(g.get("kickoff_time")))})
+        payload = build(days, store)
+        for sl in payload["slates"]:
+            for g in sl["games"]:
+                g["predictions"] = preds.get(g["game_id"])
+        payload.update({"season": season, "week": week})
+        path.write_text(json.dumps(payload, default=str), encoding="utf-8")
+        written.append(_week_key(season, week))
+    write_index()
+    return written
+
+
+def _q50(dist):
+    return dist.get("p50") if isinstance(dist, dict) else None
+
+
+def write_index() -> None:
+    """index.json: one row per archived game, enough for the Past weeks table
+    without loading every week."""
+    weeks = []
+    for path in sorted(ARCHIVE_DIR.glob("*_w*.json"), reverse=True):
+        try:
+            wk = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        rows = []
+        for sl in wk.get("slates") or []:
+            for g in sl.get("games") or []:
+                pre, act, pr = g.get("pregame") or {}, g.get("actual") or {}, g.get("predictions") or {}
+                base, ml = pr.get("baseline") or {}, pr.get("ml") or {}
+                rows.append({
+                    "game_id": g["game_id"], "home": g["home"], "away": g["away"], "kickoff": g.get("kickoff"),
+                    "home_score": act.get("home_score"), "away_score": act.get("away_score"),
+                    "simulated": bool(pre),
+                    "after_kickoff": bool(pre.get("after_kickoff")),
+                    "sim_home": (pre.get("median") or {}).get("home"),
+                    "sim_away": (pre.get("median") or {}).get("away"),
+                    "sim_margin_home": _q50(pre.get("margin")),
+                    "sim_total": _q50(pre.get("total")),
+                    "sim_home_win": pre.get("home_win_prob"),
+                    "baseline_spread": base.get("model_spread"),
+                    "ml_spread": ml.get("model_spread"),
+                    "market_spread": base.get("market_spread", ml.get("market_spread")),
+                })
+        weeks.append({"season": wk.get("season"), "week": wk.get("week"), "file": path.name,
+                      "archived_at": wk.get("generated_at"), "games": rows})
+    (ARCHIVE_DIR / "index.json").write_text(json.dumps({"weeks": weeks}, default=str), encoding="utf-8")
+    if PUBLIC_ARCHIVE_DIR.parent.exists():
+        PUBLIC_ARCHIVE_DIR.mkdir(exist_ok=True)
+        for f in ARCHIVE_DIR.glob("*.json"):
+            shutil.copy(f, PUBLIC_ARCHIVE_DIR / f.name)
+
+
+def run(dates: list[str] | None = None, quiet: bool = False, rebuild_archive: bool = False) -> str:
     payload = build(dates)
     config.ensure_dirs()
     SIMS_JSON.write_text(json.dumps(payload, default=str), encoding="utf-8")
     if PUBLIC_SIMS_JSON.parent.exists():
         shutil.copy(SIMS_JSON, PUBLIC_SIMS_JSON)
+    store = db.get_store()
+    try:
+        archived = archive_weeks(store, store.select("games", {"sport": "nfl"}),
+                                 datetime.now(timezone.utc), rebuild=rebuild_archive)
+    finally:
+        store.close()
     if not quiet:
         for s in payload["slates"]:
             simulated = sum(1 for g in s["games"] if g["pregame"])
             finals = sum(1 for g in s["games"] if g["status"] == "final")
             print(f"  {s['date']}: {len(s['games'])} games | {simulated} simulated | {finals} final")
         print(f"  wrote {SIMS_JSON}")
+        print(f"  past weeks: {', '.join(archived) or 'nothing new'} -> {ARCHIVE_DIR}")
     return str(SIMS_JSON)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Export per-game simulation detail for the dashboard.")
-    parser.add_argument("--dates", nargs="*", help="slate dates, YYYY-MM-DD (default: today and the next three)")
+    parser.add_argument("--dates", nargs="*", help="slate dates, YYYY-MM-DD (default: this week's earlier slates, today, and the next three)")
+    parser.add_argument("--rebuild-archive", action="store_true",
+                        help="rewrite every past week's archive file, even complete ones")
     args = parser.parse_args()
-    run(args.dates or None)
+    run(args.dates or None, rebuild_archive=args.rebuild_archive)

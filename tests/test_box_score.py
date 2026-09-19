@@ -165,9 +165,45 @@ def test_attach_actuals():
     check("unprojected player surfaced", [u["name"] for u in actual["unprojected"]["home"]], ["Surprise Back"])
 
 
+def test_export_keeps_the_weeks_earlier_slates():
+    from datetime import datetime, timezone
+    from src.export_sims import default_dates
+
+    g = lambda gid, kick, week: {"game_id": gid, "kickoff_time": kick, "season": 2026, "week": week}  # noqa: E731
+    games = [g("w1", "2026-09-14T00:20:00+00:00", 1), g("tnf", "2026-09-18T00:15:00+00:00", 2),
+             g("sun", "2026-09-20T17:00:00+00:00", 2), g("mnf", "2026-09-22T00:15:00+00:00", 2),
+             g("w3", "2026-09-25T00:15:00+00:00", 3)]
+    friday = datetime(2026, 9, 19, 0, 30, tzinfo=timezone.utc)
+    dates = default_dates(games, friday)
+    check("Thursday's finished slate stays on the page", "2026-09-17" in dates, True)
+    check("last week's slate does not", "2026-09-13" in dates, False)
+    check("today and what is ahead are still there", dates[1:3], ["2026-09-18", "2026-09-20"])
+    wednesday = datetime(2026, 9, 23, 18, tzinfo=timezone.utc)
+    check("once the week is over it rolls to the next", "2026-09-17" in default_dates(games, wednesday), False)
+
+
+def test_finished_weeks_are_archived():
+    from datetime import datetime, timezone
+    from src.export_sims import finished_weeks
+
+    g = lambda gid, kick, week: {"game_id": gid, "kickoff_time": kick, "season": 2026, "week": week}  # noqa: E731
+    games = [g("w1a", "2026-09-11T00:20:00+00:00", 1), g("w1b", "2026-09-15T00:15:00+00:00", 1),
+             g("tnf", "2026-09-18T00:15:00+00:00", 2), g("mnf", "2026-09-22T00:15:00+00:00", 2),
+             g("w0", "2026-09-01T00:15:00+00:00", 0)]
+    friday = datetime(2026, 9, 19, 0, 30, tzinfo=timezone.utc)
+    weeks = finished_weeks(games, {"w1a", "tnf", "mnf"}, friday)
+    check("a week whose last game is over is archived", sorted(weeks), [(2026, 1)])
+    check("with every game in it, simulated or not", sorted(x["game_id"] for x in weeks[(2026, 1)]), ["w1a", "w1b"])
+    tuesday = datetime(2026, 9, 22, 12, tzinfo=timezone.utc)
+    check("the week in progress joins once Monday night is over",
+          sorted(finished_weeks(games, {"w1a", "tnf", "mnf"}, tuesday)), [(2026, 1), (2026, 2)])
+    check("a week with no stored simulation is not archived", (2026, 0) in weeks, False)
+
+
 if __name__ == "__main__":
     for fn in [test_passing_game, test_throwaways_are_not_targets, test_running_game, test_passer_weights, test_box_score_summary,
-               test_attach_actuals]:
+               test_attach_actuals, test_export_keeps_the_weeks_earlier_slates,
+               test_finished_weeks_are_archived]:
         print(f"\n{fn.__name__}")
         fn()
     print(f"\n{PASS} passed, {FAIL} failed")

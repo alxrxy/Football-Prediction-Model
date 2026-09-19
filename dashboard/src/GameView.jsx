@@ -1,7 +1,7 @@
 import GameDetail from './GameDetail.jsx'
 import GameQA from './GameQA.jsx'
 import SimDetail from './SimDetail.jsx'
-import { findGame, liveGame, useSims } from './simData.js'
+import { liveGame, useSimEntry } from './simData.js'
 import { spreadLabel } from './format.js'
 import { matchupColors, team } from './teams.js'
 import { StatusChip, TeamLogo, WinBar, n0, pct } from './ui.jsx'
@@ -9,10 +9,12 @@ import { StatusChip, TeamLogo, WinBar, n0, pct } from './ui.jsx'
 // One game, full page: the matchup, the simulation, how the baseline got its
 // number, and a Claude Q&A that answers from this game's data.
 
-export default function GameView({ sport, gameId, feed, onBack }) {
-  const { data: sims } = useSims()
+export default function GameView({ sport, gameId, feed, onBack, onPast }) {
   const game = sport.games.find((g) => g.game_id === gameId)
-  const entry = findGame(sims, gameId)
+  const { entry, week } = useSimEntry(gameId)
+  // A past week's game is no longer in the current slate: its header reads the
+  // model numbers archived with it, as they stood before kickoff.
+  const heroGame = game || (entry?.predictions ? { ...entry.predictions, kickoff: entry.kickoff } : null)
   const lg = liveGame(feed, gameId)
   const home = game?.home || entry?.home
   const away = game?.away || entry?.away
@@ -28,8 +30,17 @@ export default function GameView({ sport, gameId, feed, onBack }) {
 
   return (
     <div className="page game-view">
-      <button className="back" onClick={onBack}>← All games</button>
-      <Hero game={game} entry={entry} lg={lg} home={home} away={away} />
+      {week && !game ? (
+        <button className="back" onClick={onPast}>← Past weeks</button>
+      ) : (
+        <button className="back" onClick={onBack}>← All games</button>
+      )}
+      <Hero game={heroGame} entry={entry} lg={lg} home={home} away={away} />
+      {week && !game ? (
+        <p className="muted small">
+          From the week {week.week} archive: model and market numbers are the last ones made before kickoff.
+        </p>
+      ) : null}
       <div className="split">
         <div className="split-main">
           {game?.known_issue ? <div className="caveat">{game.known_issue}</div> : null}
