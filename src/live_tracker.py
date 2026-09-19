@@ -857,7 +857,9 @@ class Tracker:
                     print("  [live] loading the simulator for live projections (once per session)")
                     self.sim_inputs = load_inputs(int(game["season"]))
                 self.live = LiveSimulator(self.sim_inputs.tables, self.sim_inputs.roles,
-                                          self.ctx.injuries, n=self.live_sims)
+                                          self.ctx.injuries, n=self.live_sims,
+                                          scramble_rates=self.sim_inputs.scramble_rates,
+                                          scramble_league=self.sim_inputs.scramble_league)
             side_by_id = {s.home_id: 0, s.away_id: 1}
             halftime = s.status == "STATUS_HALFTIME" or (s.period == 2 and s.clock_seconds <= 0)
             start, source = live_start(elapsed, halftime, s.home_score, s.away_score,

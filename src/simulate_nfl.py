@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import argparse
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 import numpy as np
@@ -43,7 +43,7 @@ from .ingest_nflverse import PLAYS_PER_GAME
 from .predict_baseline import predict_game, slate_window
 from .sim_data import (
     DIST_EDGES, N_DIST, USAGE_CATEGORIES, SimTables, build_tables, load_pbp,
-    pass_rate_oe, player_roles,
+    pass_rate_oe, player_roles, qb_scramble_rates, scramble_factor,
 )
 from .simulate import (
     DR_CLOCK, DRIVE_OUTCOMES, Offense, PlayerPool, SimResult, allocate_scorers,
@@ -80,13 +80,16 @@ class SimInputs:
     roles: pd.DataFrame
     depth_as_of: str
     proe: dict[str, float]
+    scramble_rates: dict[str, float] = field(default_factory=dict)   # P24, by player_id
+    scramble_league: float = 0.0
 
 
 def load_inputs(season: int) -> SimInputs:
     tables = build_tables()
     pbp = load_pbp((season - 1, season))
     roles, as_of = player_roles(season, pbp)
-    return SimInputs(tables, roles, as_of, pass_rate_oe(pbp, season))
+    rates, league = qb_scramble_rates(pbp, season)
+    return SimInputs(tables, roles, as_of, pass_rate_oe(pbp, season), rates, league)
 
 
 # --- per-side strength -----------------------------------------------------
@@ -140,7 +143,8 @@ def side_targets(features: dict, ctx: FeatureContext, league_epa: float) -> dict
 
 
 def anchored_simulation(tables: SimTables, targets: dict, proe: tuple[float, float],
-                        anchor: float, wind: float, n: int, seed: int, pools: tuple | None = None):
+                        anchor: float, wind: float, n: int, seed: int, pools: tuple | None = None,
+                        scramble: tuple[float, float] = (1.0, 1.0)):
     """Solve the EPA offset that makes the simulated margin average `anchor`.
 
     Margin is close to linear in a small symmetric offset, so two pilot runs on
@@ -150,8 +154,8 @@ def anchored_simulation(tables: SimTables, targets: dict, proe: tuple[float, flo
     def run(delta, count, s, with_players=None):
         return simulate_game(
             tables,
-            Offense(targets["home"]["target_epa"] + delta, proe[0]),
-            Offense(targets["away"]["target_epa"] - delta, proe[1]),
+            Offense(targets["home"]["target_epa"] + delta, proe[0], scramble[0]),
+            Offense(targets["away"]["target_epa"] - delta, proe[1], scramble[1]),
             n=count, seed=s, wind_mph=wind, pools=with_players,
         )
 
@@ -267,8 +271,12 @@ def simulate_one(game: dict, ctx: FeatureContext, inputs: SimInputs, n: int = N_
 
     squads = {team: team_shares(inputs.roles, team, ctx.injuries) for team in (home, away)}
     pools = tuple(player_pool(squads[t][0], squads[t][1]) for t in (home, away))
+    scramble = tuple(scramble_factor(squads[t][0], pool.passer_weights, inputs.scramble_rates,
+                                     inputs.scramble_league) for t, pool in zip((home, away), pools))
+    for side, f in zip(("home", "away"), scramble):
+        targets[side]["scramble_factor"] = round(f, 4)
     result, delta, slope, unanchored = anchored_simulation(
-        tables, targets, proe, anchor, wind, n, seed, pools
+        tables, targets, proe, anchor, wind, n, seed, pools, scramble
     )
     s = summarize(result)
 

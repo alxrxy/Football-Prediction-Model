@@ -71,6 +71,9 @@ class Offense:
 
     target_epa: float
     pass_rate_oe: float = 0.0
+    # Expected QB scramble rate over the league's (P24): scrambles are drawn
+    # at this multiple of the library's rate, within an unchanged dropback rate.
+    scramble_factor: float = 1.0
 
 
 @dataclass
@@ -182,7 +185,8 @@ def _sampler(tables: SimTables, offense: Offense, game_script: bool = True) -> "
     """Samplers are pure functions of the library and the offence, and cost
     a tilt solve over 112k plays to build. The live tracker re-simulates the
     same matchups every poll, so they are kept rather than rebuilt."""
-    key = (id(tables), round(offense.target_epa, 7), round(offense.pass_rate_oe, 7), game_script)
+    key = (id(tables), round(offense.target_epa, 7), round(offense.pass_rate_oe, 7), game_script,
+           round(offense.scramble_factor, 6))
     sampler = _SAMPLER_CACHE.get(key)
     if sampler is None:
         if len(_SAMPLER_CACHE) >= 64:
@@ -207,7 +211,7 @@ class _Sampler:
     """
 
     def __init__(self, tables: SimTables, offense: Offense, game_script: bool = True):
-        base = tables.base_weights(offense.pass_rate_oe)
+        base = tables.base_weights(offense.pass_rate_oe, offense.scramble_factor)
         self.lam = solve_tilt(tables.epa, base, offense.target_epa)
         w = base * np.exp(self.lam * tables.epa)
         self.tables = tables
