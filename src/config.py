@@ -91,11 +91,12 @@ QB_CONDITIONAL_PRIOR = os.getenv("QB_CONDITIONAL_PRIOR", "0").strip().lower() in
 # A nullified penalty replays the down instead of consuming one
 # (src/simulate.py). Measured 2026-09-16: real football replays 69.8% of them
 # and consumes almost none, while the engine consumes 71.7%, which shortens
-# every drive and is the cause of its pass-attempt shortfall. Off until the
-# calibration comparison has been reviewed -- turning it on changes simulated
-# output, so stored game_simulations and any props ranked against them go
-# stale and must be regenerated.
-PENALTY_REPLAY = os.getenv("PENALTY_REPLAY", "0").strip().lower() in ("1", "true", "yes")
+# every drive and is the cause of its pass-attempt shortfall. On since
+# 2026-09-19, re-validated against the 2026-09-16 calibration first. Set
+# PENALTY_REPLAY=0 for the old behaviour; either way, flipping it changes
+# simulated output, so stored game_simulations and any props ranked against
+# them go stale and must be regenerated.
+PENALTY_REPLAY = os.getenv("PENALTY_REPLAY", "1").strip().lower() in ("1", "true", "yes")
 
 # Shift each prop category's simulated probability by its measured bias
 # (src/props.py BIAS_FIT). Display-only: it never touches the simulation
