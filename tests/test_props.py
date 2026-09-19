@@ -129,7 +129,8 @@ def test_qb_rushing_held_out_and_rb_offset():
     config.PROPS_BIAS_ADJUST = True
     try:
         rb = props.bias_adjust(0.5, "player_rush_yds", "RB")
-        check("RB rushing gets its own offset", round(rb, 4), round(1 / (1 + math.exp(-0.107)), 4))
+        check("RB rushing gets its own offset", round(rb, 4),
+              round(1 / (1 + math.exp(-props.BIAS_FIT["position_offsets"]["player_rush_yds"]["RB"])), 4))
         check("QB rushing gets none", props.bias_adjust(0.5, "player_rush_yds", "QB"), 0.5)
         by_pos = props.BIAS_FIT["position_offsets"]["player_reception_yds"]
         check("receiving yards: RB and WR get different offsets",

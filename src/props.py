@@ -135,32 +135,38 @@ BIAS_FIT = {
     # Passing yards refitted the same day: the 9/16 fit (-0.0930, n=25, first
     # pull) had gone stale, and on the full week-2 slate the simulation sits
     # on the market (-0.12pp raw), so the offset is now all but zero.
+    # Receiving refitted again 2026-09-19 after backups got partial weight on
+    # their own history (P25, k32+fb), which moves ~0.3 targets per starter
+    # slot to the backups: receptions +0.5104 -> +0.5517.
     "offsets": {
         "player_pass_yds": +0.0050,
-        "player_receptions": +0.5104,
+        "player_receptions": +0.5517,
     },
-    "measured_at_by_market": {"player_pass_yds": "2026-09-18", "player_receptions": "2026-09-18",
-                              "player_reception_yds": "2026-09-18"},
-    "n": {"player_pass_yds": 20, "player_reception_yds": 119, "player_receptions": 127},
-    "raw_bias_pp": {"player_pass_yds": -0.12, "player_reception_yds": -9.28, "player_receptions": -11.32},
+    "measured_at_by_market": {"player_pass_yds": "2026-09-18", "player_receptions": "2026-09-19",
+                              "player_reception_yds": "2026-09-19"},
+    "n": {"player_pass_yds": 20, "player_reception_yds": 129, "player_receptions": 138},
+    "raw_bias_pp": {"player_pass_yds": -0.12, "player_reception_yds": -9.77, "player_receptions": -12.05},
     # Rushing is corrected by position (P26). The single category offset hid two
     # biases pulling opposite ways, QBs over and backs under. Refitted
     # 2026-09-18 after scrambles and kneels left the carry shares (P23), on the
     # week-2 priced props, same method. QBs get no offset: their rushing props
     # are held out of the ranking instead (STRUCTURAL_HOLDOUTS).
     #
+    # RB rushing refitted 2026-09-19 (+0.107 -> +0.195) after k32+fb (P25) moved
+    # carries from RB1/RB2 to the backs behind them.
+    #
     # Receiving yards split too (P26 by-position check, 2026-09-18): backs run
     # about half as far under as WRs and TEs (RB +0.21, 90% CI +0.08 to +0.34,
     # which excludes the category fit of +0.40). Receptions did not split: all
     # three positions sit within each other's intervals.
     "position_offsets": {
-        "player_rush_yds": {"RB": +0.1070},
-        "player_reception_yds": {"WR": +0.4177, "TE": +0.5530, "RB": +0.2116},
+        "player_rush_yds": {"RB": +0.1947},
+        "player_reception_yds": {"WR": +0.4560, "TE": +0.5586, "RB": +0.2389},
     },
-    "position_n": {"player_rush_yds": {"RB": 39}, "player_reception_yds": {"WR": 63, "TE": 28, "RB": 28}},
-    "position_raw_bias_pp": {"player_rush_yds": {"RB": -2.34},
-                             "player_reception_yds": {"WR": -9.63, "TE": -12.73, "RB": -5.05}},
-    "position_measured_at": "2026-09-18",
+    "position_n": {"player_rush_yds": {"RB": 41}, "player_reception_yds": {"WR": 66, "TE": 31, "RB": 32}},
+    "position_raw_bias_pp": {"player_rush_yds": {"RB": -4.32},
+                             "player_reception_yds": {"WR": -10.37, "TE": -12.72, "RB": -5.67}},
+    "position_measured_at": "2026-09-19",
     "position_notes": {
         "player_rush_yds": {"RB": (
             "Mean-fitted: it lifts every back by the same amount, but starters (the higher lines) still run "
