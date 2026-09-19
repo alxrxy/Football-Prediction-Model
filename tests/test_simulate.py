@@ -194,13 +194,15 @@ def test_depth_slot_governs_volume():
         dict(team="KC", player_id="wr2", player="Promoted WR", position="WR", rank=2),
         dict(team="KC", player_id="wr5", player="Demoted WR", position="WR", rank=5),
         dict(team="KC", player_id="rb1", player="Rookie RB", position="RB", rank=1),
+        dict(team="KC", player_id="fb1", player="Fullback", position="FB", rank=1),
     ])
 
     def rate(v):
         return {**{c: v for c in USAGE_CATEGORIES}, "games": 17.0, "rz_targets": 0.0, "gl_carries": 0.0}
 
     rates = pd.DataFrame.from_dict(
-        {"qb1": rate(0.10), "qb2": rate(0.25), "wr1": rate(0.25), "wr2": rate(0.05), "wr5": rate(0.15)},
+        {"qb1": rate(0.10), "qb2": rate(0.25), "wr1": rate(0.25), "wr2": rate(0.05), "wr5": rate(0.15),
+         "fb1": rate(0.04)},
         orient="index",
     )
     prior = lambda v: {c: v for c in USAGE_CATEGORIES}  # noqa: E731
@@ -210,7 +212,12 @@ def test_depth_slot_governs_volume():
     blend = lambda hist, pri: round((17 * hist + 4 * pri) / 21, 6)  # noqa: E731
 
     check("a backup QB who started elsewhere gets nothing", float(roles.loc["qb2", "car_gl"]), 0.0)
-    check("beyond the playing slots, only the slot norm", round(float(roles.loc["wr5", "tgt_rz"]), 6), 0.03)
+    # Beyond the slots own history counts at games/(games+32), still held
+    # within 3x the slot norm: 0.15 is clipped to 0.09 (P25, k32+fb).
+    check("beyond the playing slots, a small weight on own history",
+          round(float(roles.loc["wr5", "tgt_rz"]), 6), round((17 * 0.09 + 32 * 0.03) / 49, 6))
+    check("a fullback with no slot norm keeps his own history, not zero",
+          round(float(roles.loc["fb1", "car_gl"]), 6), blend(0.04, 0.0))
     check("a starter keeps most of his own history",
           round(float(roles.loc["wr1", "tgt_rz"]), 6), blend(0.25, 0.20))
     check("a promoted receiver is lifted toward his new slot",
