@@ -142,14 +142,17 @@ BIAS_FIT = {
     # possessions and plays, ~+0.3 pass attempts a team): props moved ~0.5pp
     # toward the market. Passing yards is still provisional (P29: the tied-line
     # bug drops about a third of starting QBs from its sample).
+    # Passing yards refitted again after QB-specific scramble rates (P24) moved
+    # some running QBs' pass attempts to scrambles: -0.0475 -> -0.0212. Still
+    # provisional under P29, which remains open.
     "offsets": {
-        "player_pass_yds": -0.0475,
+        "player_pass_yds": -0.0212,
         "player_receptions": +0.5242,
     },
     "measured_at_by_market": {"player_pass_yds": "2026-09-19", "player_receptions": "2026-09-19",
                               "player_reception_yds": "2026-09-19"},
     "n": {"player_pass_yds": 23, "player_reception_yds": 129, "player_receptions": 138},
-    "raw_bias_pp": {"player_pass_yds": +1.11, "player_reception_yds": -9.40, "player_receptions": -11.48},
+    "raw_bias_pp": {"player_pass_yds": +0.50, "player_reception_yds": -9.40, "player_receptions": -11.48},
     # Rushing is corrected by position (P26). The single category offset hid two
     # biases pulling opposite ways, QBs over and backs under. Refitted
     # 2026-09-18 after scrambles and kneels left the carry shares (P23), on the
