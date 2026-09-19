@@ -108,6 +108,8 @@ def pregame_text(game: dict | None, sim: dict | None, props: list[dict], sport: 
     if game:
         lines.append(f"{sport} game: {away} at {home}{' (neutral site)' if game.get('neutral') else ''}, "
                      f"kickoff {game.get('kickoff')} (UTC). Spreads are home lines: negative = home favoured.")
+        if game.get("known_issue"):
+            lines.append(f"KNOWN ISSUE, say so when discussing this game's numbers: {game['known_issue']}")
         m = game.get("market") or {}
         if m.get("spread") is not None:
             lines.append(f"Market: {_spread(m['spread'], home, away)}, total {_n(m.get('total'), 1)}.")

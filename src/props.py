@@ -185,14 +185,20 @@ STRUCTURAL_HOLDOUTS = {
     ),
 }
 
-# Individual props known to be measuring a defect, labelled on the page but left
-# in the ranking. Keyed by (game_id, the books' player name). Remove each entry
-# once its item is fixed or the game has kicked off.
+# Props known to be measuring a defect, labelled on the page but left in the
+# ranking. Keyed by (game_id, the books' player name), or (game_id, "team:XXX")
+# for every prop of that team's players. Remove each entry once its item is
+# fixed or the game has kicked off.
 KNOWN_DEFECTS = {
     ("2026_02_SEA_ARI", "Drew Lock"): (
         "Known defect (P28): books price Lock as SEA's passer and post no Darnold line, but the simulation "
         "has him as QB2 behind Darnold (median 0 passing yards). This gap is a starter-designation mismatch, "
         "not a read on Lock. Not yet diagnosed."
+    ),
+    ("2026_02_CAR_ATL", "team:ATL"): (
+        "Known issue, treat with caution (P28): ATL's starting QB is unsettled. The simulation splits the passing "
+        "60/40 Tua/Cooper Rush, while the books price Rush (who started week 1). Every ATL projection depends on "
+        "which one plays."
     ),
 }
 
@@ -372,7 +378,7 @@ def rank(lines: dict, sims: dict[str, dict], now: datetime | None = None) -> dic
                     "sim_generated_at": sim.get("generated_at"),
                     "_q": q,   # the full stat summary, for pricing alt lines; not exported
                     "_structural": STRUCTURAL_HOLDOUTS.get((mkey, pos)),
-                    "defect_note": KNOWN_DEFECTS.get((gid, name)),
+                    "defect_note": KNOWN_DEFECTS.get((gid, name)) or KNOWN_DEFECTS.get((gid, f"team:{team}")),
                 })
     started = [r for r in rows if _kicked_off(r["kickoff"], now)]
     rows = [r for r in rows if not _kicked_off(r["kickoff"], now)]

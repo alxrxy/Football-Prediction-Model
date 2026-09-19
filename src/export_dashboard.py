@@ -68,6 +68,16 @@ def _slate_for(store, sport: str) -> tuple[str, list[dict], dict]:
     return first.date().isoformat(), [], {}
 
 
+# Games whose served numbers are known to be measuring a defect, labelled on
+# the page rather than hidden. Remove each entry once the item is fixed or the
+# game has kicked off.
+KNOWN_GAME_ISSUES = {
+    "2026_02_CAR_ATL": (
+        "Known issue, treat with caution (P28): ATL's quarterback is unsettled and the model prices neither option. The baseline charges Penix's absence at a generic 5.6 points without asking who replaces him. Against ATL's rating, Tua starting is worth about 0 to +4 points and Cooper Rush (who started week 1, and whom the books price) about -7. So this number is roughly right if Rush starts and 6-10 points too harsh on ATL if Tua does. The simulation is pinned to the same number and splits the passing 60/40 Tua/Rush."
+    ),
+}
+
+
 def build(sport: str) -> dict:
     store = db.get_store()
 
@@ -129,6 +139,7 @@ def build(sport: str) -> dict:
                     "home": _injury_list(baseline, "home_injuries"),
                     "away": _injury_list(baseline, "away_injuries"),
                 },
+                "known_issue": KNOWN_GAME_ISSUES.get(gid),
             }
         )
 
