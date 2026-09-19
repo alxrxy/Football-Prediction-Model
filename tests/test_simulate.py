@@ -243,6 +243,44 @@ def test_carry_shares_are_designed_runs_only():
     check("the back's share is over designed runs", round(float(rates.loc["rb", "car_all"]), 6), 0.75)
 
 
+def test_scramble_factor():
+    """P24: a QB's scramble rate reweights scrambles inside an unchanged dropback rate."""
+    from src.sim_data import N_BUCKETS, qb_scramble_rates, scramble_factor
+
+    t = tables()
+    t.epa = np.zeros(6)
+    t.bucket = np.array([0, 0, 0, 1, 1, 1])
+    t.dropback = np.array([True, True, False, True, True, False])
+    t.is_run = ~t.dropback
+    t.scramble = np.array([True, False, False, False, False, False])
+    t.pass_frac = np.full(N_BUCKETS, 0.5)
+    plain = t.base_weights(0.05)
+    check("factor 1 changes nothing", bool(np.array_equal(t.base_weights(0.05, 1.0), plain)), True)
+    w = t.base_weights(0.05, 2.0)
+    mass = lambda x, b: float(x[t.dropback & (t.bucket == b)].sum())  # noqa: E731
+    check("each bucket's dropback mass is unchanged", (round(mass(w, 0), 9), round(mass(w, 1), 9)),
+          (round(mass(plain, 0), 9), round(mass(plain, 1), 9)))
+    check("runs are untouched", bool(np.array_equal(w[t.is_run], plain[t.is_run])), True)
+    check("scramble share of dropbacks doubles relative to passes",
+          round(float(w[0] / w[1]), 9), round(float(2 * plain[0] / plain[1]), 9))
+    check("a bucket with no scrambles keeps its weights", bool(np.allclose(w[3:5], plain[3:5])), True)
+
+    pbp = pd.DataFrame({
+        "season": [2025] * 100 + [2026] * 10, "season_type": "REG", "play_type": "pass", "qb_dropback": 1,
+        "passer_player_id": ["qb"] * 50 + ["lg"] * 50 + ["qb"] * 10, "rusher_player_id": None,
+        "qb_scramble": [1] * 10 + [0] * 40 + [1] * 5 + [0] * 45 + [1] * 2 + [0] * 8,
+    })
+    rates, league = qb_scramble_rates(pbp, 2026)
+    check("league rate from the prior season", round(league, 6), 0.15)
+    check("own rate shrunk by 25 pseudo-dropbacks", round(rates["qb"], 6), round((12 + 25 * 0.15) / (60 + 25), 6))
+
+    squad = pd.DataFrame({"player_id": ["qb", "backup", "wr"], "position": ["QB", "QB", "WR"]})
+    check("factor is the passer-weighted rate over league",
+          round(scramble_factor(squad, np.array([0.6, 0.4, 0.0]), {"qb": 0.3}, 0.15), 6),
+          round((0.6 * 0.3 + 0.4 * 0.15) / 0.15, 6))
+    check("no rates on file: factor 1", scramble_factor(squad, np.array([1.0, 0, 0]), {}, 0.15), 1.0)
+
+
 def test_injury_split():
     detail = [{"position": "QB", "points": 4.0}, {"position": "CB", "points": 1.0},
               {"position": "K", "points": 1.0}]
@@ -274,7 +312,7 @@ if __name__ == "__main__":
         test_bucket_index, test_scorer_allocation_conserves_tds, test_summary_shapes,
         test_injured_starter_shifts_to_next_man, test_questionable_starter_splits,
         test_suffix_names_match_injury_report, test_depth_slot_governs_volume,
-        test_carry_shares_are_designed_runs_only, test_injury_split, test_storage_roundtrip,
+        test_carry_shares_are_designed_runs_only, test_scramble_factor, test_injury_split, test_storage_roundtrip,
     ]:
         print(f"\n{fn.__name__}")
         fn()

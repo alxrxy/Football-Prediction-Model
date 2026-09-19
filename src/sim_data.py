@@ -100,6 +100,12 @@ HISTORY_FLOOR, HISTORY_CEILING = 0.5, 3.0
 
 PROE_SHRINK = 0.5         # pass rate over expected is only half repeatable
 
+# A quarterback's scramble rate (scrambles per dropback) is a stable trait:
+# 2024 -> 2025 r = 0.87. Shrunk toward the league rate with this many
+# pseudo-dropbacks (P24; k chosen on 2025 weeks 3-10, held on 11-18). Yards per
+# scramble is not a trait (r = 0.00), so scramble yardage stays league-wide.
+SCRAMBLE_PRIOR_DROPBACKS = 25.0
+
 PBP_COLUMNS = [
     "game_id", "play_id", "season", "season_type", "week", "posteam", "defteam",
     "game_half", "qtr", "down", "ydstogo", "yardline_100", "play_type",
@@ -110,7 +116,7 @@ PBP_COLUMNS = [
     "two_point_attempt", "two_point_conv_result", "own_kickoff_recovery",
     "wind", "roof", "receiver_player_id", "rusher_player_id",
     "passer_player_id", "wp", "pass_oe", "score_differential",
-    "complete_pass", "qb_scramble", "air_yards",
+    "complete_pass", "qb_scramble", "air_yards", "qb_dropback",
 ]
 
 
@@ -216,20 +222,31 @@ class SimTables:
     # to the bucket's rate. None in tables that predate it: no game script.
     script_shift: np.ndarray | None = None
 
-    def base_weights(self, pass_rate_oe: float) -> np.ndarray:
+    def base_weights(self, pass_rate_oe: float, scramble_factor: float = 1.0) -> np.ndarray:
         """Resample weights that shift the run/pass mix by a team's tendency.
 
         Each bucket's pass fraction is moved by the team's pass rate over
         expected, so a run-heavy team draws more of its red-zone snaps from
         runs, and therefore scores more of its touchdowns on the ground.
+
+        `scramble_factor` (the team's expected QB scramble rate over the
+        league's, P24) then reweights scrambles within the dropbacks. Each
+        bucket's other dropbacks are rescaled so its total dropback mass is
+        unchanged: a scrambling QB turns passes into scrambles without his
+        team dropping back more or less often.
         """
         w = np.ones(len(self.epa))
-        if not pass_rate_oe:
-            return w
-        pf = self.pass_frac
-        target = np.clip(pf + pass_rate_oe, 0.03, 0.97)
-        w[self.dropback] = (target / pf)[self.bucket[self.dropback]]
-        w[self.is_run] = ((1 - target) / (1 - pf))[self.bucket[self.is_run]]
+        if pass_rate_oe:
+            pf = self.pass_frac
+            target = np.clip(pf + pass_rate_oe, 0.03, 0.97)
+            w[self.dropback] = (target / pf)[self.bucket[self.dropback]]
+            w[self.is_run] = ((1 - target) / (1 - pf))[self.bucket[self.is_run]]
+        if scramble_factor != 1.0 and self.scramble is not None:
+            db = self.dropback
+            before = np.bincount(self.bucket[db], weights=w[db], minlength=N_BUCKETS)
+            w[self.scramble] *= scramble_factor
+            after = np.bincount(self.bucket[db], weights=w[db], minlength=N_BUCKETS)
+            w[db] *= (before / np.maximum(after, 1e-12))[self.bucket[db]]
         return w
 
     def segment_cdf(self, weights: np.ndarray) -> np.ndarray:
@@ -693,6 +710,35 @@ def player_roles(season: int, pbp: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     rates = usage_rates(pbp, season)
     priors = rank_priors(pbp[pbp["season"] == season - 1], season - 1)
     return blend_roles(depth, rates, priors), as_of
+
+
+def qb_scramble_rates(pbp: pd.DataFrame, current_season: int) -> tuple[dict[str, float], float]:
+    """({player_id: scramble rate}, league rate). Each QB's scrambles per
+    dropback over the pbp given (prior and current season), shrunk toward the
+    prior season's league rate by SCRAMBLE_PRIOR_DROPBACKS."""
+    d = pbp[pbp["play_type"].isin(["pass", "run"]) & (pbp["qb_dropback"] == 1)]
+    if "season_type" in d:
+        d = d[d["season_type"] == "REG"]
+    qb = d["passer_player_id"].fillna(d["rusher_player_id"])
+    scr = (d["qb_scramble"] == 1).astype(float)
+    prior = scr[d["season"] == current_season - 1]
+    league = float(prior.mean()) if len(prior) else float(scr.mean())
+    g = scr.groupby(qb).agg(["size", "sum"])
+    k = SCRAMBLE_PRIOR_DROPBACKS
+    return ((g["sum"] + k * league) / (g["size"] + k)).to_dict(), league
+
+
+def scramble_factor(squad: pd.DataFrame, passer_weights: np.ndarray, rates: dict[str, float],
+                    league: float) -> float:
+    """The offence's expected QB scramble rate over the league's: each QB's
+    rate weighted by his chance of being the simulated game's passer. A QB with
+    no dropbacks on record counts at the league rate."""
+    w = np.asarray(passer_weights, dtype=float)
+    if not rates or not league or w.sum() <= 0 or "player_id" not in squad:
+        return 1.0
+    ids = squad.reset_index(drop=True)["player_id"]
+    rate = sum(wt * rates.get(pid, league) for pid, wt in zip(ids, w) if wt > 0) / w.sum()
+    return float(rate / league)
 
 
 def pass_rate_oe(pbp: pd.DataFrame, current_season: int) -> dict[str, float]:

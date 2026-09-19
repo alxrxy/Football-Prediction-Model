@@ -31,7 +31,7 @@ import pandas as pd
 
 from .box_score import BOX_CONFIDENCE, BOX_NOTE, box_score, player_pool, td_counts
 from .ingest_injuries import player_key
-from .sim_data import USAGE_CATEGORIES
+from .sim_data import USAGE_CATEGORIES, scramble_factor
 from .simulate import (
     STAT_NAMES, LiveStart, Offense, SimResult, _count_dist, allocate_scorers, simulate_game, summarize,
 )
@@ -348,8 +348,10 @@ def live_scorers(result: SimResult, side: int, squad: pd.DataFrame,
 # --- the simulator ---------------------------------------------------------
 
 class LiveSimulator:
-    def __init__(self, tables, roles: pd.DataFrame, injuries: list[dict], n: int | None = None):
+    def __init__(self, tables, roles: pd.DataFrame, injuries: list[dict], n: int | None = None,
+                 scramble_rates: dict[str, float] | None = None, scramble_league: float = 0.0):
         self.tables, self.roles, self.injuries = tables, roles, injuries
+        self.scramble_rates, self.scramble_league = scramble_rates or {}, scramble_league
         self.n = n or LIVE_SIMS
         self._bases: dict[str, tuple] = {}
 
@@ -382,10 +384,13 @@ class LiveSimulator:
             sides.append((team, blended_squad, blended, info, so_far,
                           player_pool(blended_squad, blended, passer)))
 
+        # Scrambles follow whoever is actually passing today (P24).
+        scramble = [scramble_factor(squad, pool.passer_weights, self.scramble_rates, self.scramble_league)
+                    for (_t, squad, _s, _i, _f, pool) in sides]
         result = simulate_game(
             self.tables,
-            Offense(offense["home"]["target_epa"], offense["home"].get("pass_rate_oe") or 0.0),
-            Offense(offense["away"]["target_epa"], offense["away"].get("pass_rate_oe") or 0.0),
+            Offense(offense["home"]["target_epa"], offense["home"].get("pass_rate_oe") or 0.0, scramble[0]),
+            Offense(offense["away"]["target_epa"], offense["away"].get("pass_rate_oe") or 0.0, scramble[1]),
             n=self.n, seed=seed, wind_mph=offense.get("wind_mph") or 0.0, start=start,
             pools=(sides[0][5], sides[1][5]),
         )
