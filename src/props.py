@@ -156,8 +156,14 @@ BIAS_FIT = {
     # Rushing is corrected by position (P26). The single category offset hid two
     # biases pulling opposite ways, QBs over and backs under. Refitted
     # 2026-09-18 after scrambles and kneels left the carry shares (P23), on the
-    # week-2 priced props, same method. QBs get no offset: their rushing props
-    # are held out of the ranking instead (STRUCTURAL_HOLDOUTS).
+    # week-2 priced props, same method. QBs then got no offset and were held out
+    # of the ranking, because runners and pocket QBs sat on opposite sides.
+    #
+    # QB rushing returned to the ranking 2026-09-19, after P24 gave each QB his
+    # own scramble rate: offset -0.182 (n=21, raw +4.22pp, 90% CI -0.36 to
+    # +0.03). No split: pocket, middle and running QBs all lean the same way
+    # with overlapping intervals, and Spearman(line, gap) fell from -0.79 to
+    # -0.29 (p=0.20).
     #
     # RB rushing refitted 2026-09-19 (+0.107 -> +0.195) after k32+fb (P25) moved
     # carries from RB1/RB2 to the backs behind them.
@@ -167,11 +173,11 @@ BIAS_FIT = {
     # which excludes the category fit of +0.40). Receptions did not split: all
     # three positions sit within each other's intervals.
     "position_offsets": {
-        "player_rush_yds": {"RB": +0.2181},
+        "player_rush_yds": {"RB": +0.2181, "QB": -0.1818},
         "player_reception_yds": {"WR": +0.4469, "TE": +0.5369, "RB": +0.2124},
     },
-    "position_n": {"player_rush_yds": {"RB": 41}, "player_reception_yds": {"WR": 66, "TE": 31, "RB": 32}},
-    "position_raw_bias_pp": {"player_rush_yds": {"RB": -4.84},
+    "position_n": {"player_rush_yds": {"RB": 41, "QB": 21}, "player_reception_yds": {"WR": 66, "TE": 31, "RB": 32}},
+    "position_raw_bias_pp": {"player_rush_yds": {"RB": -4.84, "QB": +4.22},
                              "player_reception_yds": {"WR": -10.16, "TE": -12.28, "RB": -5.06}},
     "position_measured_at": "2026-09-19",
     "position_notes": {
@@ -190,11 +196,20 @@ BIAS_FIT = {
 
 # Props whose simulated probability measures a known engine defect rather than
 # the player, kept out of the ranking entirely until the defect is fixed.
-STRUCTURAL_HOLDOUTS = {
-    ("player_rush_yds", "QB"): (
-        "QB rushing yards: every quarterback is simulated scrambling at the league rate (issue 2B, P24), "
-        "so the simulation puts nearly every QB at 15-30 yards whatever his line; runners read far under "
-        "and pocket passers far over. Held out of the ranking until 2B is fixed."
+# Keyed by (market, position). Empty since 2026-09-19: QB rushing, held out
+# here while every QB scrambled at the league rate, returned to the ranking
+# once P24 gave each QB his own rate.
+STRUCTURAL_HOLDOUTS: dict[tuple[str, str], str] = {}
+
+# Single props held out for the same reason: the simulated number is known to
+# be meaningless, not a disagreement worth reading. Keyed by (game_id, the
+# books' player name, market). Remove each entry once its item is fixed or the
+# game has kicked off. A KNOWN_DEFECTS label still applies to the player's
+# other props.
+PROP_HOLDOUTS = {
+    ("2026_02_SEA_ARI", "Drew Lock", "player_rush_yds"): (
+        "Drew Lock rushing yards (P28): the simulation has Lock as SEA's QB2 behind Darnold, so his projection "
+        "is near zero while the books price him as the starter. Held out until the starter mismatch is fixed."
     ),
 }
 
@@ -390,7 +405,7 @@ def rank(lines: dict, sims: dict[str, dict], now: datetime | None = None) -> dic
                                  "total": (sim.get("total") or {}).get("p50")},
                     "sim_generated_at": sim.get("generated_at"),
                     "_q": q,   # the full stat summary, for pricing alt lines; not exported
-                    "_structural": STRUCTURAL_HOLDOUTS.get((mkey, pos)),
+                    "_structural": STRUCTURAL_HOLDOUTS.get((mkey, pos)) or PROP_HOLDOUTS.get((gid, name, mkey)),
                     "defect_note": KNOWN_DEFECTS.get((gid, name)) or KNOWN_DEFECTS.get((gid, f"team:{team}")),
                 })
     started = [r for r in rows if _kicked_off(r["kickoff"], now)]
@@ -534,7 +549,9 @@ def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = Fa
         "alt_rule": {"min_p": ALT_MIN_P, "min_price": ALT_MIN_PRICE} if with_alts else None,
         "bias_adjust": {**BIAS_FIT, "applied": config.PROPS_BIAS_ADJUST},
         "structural_holdouts": [{"market": m, "position": pos, "note": note}
-                                for (m, pos), note in STRUCTURAL_HOLDOUTS.items()],
+                                for (m, pos), note in STRUCTURAL_HOLDOUTS.items()]
+                               + [{"market": m, "player": who, "note": note}
+                                  for (_gid, who, m), note in PROP_HOLDOUTS.items()],
     }
     config.ensure_dirs()
     PROPS_JSON.write_text(json.dumps(payload), encoding="utf-8")
