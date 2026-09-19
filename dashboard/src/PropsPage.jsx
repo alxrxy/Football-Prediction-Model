@@ -63,7 +63,7 @@ function BiasNote({ fit }) {
 const price = (p) => (p == null ? '' : p > 0 ? `+${p}` : `${p}`)
 const num = (v) => (v == null ? '—' : Math.abs(v) >= 10 ? Math.round(v) : v)
 
-export default function PropsPage() {
+export default function PropsPage({ tabs = null }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   useEffect(() => {
@@ -92,7 +92,9 @@ export default function PropsPage() {
                 : '')
             : 'Player props ranked against the game simulations'
         }
-      />
+      >
+        {tabs}
+      </PageHead>
       <div className="split">
         <div className="split-main">
           {error || !data ? (
