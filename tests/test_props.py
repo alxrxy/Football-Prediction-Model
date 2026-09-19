@@ -100,6 +100,13 @@ def test_rank():
         check("and reaches the explanation prompt", "Known defect (test)" in props._describe(top), True)
     finally:
         del props.KNOWN_DEFECTS[("g1", "Star Receiver")]
+    props.KNOWN_DEFECTS[("g1", "team:BUF")] = "Team issue (test)"
+    try:
+        out = rank(lines, {"g1": _sim(75.0)})
+        check("a team-wide issue labels every prop of that team",
+              {r["defect_note"] for r in out["ranked"] + out["held_out"]}, {"Team issue (test)"})
+    finally:
+        del props.KNOWN_DEFECTS[("g1", "team:BUF")]
 
 
 def test_qb_rushing_held_out_and_rb_offset():

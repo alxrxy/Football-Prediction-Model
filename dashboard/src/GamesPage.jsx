@@ -112,6 +112,7 @@ function GameCard({ game, sim, lg, onOpen }) {
       </div>
       <WinBar away={away} home={home} pHome={pHome} label={live ? 'Live win chance' : 'Win chance'} />
       {b?.is_value ? <span className="tag flag">passes Stage 1 · unvalidated</span> : null}
+      {game.known_issue ? <span className="tag flag">known issue · treat with caution</span> : null}
     </article>
   )
 }

@@ -32,6 +32,7 @@ export default function GameView({ sport, gameId, feed, onBack }) {
       <Hero game={game} entry={entry} lg={lg} home={home} away={away} />
       <div className="split">
         <div className="split-main">
+          {game?.known_issue ? <div className="caveat">{game.known_issue}</div> : null}
           <div className="card">
             <SimDetail gameId={gameId} />
           </div>

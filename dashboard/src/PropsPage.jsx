@@ -224,7 +224,7 @@ function MoreProps({ more, held, maxGap, structural }) {
           <strong>{r.player}</strong>
         </span>
         <em className="sub">{r.game}</em>
-        {r.defect_note ? <em className="sub">Known defect (P28): starter mismatch, not a read on the player</em> : null}
+        {r.defect_note ? <em className="sub">Known issue (P28): starter mismatch, treat with caution</em> : null}
       </td>
       <td>{r.label}</td>
       <td>
