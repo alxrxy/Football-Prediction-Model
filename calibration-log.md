@@ -101,6 +101,43 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-09-19 — PENALTY_REPLAY switched on; props offsets refitted
+
+**Change.** `config.PENALTY_REPLAY` now defaults to on (`PENALTY_REPLAY=0` restores the old behaviour). A nullified
+penalty replays the down instead of consuming it (commit b863918, 2026-09-16). This moves ahead of the plan to wait
+for week-2 grading, at the user's call.
+
+**Re-validation against the 2026-09-16 sign-off.** No explicit list of the eight accept criteria was ever written
+down, so the recorded evidence was reproduced item by item.
+**Process gap:** the "8 accept criteria" from 9/16 were stated in conversation but never written into this log or
+the commits, so this validation had to be reconstructed. From now on, write validation criteria into
+calibration-log.md (the item's adoption-test cell or its entry) at the time they are set, so they can be retrieved later.
+- **Calibration** (20k league-average sims, `--calibrate`) reproduces 9/16 exactly, off and on: points / team
+  22.199 → 22.635 (real 22.629), pass att 31.928 → 32.325 (32.735), rush att 26.648 → 26.560 (26.139), rush yds
+  122.712 → 121.787 (117.536), possessions 11.84 → 11.09. That is expected, since 2A, P27 and k32+fb change only
+  how usage is credited to players.
+- **Like-for-like residuals, flag on:** series / drive −1.9% and drives / team-game +1.0% (both inside the ±2% band);
+  plays / drive −2.7% (the one known miss, explained by the FG deficit, .148 vs .158); series conversion −0.7%;
+  plays / series −0.6%.
+- **Accounting identities, flag off and on, seeds 1 and 7, 5k sims:** drives = possessions; TD-ending drives =
+  offensive TDs; FG-made drives = FGs; the first-down histogram sums to the drive count; and series started −
+  converted + TD drives = drives. All hold to the unit. (First written without the TD term, which failed by exactly
+  the TD count in every run: the engine counts a touchdown as a converted series.)
+- **Tests:** all 12 suites pass with the flag on.
+
+**Live check (read-only, 15 weekend games).** The flag-off control reproduced the stored sims exactly. Flag on: total
+points +0.76 per game (range +0.38 to +1.26); per team-game, pass att 31.35 → 31.69 (real 2025 32.08), completions
+20.32 → 20.53, rush att 27.05 → 27.00. Simulated margins stay on their baseline anchors. Anchor error is about the
+same either way (mean 0.21 off, 0.24 on; max 0.72 / 0.61): it is existing noise from the 4k-sim pilot runs, not
+caused by the flag. Props moved ~0.5pp toward the market in every category.
+
+**Offsets refitted** (in sample, week-2 slate): pass yds +0.005 → −0.048 (n=23, still provisional under P29);
+receptions +0.552 → +0.524; rec yds WR +0.447, TE +0.537, RB +0.212 (RB interval +0.10 to +0.33 still excludes the
+category +0.41, so the split stays); RB rush +0.195 → +0.218.
+
+Live: weekend re-simmed and stored (it matches the validated run), `export_sims`, props re-ranked, dashboard exported.
+Uncommitted pending the user's review.
+
 ## 2026-09-19 — P25 (issue 1) applied: k32+fb; receiving offsets refitted
 
 **Change.** In `sim_data.blend_roles`, players beyond the playing slots now take their own history at weight
