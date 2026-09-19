@@ -85,6 +85,13 @@ MAX_PRIOR_RANK = 6
 # quarterbacks get nothing at all; they inherit the starter's share only
 # through the injury chain, when the starter is actually doubtful to play.
 PLAYING_SLOTS = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "FB": 1}
+# Beyond the playing slots a player's own history counts at games/(games+K)
+# (P25, issue 1). Inside them it is games/(games+PRIOR_GAMES). The much larger
+# K keeps a demoted starter from carrying his old workload: full own history
+# for backups overshot them 16-52% in the 2025 walk-forward, and none at all
+# under-credited 110 real backups (2.9% of targets predicted vs 6.0% realised).
+# K = 32 was chosen on 2025 weeks 3-10 and held on 11-18.
+BACKUP_HISTORY_GAMES = 32.0
 # Within the playing slots, history is kept but held inside this band around
 # the slot's typical share, so a receiver promoted from WR4 to WR2 is pulled up
 # toward a WR2's workload and a demoted one down, while a genuine target hog
@@ -652,20 +659,26 @@ def blend_roles(depth: pd.DataFrame, rates: pd.DataFrame,
 
     The depth slot sets the volume and the player's own history refines it:
     inside the playing slots history is blended with the slot norm (held
-    within HISTORY_FLOOR..HISTORY_CEILING of it), beyond them only the slot
-    norm is used, and backup quarterbacks get zero.
+    within HISTORY_FLOOR..HISTORY_CEILING of it); beyond them the same blend
+    at the much smaller weight games/(games+BACKUP_HISTORY_GAMES); backup
+    quarterbacks get zero. Fullbacks have no slot norm (nflverse rosters label
+    no one FB), so the clip would force them to zero: an FB with no prior
+    keeps his own history instead.
     """
     roles = depth.merge(rates, left_on="player_id", right_index=True, how="left")
     g = roles["games"].fillna(0.0).to_numpy()
     playing = roles["rank"].to_numpy() <= roles["position"].map(PLAYING_SLOTS).fillna(1).to_numpy()
     backup_qb = (roles["position"] == "QB").to_numpy() & ~playing
-    weight = np.where(playing, g / (g + PRIOR_GAMES), 0.0)
+    weight = np.where(playing, g / (g + PRIOR_GAMES), g / (g + BACKUP_HISTORY_GAMES))
+    is_fb = (roles["position"] == "FB").to_numpy()
     for c in USAGE_CATEGORIES:
         prior = np.array([
             priors.get((pos, min(int(rank), MAX_PRIOR_RANK)), {}).get(c, 0.0)
             for pos, rank in zip(roles["position"], roles["rank"])
         ])
-        hist = np.clip(roles[c].fillna(0.0).to_numpy(), HISTORY_FLOOR * prior, HISTORY_CEILING * prior)
+        own = roles[c].fillna(0.0).to_numpy()
+        hist = np.clip(own, HISTORY_FLOOR * prior, HISTORY_CEILING * prior)
+        hist = np.where(is_fb & (prior == 0), own, hist)
         roles[c] = np.where(backup_qb, 0.0, weight * hist + (1 - weight) * prior)
     roles["games"] = g
     for col in ("rz_targets", "gl_carries"):
