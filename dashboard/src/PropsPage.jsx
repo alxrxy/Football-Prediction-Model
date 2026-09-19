@@ -20,6 +20,8 @@ function BiasNote({ fit }) {
   const sizes = Object.values(n).sort((a, b) => a - b)
   const rb = fit.position_offsets?.player_rush_yds?.RB
   const rbBias = fit.position_raw_bias_pp?.player_rush_yds?.RB
+  const qb = fit.position_offsets?.player_rush_yds?.QB
+  const qbBias = fit.position_raw_bias_pp?.player_rush_yds?.QB
   const recYds = fit.position_raw_bias_pp?.player_reception_yds
   const recYdsN = fit.position_n?.player_reception_yds || {}
   const dates = fit.measured_at_by_market
@@ -45,8 +47,16 @@ function BiasNote({ fit }) {
         <>
           {' '}<b>Rushing is corrected by position.</b>{' '}Running backs get their own offset
           ({rbBias}pp raw, n = {fit.position_n?.player_rush_yds?.RB}, refitted {fit.position_measured_at}).{' '}
-          {fit.position_notes?.player_rush_yds?.RB}{' '}Quarterback rushing props get no offset and are not ranked
-          at all: they are held out below as an engine defect.
+          {fit.position_notes?.player_rush_yds?.RB}{' '}
+          {qb != null ? (
+            <>
+              Quarterbacks get their own offset too ({qbBias > 0 ? '+' : ''}{qbBias}pp raw, n ={' '}
+              {fit.position_n?.player_rush_yds?.QB}): their rushing props are ranked again now that each quarterback
+              scrambles at his own rate rather than the league&rsquo;s (P24).
+            </>
+          ) : (
+            'Quarterback rushing props get no offset and are not ranked at all: they are held out below as an engine defect.'
+          )}
         </>
       ) : null}
       {recYds ? (
@@ -274,7 +284,7 @@ function MoreProps({ more, held, maxGap, structural }) {
               <tr className="group">
                 <td colSpan={8}>
                   Held out · engine defect, not player signal
-                  {structural.map((s) => <em key={s.market + s.position} className="sub">{s.note}</em>)}
+                  {structural.map((s) => <em key={s.market + (s.position || s.player)} className="sub">{s.note}</em>)}
                 </td>
               </tr>
             ) : null}

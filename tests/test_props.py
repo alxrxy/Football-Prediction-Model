@@ -109,7 +109,7 @@ def test_rank():
         del props.KNOWN_DEFECTS[("g1", "team:BUF")]
 
 
-def test_qb_rushing_held_out_and_rb_offset():
+def test_qb_rushing_ranked_with_its_own_offset():
     from src import config, props
 
     q = {"median": 20, "mean": 20, "p10": 5, "p25": 12, "p75": 28, "p90": 36}
@@ -122,16 +122,25 @@ def test_qb_rushing_held_out_and_rb_offset():
     lines = {"games": {"g1": {"home": "BUF", "away": "DET", "kickoff": "k", "players": {
         "Pocket Passer": {"player_rush_yds": book}, "Lead Back": {"player_rush_yds": book}}}}}
     out = rank(lines, {"g1": sim})
-    check("QB rushing never ranked", [r["player"] for r in out["ranked"]], ["Lead Back"])
-    check("QB rushing held out as an engine defect",
-          [(r["player"], r["held_reason"]) for r in out["held_out"]], [("Pocket Passer", "structural")])
+    check("QB rushing is ranked again (P24)", sorted(r["player"] for r in out["ranked"]), ["Lead Back", "Pocket Passer"])
+    check("nothing held out as an engine defect", out["held_out"], [])
+    props.PROP_HOLDOUTS[("g1", "Pocket Passer", "player_rush_yds")] = "Known meaningless (test)"
+    try:
+        out = rank(lines, {"g1": sim})
+        check("a single prop can still be held out as a defect",
+              [(r["player"], r["held_reason"], r.get("held_note")) for r in out["held_out"]],
+              [("Pocket Passer", "structural", "Known meaningless (test)")])
+        check("and the rest of the category stays ranked", [r["player"] for r in out["ranked"]], ["Lead Back"])
+    finally:
+        del props.PROP_HOLDOUTS[("g1", "Pocket Passer", "player_rush_yds")]
     saved = config.PROPS_BIAS_ADJUST
     config.PROPS_BIAS_ADJUST = True
     try:
         rb = props.bias_adjust(0.5, "player_rush_yds", "RB")
         check("RB rushing gets its own offset", round(rb, 4),
               round(1 / (1 + math.exp(-props.BIAS_FIT["position_offsets"]["player_rush_yds"]["RB"])), 4))
-        check("QB rushing gets none", props.bias_adjust(0.5, "player_rush_yds", "QB"), 0.5)
+        check("QB rushing gets its own offset", round(props.bias_adjust(0.5, "player_rush_yds", "QB"), 4),
+              round(1 / (1 + math.exp(-props.BIAS_FIT["position_offsets"]["player_rush_yds"]["QB"])), 4))
         by_pos = props.BIAS_FIT["position_offsets"]["player_reception_yds"]
         check("receiving yards: RB and WR get different offsets",
               props.bias_adjust(0.5, "player_reception_yds", "RB") < props.bias_adjust(0.5, "player_reception_yds", "WR"),
@@ -211,7 +220,7 @@ def test_context():
 
 
 if __name__ == "__main__":
-    for fn in [test_p_over, test_market_view, test_names, test_rank, test_qb_rushing_held_out_and_rb_offset, test_started_games_not_ranked, test_pick_alt, test_context]:
+    for fn in [test_p_over, test_market_view, test_names, test_rank, test_qb_rushing_ranked_with_its_own_offset, test_started_games_not_ranked, test_pick_alt, test_context]:
         print(f"\n{fn.__name__}")
         fn()
     print(f"\n{PASS} passed, {FAIL} failed")
