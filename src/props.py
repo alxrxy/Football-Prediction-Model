@@ -495,6 +495,11 @@ def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = Fa
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "lines_pulled_at": lines.get("pulled_at"), "season": lines.get("season"), "week": lines.get("week"),
+        # A partial re-pull (--games / --only-missing): lines_pulled_at is then
+        # the oldest game's pull, and these name the games that are fresher.
+        "lines_refreshed_at": lines.get("refreshed_at"),
+        "lines_refreshed_games": [f"{g['away']} @ {g['home']}" for gid in lines.get("refreshed_games") or []
+                                  if (g := (lines.get("games") or {}).get(gid))],
         "model_weight": config.MODEL_MARKET_WEIGHT, "edge_buffer": config.EDGE_BUFFER, "max_gap": MAX_GAP,
         "priced": len(result["ranked"]) + len(result["held_out"]),
         "unmatched_players": result["unmatched_players"],
