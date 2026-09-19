@@ -85,3 +85,57 @@ export const liveGame = (feed, gameId) => (feedFresh(feed) ? feed.games?.find((g
 
 export const findGame = (sims, gameId) =>
   sims?.slates?.flatMap((s) => s.games).find((g) => g.game_id === gameId) || null
+
+// sims_archive/: finished weeks, one file each, plus index.json, written by
+// export_sims. The index is read once per page load; a week file only when a
+// game in it is opened.
+let archiveIndex = null
+const archiveWeeks = {}
+
+export function loadArchiveIndex() {
+  if (!archiveIndex) {
+    archiveIndex = fetch(`./sims_archive/index.json?ts=${Date.now()}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : { weeks: [] }))
+      .catch(() => ({ weeks: [] }))
+  }
+  return archiveIndex
+}
+
+function loadArchiveWeek(file) {
+  if (!archiveWeeks[file]) {
+    archiveWeeks[file] = fetch(`./sims_archive/${file}`, { cache: 'no-store' }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.json()
+    })
+    archiveWeeks[file].catch(() => {
+      delete archiveWeeks[file]
+    })
+  }
+  return archiveWeeks[file]
+}
+
+// One game's simulation entry: this week's sims.json first, then the archive
+// of past weeks. `week` is set only for an archived game.
+export function useSimEntry(gameId) {
+  const { data, error } = useSims()
+  const current = findGame(data, gameId)
+  const [archived, setArchived] = useState(undefined)   // undefined: not looked yet
+  const needArchive = Boolean(data) && !current
+  useEffect(() => {
+    if (!needArchive) return undefined
+    let alive = true
+    loadArchiveIndex()
+      .then((idx) => {
+        const week = (idx.weeks || []).find((w) => w.games.some((g) => g.game_id === gameId))
+        if (!week) return alive && setArchived(null)
+        return loadArchiveWeek(week.file).then((d) => alive && setArchived({ entry: findGame(d, gameId), week }))
+      })
+      .catch(() => alive && setArchived(null))
+    return () => {
+      alive = false
+    }
+  }, [needArchive, gameId])
+  if (current) return { entry: current, week: null, loading: false, error: null }
+  if (!data) return { entry: null, week: null, loading: !error, error }
+  return { entry: archived?.entry || null, week: archived?.week || null, loading: archived === undefined, error: null }
+}

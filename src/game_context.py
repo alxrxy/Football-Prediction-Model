@@ -264,6 +264,18 @@ def props_text() -> str | None:
     return "\n".join(lines)
 
 
+def _archived(game_id: str) -> dict | None:
+    from .export_sims import ARCHIVE_DIR
+
+    index = _load(ARCHIVE_DIR / "index.json") or {}
+    week = next((w for w in index.get("weeks") or [] if any(g.get("game_id") == game_id for g in w.get("games") or [])),
+                None)
+    if week is None:
+        return None
+    return next((g for sl in (_load(ARCHIVE_DIR / week["file"]) or {}).get("slates") or []
+                 for g in sl.get("games") or [] if g.get("game_id") == game_id), None)
+
+
 def build(game_id: str) -> dict | None:
     """{mode, text} for a game, or None when no export knows it."""
     feed = live_feed() or {}
@@ -280,7 +292,15 @@ def build(game_id: str) -> dict | None:
     sim = next((g for sl in (_load(SIMS_JSON) or {}).get("slates") or [] for g in sl.get("games") or []
                 if g.get("game_id") == game_id), None)
     if game is None and sim is None:
-        return None
+        # A past week's game: its archived entry carries the pregame model numbers.
+        sim = _archived(game_id)
+        if sim is None:
+            return None
+        pr = sim.get("predictions") or {}
+        base = pr.get("baseline") or {}
+        game = {"home": sim.get("home"), "away": sim.get("away"), "kickoff": sim.get("kickoff"),
+                "baseline": base, "ml": pr.get("ml"), "market": {"spread": base.get("market_spread")}}
+        sport = "NFL"
     props = [p for p in (_load(PROPS_JSON) or {}).get("props") or [] if p.get("game_id") == game_id]
     mode = "final" if sim and sim.get("status") == "final" else "pregame"
     return {"mode": mode, "text": pregame_text(game, sim, props, sport or "NFL")}

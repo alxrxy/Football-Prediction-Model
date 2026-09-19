@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { findGame, liveGame, useLive, useSims } from './simData.js'
+import { liveGame, useLive, useSimEntry } from './simData.js'
 import './sims.css'
 
 // The game view behind an NFL row: projected score and its distribution,
@@ -73,8 +73,7 @@ function fromLive(ls) {
 }
 
 export default function SimDetail({ gameId }) {
-  const { data, error } = useSims()
-  const entry = findGame(data, gameId)
+  const { entry, loading, error } = useSimEntry(gameId)
   const feed = useLive(Boolean(entry) && entry.status !== 'final')
   const [choice, setChoice] = useState(null)
 
@@ -89,7 +88,7 @@ export default function SimDetail({ gameId }) {
       </Shell>
     )
   }
-  if (!data) return <Shell><p className="muted">Loading simulations…</p></Shell>
+  if (loading) return <Shell><p className="muted">Loading simulations…</p></Shell>
   if (!entry) {
     return (
       <Shell>
