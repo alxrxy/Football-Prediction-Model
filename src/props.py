@@ -138,14 +138,18 @@ BIAS_FIT = {
     # Receiving refitted again 2026-09-19 after backups got partial weight on
     # their own history (P25, k32+fb), which moves ~0.3 targets per starter
     # slot to the backups: receptions +0.5104 -> +0.5517.
+    # Everything refitted once more the same day with PENALTY_REPLAY on (more
+    # possessions and plays, ~+0.3 pass attempts a team): props moved ~0.5pp
+    # toward the market. Passing yards is still provisional (P29: the tied-line
+    # bug drops about a third of starting QBs from its sample).
     "offsets": {
-        "player_pass_yds": +0.0050,
-        "player_receptions": +0.5517,
+        "player_pass_yds": -0.0475,
+        "player_receptions": +0.5242,
     },
-    "measured_at_by_market": {"player_pass_yds": "2026-09-18", "player_receptions": "2026-09-19",
+    "measured_at_by_market": {"player_pass_yds": "2026-09-19", "player_receptions": "2026-09-19",
                               "player_reception_yds": "2026-09-19"},
-    "n": {"player_pass_yds": 20, "player_reception_yds": 129, "player_receptions": 138},
-    "raw_bias_pp": {"player_pass_yds": -0.12, "player_reception_yds": -9.77, "player_receptions": -12.05},
+    "n": {"player_pass_yds": 23, "player_reception_yds": 129, "player_receptions": 138},
+    "raw_bias_pp": {"player_pass_yds": +1.11, "player_reception_yds": -9.40, "player_receptions": -11.48},
     # Rushing is corrected by position (P26). The single category offset hid two
     # biases pulling opposite ways, QBs over and backs under. Refitted
     # 2026-09-18 after scrambles and kneels left the carry shares (P23), on the
@@ -160,12 +164,12 @@ BIAS_FIT = {
     # which excludes the category fit of +0.40). Receptions did not split: all
     # three positions sit within each other's intervals.
     "position_offsets": {
-        "player_rush_yds": {"RB": +0.1947},
-        "player_reception_yds": {"WR": +0.4560, "TE": +0.5586, "RB": +0.2389},
+        "player_rush_yds": {"RB": +0.2181},
+        "player_reception_yds": {"WR": +0.4469, "TE": +0.5369, "RB": +0.2124},
     },
     "position_n": {"player_rush_yds": {"RB": 41}, "player_reception_yds": {"WR": 66, "TE": 31, "RB": 32}},
-    "position_raw_bias_pp": {"player_rush_yds": {"RB": -4.32},
-                             "player_reception_yds": {"WR": -10.37, "TE": -12.72, "RB": -5.67}},
+    "position_raw_bias_pp": {"player_rush_yds": {"RB": -4.84},
+                             "player_reception_yds": {"WR": -10.16, "TE": -12.28, "RB": -5.06}},
     "position_measured_at": "2026-09-19",
     "position_notes": {
         "player_rush_yds": {"RB": (
