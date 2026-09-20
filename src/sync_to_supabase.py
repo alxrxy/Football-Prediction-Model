@@ -26,7 +26,7 @@ TABLES = [
     "venues", "teams", "games", "team_ratings",
     "weather", "odds", "injuries", "depth_charts", "predictions",
     "game_simulations", "live_tracking", "live_simulations",
-    "odds_snapshots", "clv_log",
+    "odds_snapshots", "clv_log", "inactives",
 ]
 
 BOOLEAN_COLUMNS = {
