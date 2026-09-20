@@ -42,6 +42,32 @@ out the backup plays and charging for both double-counts one job. Play
 probability comes from the practice trend: a Questionable player who practised
 fully is priced at 0.80 to play, one who sat out all week at 0.25.
 
+### Gameday inactives (Sundays)
+
+About 90 minutes before each kickoff a team posts its official inactive list,
+which is the first time a Questionable player is known either way. ESPN's core
+API carries it on the per-competition roster (`didNotPlay`), and 404s until it
+posts. Once a team's list is in, an inactive player drops to a play
+probability of 0 and a Questionable, Doubtful or Probable player *not* on the
+list goes to 1.0, in place of the flat 0.55 the practice trend gives him. Out
+and IR are left alone.
+
+Every team posts on its own clock, so a Sunday needs one refresh per kickoff
+window rather than one for the day:
+
+```bash
+python run_sunday.py --plan     # the day's windows and when each refresh runs
+python run_sunday.py --watch    # wait for each window, refresh, repeat
+python run_sunday.py            # one refresh now, for the next window
+```
+
+The windows are clustered from the day's actual kickoff times, so a London
+morning game or a flexed start schedules itself. Each one grades finished
+games, pulls injuries and inactives, refreshes weather and odds, re-predicts,
+re-simulates only the games still to kick off, re-ranks props for that
+window's games and rebuilds the dashboard. nflverse is not re-ingested: its
+play data only changes after games finish.
+
 Coverage differs enormously by sport, and the report says which applies:
 
 - **NFL** — nflverse's mandated weekly report covers all 32 teams, with ESPN
@@ -72,6 +98,10 @@ python run_pipeline.py --fresh-odds       # bypass odds cache (costs quota)
 
 With no `--date`, the runner picks the next date that actually has unplayed
 games, so `--sport nfl` on a Tuesday still shows Sunday's slate.
+
+On an NFL Sunday, `python run_sunday.py --watch` runs the whole refresh once
+per kickoff window, so the inactive lists are picked up before each set of
+games starts. See [Gameday inactives](#gameday-inactives-sundays).
 
 Each module also runs standalone:
 

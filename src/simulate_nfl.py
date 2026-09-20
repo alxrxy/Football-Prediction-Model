@@ -30,7 +30,7 @@ from __future__ import annotations
 import argparse
 import zlib
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -863,7 +863,7 @@ def _stored_anchors(store, games: list[dict]) -> dict[str, tuple[float, str]]:
 
 
 def run(game_id: str | None = None, dates: list[date] | None = None, n: int = N_SIMS,
-        store_results: bool = True, quiet: bool = False) -> list[dict]:
+        store_results: bool = True, quiet: bool = False, upcoming_only: bool = False) -> list[dict]:
     store = db.get_store()
     ctx = FeatureContext(store, "nfl")
     if game_id:
@@ -878,6 +878,20 @@ def run(game_id: str | None = None, dates: list[date] | None = None, n: int = N_
         games.sort(key=lambda g: g["kickoff_time"])
         if not games:
             raise SystemExit(f"no NFL games on {', '.join(map(str, dates or []))}")
+
+    if upcoming_only:
+        # Re-simulating a slate mid-afternoon would otherwise redo the games
+        # already under way and overwrite their pregame row with a later one.
+        now = datetime.now(timezone.utc)
+        keep = [g for g in games if not g.get("completed")
+                and (k := parse_dt(g.get("kickoff_time"))) and k > now]
+        if len(keep) != len(games):
+            print(f"[simulate] skipping {len(games) - len(keep)} game(s) already kicked off")
+        games = keep
+        if not games:
+            print("[simulate] nothing left to simulate")
+            store.close()
+            return []
 
     print(f"[simulate] {len(games)} game(s), {n:,} sims each | loading tables, usage and depth charts")
     inputs = load_inputs(int(games[0]["season"]))
@@ -925,6 +939,8 @@ if __name__ == "__main__":
     parser.add_argument("--sims", type=int, default=N_SIMS)
     parser.add_argument("--no-store", action="store_true", help="print only, write nothing")
     parser.add_argument("--quiet", action="store_true", help="one line per game instead of the full report")
+    parser.add_argument("--upcoming-only", action="store_true",
+                        help="with --date: skip games that have already kicked off")
     parser.add_argument("--no-script", action="store_true",
                         help="with --calibrate: game script off, for a before/after")
     args = parser.parse_args()
@@ -933,4 +949,5 @@ if __name__ == "__main__":
         print(calibrate(game_script=not args.no_script))
     else:
         run(args.game, [date.fromisoformat(d) for d in args.date] if args.date else None,
-            args.sims, store_results=not args.no_store, quiet=args.quiet)
+            args.sims, store_results=not args.no_store, quiet=args.quiet,
+            upcoming_only=args.upcoming_only)
