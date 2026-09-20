@@ -243,8 +243,32 @@ def test_starter_mismatch_holdout():
         cfg.QB_EXPECTED_STARTER = was
 
 
+def test_tied_lines_pick_a_real_line():
+    """An even number of tied modal lines must not average into a line nobody posts (P29)."""
+    def bk(pts):
+        return {f"book{i}": {"point": p, "over": -110, "under": -110} for i, p in enumerate(pts)}
+
+    v = market_view(bk([182.5, 182.5, 183.5, 183.5]))
+    check("a tie resolves to a real posted line", v is not None, True)
+    check("and it is one of the tied lines", v["point"] in (182.5, 183.5), True)
+
+    v = market_view(bk([60.5, 60.5, 61.5, 61.5, 63.5]))
+    check("nearest the consensus wins", v["point"], 61.5)
+
+    v = market_view(bk([10.5, 11.5]))
+    check("two books, one line each", v is not None, True)
+
+    v = market_view(bk([242.5, 242.5, 242.5, 244.5]))
+    check("a clear mode is untouched", v["point"], 242.5)
+
+    v = market_view(bk([100.5, 100.5, 101.5, 102.5, 102.5, 101.5]))
+    check("an odd median that is real is left alone", v["point"], 101.5)
+
+    check("no books, no view", market_view({}), None)
+
+
 if __name__ == "__main__":
-    for fn in [test_p_over, test_starter_mismatch_holdout, test_market_view, test_names, test_rank, test_qb_rushing_ranked_with_its_own_offset, test_started_games_not_ranked, test_pick_alt, test_context]:
+    for fn in [test_p_over, test_starter_mismatch_holdout, test_tied_lines_pick_a_real_line, test_market_view, test_names, test_rank, test_qb_rushing_ranked_with_its_own_offset, test_started_games_not_ranked, test_pick_alt, test_context]:
         print(f"\n{fn.__name__}")
         fn()
     print(f"\n{PASS} passed, {FAIL} failed")

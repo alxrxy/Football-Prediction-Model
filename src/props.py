@@ -270,14 +270,29 @@ def bias_adjust(p: float, market_key: str, position: str | None = None) -> float
 
 
 def market_view(books: dict) -> dict | None:
-    """Vig-free P(over) at the line most books post, and each side's best price."""
+    """Vig-free P(over) at the line most books post, and each side's best price.
+
+    When several lines tie for most-posted, the median of them can fall between
+    two real lines -- 182.5 twice and 183.5 twice gives 183.0 -- which no book
+    offers, so nothing matched and the prop disappeared: never ranked, never
+    held out, not even counted as unmatched (P29). It cost 8.7% of priced
+    player-markets, and they were not a random 8.7%: the corrections in
+    BIAS_FIT were fitted without them. The tie is now broken toward the tied
+    line nearest the consensus of every book, which is always a line somebody
+    posts. A median that already lands on a real line is left alone, so this
+    changes no prop that previously worked.
+    """
     priced = {b: v for b, v in books.items()
               if v.get("over") is not None and v.get("under") is not None and v.get("point") is not None}
     if not priced:
         return None
     counts = Counter(v["point"] for v in priced.values())
     top = max(counts.values())
-    point = median(sorted(p for p, c in counts.items() if c == top))
+    tied = sorted(p for p, c in counts.items() if c == top)
+    point = median(tied)
+    if point not in counts:
+        centre = mean(v["point"] for v in priced.values())
+        point = min(tied, key=lambda p: (abs(p - centre), p))
     fair, best = [], {"over": None, "under": None}
     for book, v in priced.items():
         if v["point"] != point:
