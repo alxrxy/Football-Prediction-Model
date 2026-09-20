@@ -61,6 +61,7 @@ status only when its adoption test is met.
 | P31 | Receiving: the target-share vector is flattened, so priced receivers get ~0.85 of their real targets | bug fix | 2026-09-20 | Healthy priced receivers (n=124): sim/real targets 0.851, catch rate correct (0.673 vs 0.668), team pass att 0.972. By quartile of real target share (n=277) the sim/real share runs 1.065 / 0.800 / 0.803 / **0.755**. Localised to `usage_rates`, which takes each player's share over the games he appeared in: a rotational WR5 is carried at ~1.93x his per-team-game rate, the per-team vector sums to **1.131**, and `team_shares` divides it out proportionally so the biggest shares pay the most. 0.890 x 0.972 = 0.865 vs 0.851 measured end to end. This is the receiving under-bias (receptions -0.119, rec yds -0.099 raw vs market) | see the six criteria in the 2026-09-20 entry; Q4 and Q1 share ratios in 0.95-1.05 out of sample, team totals within 1%, rushing not regressed | **built 2026-09-20 behind `USAGE_PARTICIPATION_TRIM` (tau 0.10), off.** Q4 0.889 -> 0.978, team totals identical, receptions sim/line 0.845 -> 0.944. Criteria 4-6 pass, 1 and 3 fail narrowly, 2 half. Held off pending the P10-vs-P31 comparison after the first live Sunday |
 | P32 | Target-category shares are computed on overlapping sets but picked on disjoint ones | bug fix | 2026-09-20 | `_usage_events` builds `tgt_deep` / `tgt_short` over **all** targets including red-zone ones, while `simulate._credit` picks rz, then non-rz deep, then non-rz short — three disjoint buckets. Red-zone targets are counted twice. Measured on 2025 (230 receivers, 25+ targets): engine/true share median 0.990 deep, 1.001 short, per-player p10-p90 0.90-1.22; effect on simulated volume 0.998 targets, 0.996 yards, and terciles 1.005 / 1.000 / 1.000. Real but minor, and **not** part of P31: stage 4 of the P31 decomposition adds nothing (0.893 vs 0.890) | engine share within 2% of the true disjoint share at p10 and p90; no change to team totals | proposed, low priority |
 | P33 | Inactives: a roster read hours before kickoff is stored as a posted list | bug fix | 2026-09-20 | `ingest_inactives.fetch` treats HTTP 200 + any `didNotPlay` entry as a posted list, and `LOOKAHEAD_HOURS` asks 12 h out. On the live 9/20 slate that stored 11 late-window team lists (T-4.3h to T-8.6h) that are not inactive lists at all: **93% of their ruled-out players are missing from them** (28 ruled out, 26 absent), against 39% for the 16 genuine T-72m lists. SEA's 9-man list omits Sam Darnold, who is ruled out; DEN's list has 1 player and misses all 9. Re-polled 15 min later, every list was byte-identical, so they are stale content rather than a list still filling. **List size cannot separate them** (bogus lists run 6-9, genuine 7-12); lead time separates them perfectly, 16/16 vs 11/11. Consequence is worse than a bad list: `features.apply_inactives` treats any team with a "posted" list as resolved, so every *unlisted* questionable player is promoted to play probability 1.0 - RJ Harvey (DEN, questionable RB) was flipped questionable -> active off the 1-player list | no stored list for a game more than 2 h from kickoff; on a live Sunday the stored lists cover >= 40% of ruled-out players **in aggregate** (genuine 60.6% vs premature 7.1% on 9/20; a per-list threshold is invalid, since an IR player is never on a gameday inactive list and genuine per-team coverage runs 0-100%); the 16 genuine T-72m lists of 9/20 are unchanged by the fix | **applied 2026-09-20**: `LOOKAHEAD_HOURS` 12.0 -> 2.0 in `src/ingest_inactives.py`. Validated live at 16:17Z (16 lists / 153 rows accepted, unchanged; 7 games skipped). New test pins the gate at 8.6/4.3/2.5 h rejected vs 1.58/1.25 h accepted, against a full-looking 7-man roster so it cannot be re-derived from list size; suite 438 pass. The 11 premature lists (71 rows) deleted and the slate re-predicted, re-simmed and re-exported |
+| P34 | CLV: the fallback close is the median of American odds, which have no values between -100 and +100 | bug fix | 2026-09-20 | `clv.snapshot_close` takes `median()` over each book's American price at the consensus line. That scale is **discontinuous** - no odds exist strictly between -100 and +100 - so when the books at a line straddle the boundary the median lands in the gap and yields a price that cannot exist. CIN@HOU: away prices at -2.5 were [-108, -105, -102, +100, +100, +104], median **-1.0**, stored as -1. `market.implied(-1)` = 0.0099, so a coin-flip side reads as a 1% chance; `devig([-116, -1])` returns home 0.9819 against a true ~0.517, and with `p_market` 0.5223 that is **clv_pp +0.4596** - the stored value exactly. Correct probability-space median gives home 0.5171, so true CLV is **-0.5pp, not +46pp**. The equal-and-opposite values across models are not a side-orientation bug: the two models leaned opposite sides, so `own()` flips one corrupt number twice | a straddling price set must yield a valid price and a CLV near 0 when the line did not move; no stored close price strictly between -100 and +100; the 187 `espn:draftkings` closes must be byte-identical after any fix | **diagnosed 2026-09-20, NOT fixed; queued for the week of 2026-09-22.** Blast radius is 4 of 215 closed rows, all NFL, all today, all via `oddsapi_last_pregame`, 1 of them a flagged lean; the 187 `espn:draftkings` closes are immune by construction, so the CLV history before today is clean. The fix is to take the median in **probability space** (`market.implied` per book, median there, convert back), which is continuous and has no gap. **The two latent sites are in scope of the same item**, since they share the mechanism: `ingest_odds` consensus moneylines (`int(_median(ml_h))`) and `market.side_price`. Neither is firing now - 0 of 389 consensus rows hold a moneyline in the impossible range - so they are a guarded check plus the same probability-space treatment, not a second investigation |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -102,6 +103,83 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-20 — P34 diagnosed: the CLV fallback close medians American odds, which have a hole in the middle
+
+Found while checking why the CLV report's spread jumped from sd 1.05 pp this morning to **sd 12.39 pp** this
+evening. Diagnosis only; nothing changed.
+
+**The bug.** `clv.snapshot_close` builds a consensus close by taking `median()` of each book's American price at
+the consensus line. American odds are **discontinuous**: they run ... -102, -101, +100, +101 ... and *no value
+exists strictly between -100 and +100*. When the books at a line straddle that boundary - which is normal at a
+near-pick'em price - the median falls into the gap and produces a price that cannot exist.
+
+**Worked through, CIN@HOU.** Books at -2.5 priced the away side [-108, -105, -102, **+100**, **+100**, **+104**].
+
+| step | value |
+|---|---|
+| `median(away)` | **-1.0**, stored as `-1` |
+| `market.implied(-1)` | **0.0099** - a coin flip read as a 1% chance |
+| `devig([-116, -1])` home | **0.9819** |
+| stored `p_market` | 0.5223 |
+| `clv_pp` = 0.9819 - 0.5223 | **+0.4596** - exactly the stored value |
+| probability-space median instead | home **0.5171** -> true CLV **-0.005**, i.e. **-0.5 pp** |
+
+So a lean whose line never moved (-2.5 to -2.5) was recorded as +46 pp of closing line value. The chain closes
+on the stored number exactly, so this is the mechanism and not a guess.
+
+**The equal-and-opposite pattern was a red herring.** baseline-v1 and ml-v1 leaned opposite sides of the same
+game, so `own()` flips the *same* corrupt probability twice and prints +0.4596 and -0.4596. That looked like a
+side-orientation bug in `apply_close`. It is not: `apply_close` is behaving correctly on a poisoned input.
+
+**Blast radius: 4 rows, and the history is clean.**
+
+| | rows |
+|---|---|
+| `clv_log` total | 225 |
+| with a close | 215 |
+| close from `espn:draftkings` | **187** |
+| close from `oddsapi_last_pregame` | 28 |
+| **with an impossible close price** | **4** (all NFL, all 2026 week 2, 1 of them a flagged lean) |
+
+The ESPN path is immune by construction: it reads one book's own two prices, so there is no cross-book median to
+fall in the gap. **Every CLV close before today came from that path**, so the concern that earlier-week judgment
+calls were distorted does not hold - they were not. `snapshot_close` is only reached when `espn_close` fails, and
+ESPN only started failing at about 15:47Z today (the 403 block, see below), so this code path had barely run
+before.
+
+What *was* wrong is the **printed summary**: 4 rows carrying +/-46 pp dragged the reported sd from ~0.1 pp to
+12.39 pp and produced the "flagged, mean -22.34 pp" line. The aggregate was wrong; the per-row history behind it
+was not.
+
+**Queued for the week of 2026-09-22, not built.** Take the median in **probability space** -
+`market.implied` each book's price, median those, convert back (or devig the pair of medians) - because
+probability is continuous and has no gap.
+
+Pass criteria, as logged in the tracker row:
+1. A straddling set like [-108, -105, -102, +100, +100, +104] yields a valid price and a CLV near 0 when the
+   line did not move.
+2. No stored close price falls strictly between -100 and +100.
+3. **The 187 `espn:draftkings` closes reproduce byte-identical**, which is the guard that the fix touches only
+   the consensus path.
+
+**The same pattern exists in two more places, and they are part of this item rather than a separate one**, since
+the mechanism is identical: `ingest_odds` medians moneylines across books (`int(_median(ml_h))`) and
+`market.side_price` medians spread prices at a line. Checked: **0 of 389** `oddsapi_consensus` rows currently
+hold a moneyline in the impossible range, so both are latent. That makes them a guarded check plus the same
+probability-space treatment, not a second investigation - but they should land together, because fixing only the
+CLV path would leave the identical trap live in the odds pipeline.
+
+### Known limitation of today's CLV numbers specifically
+
+Logged as a limitation, not a defect, since the cause is the ESPN block and nothing here can fix it: with
+`pickcenter` unreachable, every close captured today came from `snapshot_close`, i.e. **our own last pregame odds
+snapshot at about T-72 minutes** rather than an actual closing line. Today's CLV is therefore "value against a
+72-minute-early line", which is a weaker and slightly noisier measure than it is labelled. The 24 rows from that
+path that are *not* corrupted by P34 are still measured against that early line, and should be read with that in
+mind. They will not be recoverable after the fact; the closing prices are gone once the games end.
 
 ---
 
