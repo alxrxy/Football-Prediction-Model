@@ -42,7 +42,7 @@ from .ingest_injuries import player_key
 from .ingest_nflverse import PLAYS_PER_GAME
 from .predict_baseline import predict_game, slate_window
 from .sim_data import (
-    DIST_EDGES, N_DIST, USAGE_CATEGORIES, SimTables, build_tables, load_pbp,
+    DIST_EDGES, N_DIST, PLAYING_SLOTS, USAGE_CATEGORIES, SimTables, build_tables, load_pbp,
     pass_rate_oe, player_roles, qb_scramble_rates, scramble_factor,
 )
 from .simulate import (
@@ -171,6 +171,32 @@ def anchored_simulation(tables: SimTables, targets: dict, proe: tuple[float, flo
 
 # --- scorers ---------------------------------------------------------------
 
+TRIM_POSITIONS = {"WR", "TE", "RB", "FB"}
+
+
+def _participation_trim(squad: pd.DataFrame, base: np.ndarray) -> np.ndarray:
+    """Zero the shares of skill players who will not take a meaningful snap (P31).
+
+    A depth chart lists more players than dress: 10.1% of a team's target share
+    sits on players with no offensive snap this season. Their shares go into the
+    same vector, which then sums to ~1.13, and `team_shares` normalises that
+    excess out of everyone proportionally, so the largest shares lose the most.
+
+    A player inside his position's playing slots is never trimmed, whatever his
+    record says, so a week-one rookie starter or a player with no snap data
+    cannot be removed by a missing feed.
+    """
+    part = pd.to_numeric(squad["participation"], errors="coerce").to_numpy(float)
+    playing = squad["rank"].to_numpy() <= squad["position"].map(PLAYING_SLOTS).fillna(1).to_numpy()
+    trimmable = squad["position"].isin(TRIM_POSITIONS).to_numpy() & ~playing
+    drop = trimmable & np.isfinite(part) & (part < config.USAGE_MIN_PARTICIPATION)
+    if not drop.any():
+        return base
+    out = base.copy()
+    out[drop] = 0.0
+    return out
+
+
 def team_shares(roles: pd.DataFrame, team: str, injuries: list[dict]):
     """Depth-chart skill players and each one's share of every opportunity
     type, with injuries applied.
@@ -185,6 +211,8 @@ def team_shares(roles: pd.DataFrame, team: str, injuries: list[dict]):
     report = {player_key(team, r["player"]): r for r in injuries if r.get("team") == team}
     cats = list(USAGE_CATEGORIES)
     base = squad[cats].to_numpy(float)
+    if config.USAGE_PARTICIPATION_TRIM and "participation" in squad:
+        base = _participation_trim(squad, base)
     eff = np.zeros_like(base)
     play_prob = np.ones(len(squad))
     shifts = []

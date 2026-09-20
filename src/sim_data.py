@@ -703,13 +703,63 @@ def blend_roles(depth: pd.DataFrame, rates: pd.DataFrame,
     return roles
 
 
+def snap_participation(season: int) -> tuple[dict[tuple[str, str], float], set[str]]:
+    """({(team, player_key): offensive snaps per team game}, teams covered).
+
+    The denominator runs from the player's first appearance for that team, not
+    from the start of the window: a rookie who has played every snap of two
+    games is at 1.0, not at 2/19. Used by the P31 pool trim, where a player
+    carrying target share he will never use dilutes everyone who does.
+
+    The second return value is the teams the feed covers. A player missing from
+    a covered team has taken no offensive snap, which is the case the trim
+    exists for, so he reads as 0; a team missing altogether reads as unknown,
+    so a broken pull cannot empty a whole pool.
+    """
+    import nfl_data_py as nfl
+
+    from .ingest_injuries import player_key
+
+    try:
+        sn = nfl.import_snap_counts([season - 1, season])
+    except Exception:  # noqa: BLE001 - the trim is optional; no data means no trim
+        return {}, set()
+    if sn.empty:
+        return {}, set()
+    sn = sn[["season", "week", "team", "player", "offense_pct"]].copy()
+    sn["pct"] = sn["offense_pct"].fillna(0.0).clip(0.0, 1.0)
+    sn["t"] = sn["season"] * 100 + sn["week"]
+    team_weeks = sn.groupby("team")["t"].apply(lambda s: np.sort(s.unique()))
+    out = {}
+    for (team, player), g in sn.groupby(["team", "player"]):
+        weeks = team_weeks.get(team)
+        if weeks is None or not len(weeks):
+            continue
+        since = int((weeks >= g["t"].min()).sum())
+        if since <= 0:
+            continue
+        out[(team, player_key(team, player))] = float(g["pct"].sum() / since)
+    return out, set(team_weeks.index)
+
+
 def player_roles(season: int, pbp: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     """Every current skill player's expected share of each opportunity type,
     before injuries."""
+    from .ingest_injuries import player_key
+
     depth, as_of = current_depth(season)
     rates = usage_rates(pbp, season)
     priors = rank_priors(pbp[pbp["season"] == season - 1], season - 1)
-    return blend_roles(depth, rates, priors), as_of
+    roles = blend_roles(depth, rates, priors)
+    if config.USAGE_PARTICIPATION_TRIM:
+        part, covered = snap_participation(season)
+        roles["participation"] = [
+            part.get((t, player_key(t, n)), 0.0 if t in covered else np.nan)
+            for t, n in zip(roles["team"], roles["player"])
+        ]
+    else:
+        roles["participation"] = np.nan
+    return roles, as_of
 
 
 def qb_scramble_rates(pbp: pd.DataFrame, current_season: int) -> tuple[dict[str, float], float]:

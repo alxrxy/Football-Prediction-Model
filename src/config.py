@@ -105,6 +105,21 @@ PENALTY_REPLAY = os.getenv("PENALTY_REPLAY", "1").strip().lower() in ("1", "true
 # on one week, so it is off unless asked for.
 PROPS_BIAS_ADJUST = os.getenv("PROPS_BIAS_ADJUST", "0").strip().lower() in ("1", "true", "yes")
 
+# P31. Drop a depth-chart player from the simulated pool when his offensive
+# snap participation is below USAGE_MIN_PARTICIPATION, before shares are
+# normalised. 10.1% of every team's target share sits on players who have
+# never taken a snap this season; the vector sums to 1.131, and normalising
+# takes that excess out of everyone proportionally, so the biggest shares pay
+# the most of it. Out of sample over 2025 weeks 11-18, replayed on the depth
+# chart as it stood, the trim moves the top target-share quartile from 0.801
+# to 0.919 of realised, brings the per-team sum to 0.996 and improves share
+# MAE from 0.0430 to 0.0424. Off until it has been compared against a live
+# Sunday with P10 inactives applied, since P10 attacks the same defect.
+# Flipping it changes simulated output, so stored game_simulations and any
+# props ranked against them go stale and must be regenerated.
+USAGE_PARTICIPATION_TRIM = os.getenv("USAGE_PARTICIPATION_TRIM", "0").strip().lower() in ("1", "true", "yes")
+USAGE_MIN_PARTICIPATION = float(os.getenv("USAGE_MIN_PARTICIPATION", "0.10"))
+
 # Claude API: the one metered piece of the stack. Low effort suits short,
 # data-grounded answers; the daily cap stops a runaway page or loop from
 # running up a bill (src/claude_ai.py refuses calls past it).
