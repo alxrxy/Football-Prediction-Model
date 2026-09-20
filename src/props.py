@@ -215,12 +215,10 @@ STRUCTURAL_HOLDOUTS: dict[tuple[str, str], str] = {}
 # books' player name, market). Remove each entry once its item is fixed or the
 # game has kicked off. A KNOWN_DEFECTS label still applies to the player's
 # other props.
-PROP_HOLDOUTS = {
-    ("2026_02_SEA_ARI", "Drew Lock", "player_rush_yds"): (
-        "Drew Lock rushing yards (P28): the simulation has Lock as SEA's QB2 behind Darnold, so his projection "
-        "is near zero while the books price him as the starter. Held out until the starter mismatch is fixed."
-    ),
-}
+# Cleared 2026-09-20: the Drew Lock entry assumed the simulation had him at
+# ~0 behind Darnold. With Darnold ruled out he is SEA's only passer and
+# simulates 2 carries for 13 rushing yards, so there is nothing to hold out.
+PROP_HOLDOUTS: dict[tuple[str, str, str], str] = {}
 
 # A quarterback the books price as a starter whose simulation has him at a
 # median of zero is not a disagreement about the player, it is a disagreement
@@ -250,18 +248,13 @@ def _starter_mismatch(market: str, position: str, line, q: dict) -> str | None:
 # ranking. Keyed by (game_id, the books' player name), or (game_id, "team:XXX")
 # for every prop of that team's players. Remove each entry once its item is
 # fixed or the game has kicked off.
-KNOWN_DEFECTS = {
-    ("2026_02_SEA_ARI", "Drew Lock"): (
-        "Known defect (P28): books price Lock as SEA's passer and post no Darnold line, but the simulation "
-        "has him as QB2 behind Darnold (median 0 passing yards). This gap is a starter-designation mismatch, "
-        "not a read on Lock. Not yet diagnosed."
-    ),
-    ("2026_02_CAR_ATL", "team:ATL"): (
-        "Known issue, treat with caution (P28): ATL's starting QB is unsettled. The simulation splits the passing "
-        "60/40 Tua/Cooper Rush, while the books price Rush (who started week 1). Every ATL projection depends on "
-        "which one plays."
-    ),
-}
+# Both 2026 week-2 entries (SEA Drew Lock, ATL team-wide) were cleared on
+# 2026-09-20 once the gameday reports resolved the quarterback in each case:
+# Darnold is ruled out and Lock simulates 236 pass yds, and ATL's Tua, Penix
+# and Strand are all inactive so Cooper Rush takes 100% of the passing rather
+# than the 60/40 split the ATL note described. Neither note was true any more,
+# and a stale caveat is worse than none.
+KNOWN_DEFECTS: dict[tuple[str, str], str] = {}
 
 
 def bias_adjust(p: float, market_key: str, position: str | None = None) -> float:

@@ -105,6 +105,80 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-09-20 — Anytime-TD tab wired in, on the live engine, with its caveats rewritten to what is actually broken
+
+The TD list has been unreachable since 2026-09-18, waiting on the usage fixes. Those have all shipped, so it is
+live at `#/nfl/props/td`. Display and data only; the engine and the stored simulations are untouched.
+
+**It did not need the old engine.** `td_props` is a pure consumer of stored simulation box scores plus its own
+lines file - no separate prediction path - so it reads whatever the last run produced. That is today's 16:19Z
+sims, carrying k32+fb (P25), P24, PENALTY_REPLAY, P27 and P10. No re-simulation was needed and there was no
+"built against an older engine" problem to solve. The blocker was the lines, not the engine: the file still held
+the 4-game 09-17 sample, three of which kicked off at 17:00Z today.
+
+**Lines re-pulled** for the six games still to play - 6 live calls, quota 254 -> 248. The file now holds 9 games
+(6 fresh, 3 carried forward from the same week).
+
+**A missing filter, found on the way.** `td_props.rank` had no started-game hold-back, though `props.rank` has
+had one all along. On the first run **12 of the top 25 sat on games kicking off within the minute**. It now
+shares `props._kicked_off` and returns a `started` bucket: 127 players priced across the 6 live games, 60 rows
+held back, 1 held out on gap. `games_covered` counts only games still being ranked, with `games_started`
+reported separately, so the header and the sample line can no longer contradict the board beneath them.
+
+**The caveats were rewritten to the ones that are real today**, in all three places that carry them - the module
+docstring, the `NOTE` served in the JSON, and the banner in `TdPropsPage.jsx`, which held its own hardcoded copy
+and would otherwise have kept showing the old text whatever the backend said:
+
+| was said | now |
+|---|---|
+| "the replay-the-down fix is switched off this week" | **removed.** PENALTY_REPLAY has been on since 09-19; the 09-16 drive-length gap is closed |
+| Waller and the fullbacks missing from the box score | **removed.** Fixed by P25 / k32+fb. Verified in today's sim, not taken from the log: Darren Waller appears as CAR TE3 with anytime_td 0.0434 |
+| pocket QBs scrambling at the league rate | **removed.** Fixed by P24 (pocket-QB rush-attempt error 1.22 -> 0.26) |
+| - | **added: P18.** First-and-goal converts .323 against a real .486. Diagnosed 09-16, deferred, still open, and the defect that matters most for a market settled at the goal line |
+| - | **added: the TD-level bias.** The engine now runs **~8.3% hot** on touchdowns (5.14 offensive TDs a game against the 4.75 the market totals imply, over this week's slate). No bias correction is fitted for this market, so it is raw in every number |
+
+Re-flagging the two fixed bugs was considered and rejected: a caveat that names a defect which no longer exists
+is as misleading as one that hides a live defect. Both are recorded in code comments as deliberately dropped, so
+they are not quietly re-added later.
+
+Note the bias is the **opposite sign** to the 09-16 measurement the list was built under (sim TD share .196 vs
+real .220 then). PENALTY_REPLAY is the obvious cause - more possessions and plays - but that is an inference, not
+a measurement, and nothing has been fitted against it. On the live board the two sides sit close in aggregate:
+sim 19.1% against a devigged market 18.2%, sim lower on 43% of 127 players.
+
+**Honest summary of the tab's status.** On the engine side it is the best the project can currently do: it runs
+on the freshest state, and the two defects it shipped with are genuinely gone. It is still labelled
+`exploratory`, because P18 is open and the ~8.3% TD-level bias is uncorrected. It is not "fixed", it is
+"differently caveated", and the page says so.
+
+**Explanations deliberately not built.** `td_props` has no Claude explanation path; adding one needs its own
+`_describe`, a TD-specific prompt and page wiring. Held as a separate scoped task; the tab is live without it.
+
+### Stale hand-written labels cleared the same day
+
+Both 2026 week-2 entries in `props.KNOWN_DEFECTS` described situations the gameday reports had already resolved,
+and a stale caveat is worse than none:
+
+- **CAR@ATL (team-wide).** Said the simulation "splits the passing 60/40 Tua/Cooper Rush". Tua, Michael Penix Jr.
+  and Jack Strand are all on ATL's posted inactive list, so Cooper Rush takes **100%** of it - 31 attempts, 225
+  yards median. Resolved by P10 that morning, not by any model change.
+- **SEA Drew Lock**, and its `PROP_HOLDOUTS` companion. Both asserted Lock simulates at a median of 0 behind
+  Darnold. Darnold is ruled out; Lock is SEA's only passer at **236 passing yards**, with 2 carries for 13
+  rushing yards, so there was nothing left to hold out.
+
+Both dicts are now empty, with comments recording why.
+
+**No starter-value override was applied, and none should be.** The request was to hand ATL a manual adjustment
+for Rush being the confirmed starter. That is P28 part 2, tested and rejected earlier today: it fails criteria 3,
+5 and 6, and the flat rule it would replace correlates **+0.250** with the cover residual against the proposal's
+**-0.021**. `corr(QB term, market spread) = -0.324` - the market already prices quarterback changes, and ATL's
+is public. Separately, `QB_EXPECTED_STARTER` would have made this game **worse**: nflverse names **Tua** as ATL's
+expected week-2 starter, and he is inactive. The flag being off is what protected CAR@ATL today.
+
+Tests: 438 pass across 13 files. Dashboard build clean (55 modules).
+
+---
+
 ## 2026-09-20 — P33 found and FIXED on the live Sunday: rosters read hours early were stored as posted inactive lists
 
 Found while auditing the 12:00 CDT refresh for the P10/P31 comparison. The refresh reported "27 team lists

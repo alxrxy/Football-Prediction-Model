@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import GamesPage from './GamesPage.jsx'
 import GameView from './GameView.jsx'
-import PropsPage from './PropsPage.jsx'
+import PropsSection from './PropsSection.jsx'
 import LivePage from './LivePage.jsx'
 import PastWeeks from './PastWeeks.jsx'
 import RecordPage from './RecordPage.jsx'
@@ -11,6 +11,7 @@ import './hub.css'
 // The NFL tab: three full-page sections, plus the track record.
 //   #/nfl/games          every game of the week; #/nfl/game/<id> opens one
 //   #/nfl/props          best props of the week
+//   #/nfl/props/td       anytime-TD props, exploratory (see PropsSection.jsx)
 //   #/nfl/live           games in progress
 //   #/nfl/record         track record and backtest
 //   #/nfl/past           finished weeks, projected vs actual
@@ -24,8 +25,8 @@ const SECTIONS = [
 
 const parse = () => {
   const parts = window.location.hash.replace(/^#\/?/, '').split('/')
-  if (parts[1] === 'game' && parts[2]) return { section: 'games', gameId: decodeURIComponent(parts[2]) }
-  return { section: parts[1] || 'games', gameId: null }
+  if (parts[1] === 'game' && parts[2]) return { section: 'games', gameId: decodeURIComponent(parts[2]), sub: null }
+  return { section: parts[1] || 'games', gameId: null, sub: parts[2] || null }
 }
 
 export default function NflHub({ sport }) {
@@ -87,7 +88,7 @@ export default function NflHub({ sport }) {
       {route.gameId ? (
         <GameView sport={sport} gameId={route.gameId} feed={feed} onBack={() => go('games')} onPast={() => go('past')} />
       ) : route.section === 'props' ? (
-        <PropsPage />
+        <PropsSection sub={route.sub} />
       ) : route.section === 'live' ? (
         <LivePage feed={feed} sport={sport} onOpen={(id) => go(`game/${encodeURIComponent(id)}`)} />
       ) : route.section === 'record' ? (

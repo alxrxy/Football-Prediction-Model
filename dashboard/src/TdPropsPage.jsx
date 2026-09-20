@@ -71,9 +71,18 @@ export default function TdPropsPage({ tabs = null }) {
                 <p className="td-sample">
                   <span className="tag warn">Sample</span> {data.games_covered} of 16 games so far:{' '}
                   {Object.values(data.games || {})
+                    .filter((g) => !g.started)
                     .map((g) => g.game)
                     .join(', ')}
                   .
+                  {data.games_started ? (
+                    <>
+                      {' '}
+                      {data.games_started} more {data.games_started === 1 ? 'was' : 'were'} pulled earlier but{' '}
+                      {data.games_started === 1 ? 'has' : 'have'} already kicked off, so {' '}
+                      {data.games_started === 1 ? 'it is' : 'they are'} not ranked here.
+                    </>
+                  ) : null}
                 </p>
               ) : null}
               <BiasLine bias={data.bias} />
@@ -119,14 +128,19 @@ function ExploratoryBanner() {
           plan.
         </li>
         <li>
-          It runs on the same engine that still has an open drive-length gap (simulated drives are shorter than real
-          ones; the fix is built but switched off this week).
+          <b>The engine converts at the goal line far below real</b> (first-and-goal from inside 2.5 yards converts
+          .323 against a real .486). That is diagnosed and deferred, not fixed, and it is the defect that matters
+          most for a market settled on the goal line.
+        </li>
+        <li>
+          <b>The engine currently runs about 8.3% hot on touchdowns overall</b> — 5.14 offensive TDs a game against
+          the 4.75 the market totals imply, across this week&rsquo;s slate — and no bias correction has been fitted
+          for this market, unlike the yardage list. That sits raw in every number here.
         </li>
         <li>
           The market number is an estimate. Books only post Yes, so the vig is removed by scaling each book&rsquo;s
           prices to the touchdowns its game total implies, not by a two-sided price.
         </li>
-        <li>No bias correction has been fitted for this market, unlike the yardage list.</li>
       </ul>
     </div>
   )

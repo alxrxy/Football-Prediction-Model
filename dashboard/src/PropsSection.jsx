@@ -6,11 +6,12 @@ import TdPropsPage from './TdPropsPage.jsx'
 //   #/nfl/props/td    anytime TD props (td_props.json), exploratory
 // They share nothing but the section: separate data files, rankings and caveats.
 //
-// HELD, NOT WIRED IN (2026-09-18): the TD list waits on the usage fixes (P23-P26).
-// Nothing imports this file, so #/nfl/props/td falls through to PropsPage. To
-// turn it on, in NflHub.jsx: import PropsSection instead of PropsPage, add
-// `sub: parts[2] || null` to what parse() returns, and render
-// <PropsSection sub={route.sub} /> for the props section.
+// WIRED IN 2026-09-20, once the usage fixes it was waiting on had shipped
+// (P23/P24 scrambles, P25 k32+fb, P26 offsets, P27 throwaways) and the lines
+// were re-pulled against the live engine. The TD list stays labelled
+// "exploratory": P18 (goal-line conversion) is still open and the engine runs
+// ~8.3% hot on touchdowns with no bias correction fitted for this market.
+// See src/td_props.py for the current caveats; they are served in `note`.
 
 const TABS = [
   ['', 'Yardage / Reception Props', 'Over/under lines'],
