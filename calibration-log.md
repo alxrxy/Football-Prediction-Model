@@ -37,7 +37,7 @@ status only when its adoption test is met.
 | P7 | Do not use the CFB ML model's margins until its compression is explained | investigate | 2026-09-12 | mean \|ML margin\| 9.5 vs actual 24.7; MAE 20.6. *Correction 09-15: the "Georgia −27 vs market −69.5" example below used an in-play line (P15); DK closed −40.5* | n/a, diagnose first | investigate |
 | P8 | NFL: consider the ML margin (or a blend) as the headline number | model selection | 2026-09-14 | 9/13: ML SU 10/13 vs baseline 6/13, MAE 11.46 vs 13.10, Brier 0.214 vs 0.256; ATS both poor (4-8, 3-10) | ML MAE below baseline MAE over 4+ NFL weeks (~60 games), and not worse vs market | watch |
 | P9 | NFL injury term: check its magnitude | weight | 2026-09-14 | 9/13: \|injury adj\| ≥ 1 went 0-5 ATS, MAE 12.3 vs market 8.8; corr(injury term, cover residual) −0.00. 9/14 DEN@KC: term −0.95 toward DEN (−2.63 with real snap shares, P14), market already −2.5 with the same report; lost | fitted coefficient on the injury term (actual − market ~ injury) positive and significant over 100+ games. **Exclude 2026-09-17 DET@BUF**: its term (1.56) was set before P20, which understates DET's side (Pacheco on IR uncounted), and before P10/P21 — four players priced at the flat 0.55 with the official inactives already public. The fixed code would not produce that number, so the game cannot speak to this coefficient | watch |
-| P10 | Props: apply game-day inactives before simulating | data | 2026-09-14 | DAL@NYG: 4 projected players recorded nothing (N. Harris 5.3 car, Beckham, Cambre, Abanikanda), none on the injury list; Singletary took 10 touches + TD unprojected. **Widened 2026-09-17 (DET@BUF):** this is not a sequencing problem. There is no inactives ingestion path anywhere in the pipeline, and the ESPN feed structurally cannot supply one — a full league pull at 22:50Z returned only `Active` (614), `Questionable` (134), `Injured Reserve` (40), `Out` (9), `Doubtful` (3), with no gameday inactive designation. `ingest_injuries._status` would discard one anyway (see P20, P21). Consequence at T-75 min, with the official list already public: DET@BUF still priced 4 players at the flat questionable/limited 0.55 (D.J. Reed 0.75 pts, Cole Bishop, T.J. Sanders, Ty Johnson) when each was by then resolved to 0 or 1 | acquire a real inactives source first (ESPN gameday roster endpoint or equivalent), then re-sim after it lands; track "projected, no stats" rate weekly | proposed; **queued for the week of 2026-09-22** alongside 2A/P23 |
+| P10 | Props: apply game-day inactives before simulating | data | 2026-09-14 | DAL@NYG: 4 projected players recorded nothing (N. Harris 5.3 car, Beckham, Cambre, Abanikanda), none on the injury list; Singletary took 10 touches + TD unprojected. **Widened 2026-09-17 (DET@BUF):** this is not a sequencing problem. There is no inactives ingestion path anywhere in the pipeline, and the ESPN feed structurally cannot supply one — a full league pull at 22:50Z returned only `Active` (614), `Questionable` (134), `Injured Reserve` (40), `Out` (9), `Doubtful` (3), with no gameday inactive designation. `ingest_injuries._status` would discard one anyway (see P20, P21). Consequence at T-75 min, with the official list already public: DET@BUF still priced 4 players at the flat questionable/limited 0.55 (D.J. Reed 0.75 pts, Cole Bishop, T.J. Sanders, Ty Johnson) when each was by then resolved to 0 or 1 **Source found and confirmed 2026-09-19:** the ESPN core API per-competition roster flags inactives `didNotPlay` (DET@BUF: 8 BUF / 9 DET, incl. T.J. Sanders and Ty Johnson); 404 before posting. Week-1 payoff: 6 inactive projected players, 1.4% of projected touches (Kamara, N. Harris). See the 2026-09-19 P10 entry | acquire a real inactives source first (ESPN gameday roster endpoint or equivalent), then re-sim after it lands; track "projected, no stats" rate weekly | **built and validated on replay 2026-09-19; not yet run live.** Criteria 1-5 pass; criterion 6 (posting time) needs a live Sunday. New `inactives` table: paste `db/PASTE_INTO_SUPABASE.sql` to create it upstream (the local mirror is used until then). See the 2026-09-19 P10 build entry |
 | P11 | Props: rushing volume bands too narrow (game script) | investigate | 2026-09-14 | DAL@NYG: rush att in the 50% band 2/8, rush yds 1/8; team rush att −8 (trailing DAL), +9 (leading NYG). DEN@KC: leading KC 38 rush att vs median 25 (p90 31), trailing DEN 15 | 50% band hit rate for rush att in 40-60% over 10+ simulated games | **engine change applied 2026-09-15** (game-script play-calling): calibration rush att by final margin 21.4 → 32.5 vs real 20.7 → 31.6, was flat 24.1 → 27.9; league totals within 3%. The band test itself still needs 10+ graded games |
 | P12 | Run pregame sims before the first kickoff | process | 2026-09-14 | 12/13 week-1 sims written 23:11Z, after kickoff, so only DAL@NYG props are gradeable | n/a | proposed |
 | P13 | NFL prior-season rating must be QB-conditional (weight the prior by the expected starter's games, or add a QB-change term) | logic | 2026-09-15 | DEN@KC: KC's 2025 rating includes 146 backup-QB plays at −0.347 EPA; Mahomes-only prior moves KC +2.9 pts, edge −3.46 → −0.56, flag off. Scope: 11/32 teams shift ≥ 1 pt from non-primary starts (NYJ +5.1, IND +3.8, KC +2.9) | rebuild NFL training with QB-conditioned prior; holdout MAE vs line must not get worse, and weeks 1-4 MAE should improve | **tested 2026-09-15, not adopted.** Starter-games prior (≥ 4 starts): baseline wks 1-4 2016-25 MAE 10.46 → 10.56 (moved games 10.08 → 10.53); ML 2025 holdout MAE 10.08 → 10.10, wks 1-4 8.98 → 9.13. Fails both parts. Code kept behind `QB_CONDITIONAL_PRIOR=0` |
@@ -101,6 +101,105 @@ NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
 
 ---
+
+## 2026-09-19 — P10 built: gameday inactives; validated on replay; not yet run live
+
+**Built.**
+- `src/ingest_inactives.py`: scoreboard → one roster call per team → `didNotPlay` players → athlete record for the
+  full name (cached). A 404 or no flagged players means "not posted" and nothing is written. Games more than 12 h
+  from kickoff, or already final, are skipped (`--replay` takes the whole week and stores nothing).
+  `first_seen_at` is kept across pulls, so posting time gets measured.
+- **New `inactives` table** (SQLite schema, `db/PASTE_INTO_SUPABASE.sql`, `db.TABLE_KEYS`). It is separate from
+  `injuries`, whose key has no source column: an ESPN injury re-pull would otherwise overwrite an inactive row and
+  flip the player to active. Until the table exists in Supabase, rows go to the local SQLite mirror through
+  `upsert_or_mirror` and are read back with `select_merged`.
+- `features.apply_inactives`, applied in `FeatureContext` (baseline, ML features and sims) and in the dashboard
+  export. For a team with a posted list: inactive → play probability 0 ("inactive"); a reported questionable /
+  doubtful / probable player not on the list → 1.0 ("active"); Out and IR untouched. An unreported inactive is added
+  at his snap share, 0 if he has none. Only the report's current week, and the latest pull per team-game, are used.
+- Hook: `ingest_injuries.run` (NFL) fetches inactives after the injury report.
+- Tests: 13 new checks in `test_injury_report`; all 12 suites pass; the dashboard builds. The game page shows the
+  status text ("inactive" / "active") as it does for any other status.
+
+**Validation against the written criteria** (replay of weeks 1 and 2, read-only):
+
+| criterion | result | verdict |
+|---|---|---|
+| 1. inactives resolve to our players | week 1: 88/91 skill-position (97%); week 2: 4/4. All four P10 DET@BUF players right: T.J. Sanders and Ty Johnson inactive, D.J. Reed and Cole Bishop active. The 3 week-1 misses (Miller Moss, Cambre, Abanikanda) are not on today's depth chart, which is replay staleness rather than the join | pass |
+| 2. 404 / empty → nothing written | test | pass |
+| 3. precedence rules | tests: inactive 0, not-listed Q/D/P 1.0, Out untouched, unposted team unchanged, a past week's list ignored, latest pull wins | pass |
+| 4. DET@BUF rescored | DET −5.45 → −4.23, BUF −4.51 → −4.27. Reed, Maddox, Bishop and DJ Moore Q → active; Sanders, Ty Johnson, Blake Miller, Mahogany and others inactive. Rescored on the current stored week-2 pull; the 9/17 pre-kickoff pull was overwritten | pass |
+| 5. week-1 replay | the name join finds 11 projected players inactive, not the 6 by gsis id. The 9 still on the depth chart all go to zero share, it passes down (Kamara → Kendre Miller, Claiborne → DeeJay Dallas), and team shares sum exactly as before | pass |
+| 6. posting time | not measurable until a live Sunday; `first_seen_at` records it | open |
+
+Week 1 had 236 inactives across 32 lists (~7.4 a team). Of all 236, 154 match a player in our roles, snap counts or
+injury report. The rest have no snaps on record (elevated practice-squad players and deep reserves) and cost
+nothing.
+
+**Not yet live:** no list has been stored (no upcoming game has one posted). The first real use is the Sunday
+windows.
+
+## 2026-09-19 — P10 design stage: ESPN gameday inactives confirmed; build criteria written down
+
+Read-only diagnosis. No production code.
+
+**Source, confirmed in our environment.** ESPN core API,
+`/v2/sports/football/leagues/nfl/events/{event}/competitions/{event}/competitors/{team}/roster`: one call per team,
+event and team ids from the site scoreboard (`?week=N&seasontype=2&dates=YYYY`; the date-range form returns 400).
+- DET@BUF (final): BUF 55 entries (53 + 2 elevations), DET 56. **`didNotPlay: true` on 8 and 9 players**, exactly
+  roster size minus the gameday active limit. Every dressed player has a statistics object and no inactive has one,
+  so this is the inactive list, not "took no snaps". DET's list has Blake Miller and Mahogany (ruled out in the 9/17
+  snapshot); BUF's has T.J. Sanders and Ty Johnson, two of the four players priced at the flat questionable 0.55 on
+  9/17 (P10 evidence).
+- `active` is false even for starters, so it is unusable. Use `didNotPlay` only.
+- **Before posting, the endpoint returns HTTP 404**, not an empty list (all Sunday games at T−35h). Treat both 404
+  and empty as "not posted yet".
+- **Posting time not verified by us.** The reference implementation (liddar12/NFL2026 PR #85) reports ~10 h before
+  kickoff; the NFL deadline is ~90 min. Only checkable on Sunday morning.
+- Entries carry ESPN athlete ids and abbreviated names ("K. Allen", "Johnson").
+
+**Join.** nflverse seasonal rosters carry `espn_id`: 97.8% of our 579 simulated skill players map to a gsis id. On
+DET@BUF, 89/111 game-roster entries joined; all 17 inactives are real players and 12 joined directly. The misses
+are OL and rookies (Blake Miller, Mahogany, Reed-Adams, Bowry, McLaughlin), which matter to the injury layer
+(Miller was 1.80 pts). Chosen join, with no schema change: fetch each inactive's athlete record (≤ ~9 calls per
+team) for the full display name, then match by `player_key(team, name)`, exactly as the ESPN injury rows already
+match.
+
+**Payoff, measured on week 1** (14 simulated games, final, rosters available): 6 of 280 projected players were
+inactive, carrying **1.4% of projected touches**, concentrated in RB2s: Kamara 8.1 and Najee Harris 6.6 touches (the
+DAL@NYG case in P10's evidence), plus Tolbert, Claiborne, Ty Johnson, Sturdivant. That explains **6 of the 53**
+"projected but recorded no stats" players; the other 47 were active and simply got no touches, a shares question. So
+the props payoff is targeted (the RB2 / backup cases) rather than broad. The injury layer benefits separately:
+questionable players resolved to 0 or 1 instead of a flat 0.55.
+
+**Design.**
+1. `ingest_injuries.fetch_inactives(week)`: scoreboard → per game, one roster call per team. 404 or no entries =
+   not posted, and nothing is written. Each inactive's athlete record gives the full name. Rows go to the existing
+   `injuries` table as source `espn_inactives`, status `out`, play_probability 0.
+2. Precedence in `features.latest_injury_report`: for a team whose inactives are posted this week, inactives are
+   out, and every reported questionable / doubtful / probable player not on the list is **active (play_probability
+   1.0)**, overriding the flat 0.55. Out and IR rows are untouched. Teams without a posted list are unchanged. Week
+   keying means a list can never gate a later game (each team plays once a week), so no removal step is needed.
+3. No new depth logic: `team_shares` and `passer_weights` already pass an absent player's share to the next man
+   down the depth chart.
+4. Operation: inactives post ~90 min before each window, so value needs a refresh (injuries → pipeline → re-sim →
+   props) after posting and before kickoff: three windows on a Sunday. Manual per window, or automated in
+   `live_tracker` (an extra step).
+
+**Build criteria (written before any code).**
+1. Replay DET@BUF and week 1: every inactive resolves to a name matching our roles or injury rows (all 4 P10
+   DET@BUF players; ≥ 95% of skill-position inactives).
+2. 404 / empty list: zero rows written, report unchanged (test).
+3. Precedence (tests): inactive → 0; reported Q/D/P not on the list → 1.0; Out/IR untouched; teams with no posted
+   list unchanged.
+4. DET@BUF replay: rescored injury term shows the four flat-0.55 players resolved (Sanders and Ty Johnson out,
+   Reed and Bishop active).
+5. Week-1 replay: the 6 inactive projected players get zero touches, their share passes down the depth chart, and
+   team totals are unchanged.
+6. Live, first Sunday: log when each game's list first appears, and set the polling window from that.
+
+**Estimate.** Ingestion + join ~1.5 h; precedence + tests ~1.5 h; CLI / pipeline hook + an "inactive" label on the
+page ~1 h; replay validation ~1 h: **~4-5 h**. Automating the Sunday windows in `live_tracker`: +1-2 h (optional).
 
 ## 2026-09-19 — QB rushing props back in the ranking, with their own offset; Lock's held out
 

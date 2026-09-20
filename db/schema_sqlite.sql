@@ -332,3 +332,23 @@ create table if not exists teams (
     pulled_at      text not null,
     primary key (team, sport)
 );
+
+-- Gameday inactives from ESPN (P10). One row per inactive player per game.
+-- Kept apart from injuries, whose key has no source column: an ESPN injury
+-- re-pull would otherwise overwrite an inactive row, and the player would then
+-- read as active.
+create table if not exists inactives (
+    game_id        text not null,
+    team           text not null,
+    player         text not null,
+    sport          text not null,
+    season         integer not null,
+    week           integer not null,
+    espn_id        text,
+    position       text,
+    snap_share     real,
+    source         text,
+    first_seen_at  text,
+    pulled_at      text not null,
+    primary key (game_id, team, player)
+);

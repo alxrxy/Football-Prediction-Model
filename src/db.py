@@ -32,6 +32,7 @@ TABLE_KEYS: dict[str, list[str]] = {
     "live_simulations": ["game_id", "polled_at"],
     "odds_snapshots": ["game_id", "book", "pulled_at"],
     "clv_log": ["game_id", "model_version", "market"],
+    "inactives": ["game_id", "team", "player"],
 }
 
 JSON_COLUMNS = {"components", "distributions", "td_scorers", "flags", "recent_scoring", "pregame",

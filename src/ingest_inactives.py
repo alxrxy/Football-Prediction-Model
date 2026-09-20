@@ -1,0 +1,161 @@
+"""NFL gameday inactives from ESPN (P10).
+
+    python -m src.ingest_inactives                       games in the window this week
+    python -m src.ingest_inactives --week 2 --replay     every game that week, finished ones too; nothing stored
+
+Each team's inactive list comes from ESPN's core API, one call per team:
+events/{event}/competitions/{event}/competitors/{team}/roster, where an
+inactive player has `didNotPlay: true`. (`active` is false even for starters,
+so it is ignored.) Before a list is posted the endpoint answers 404; that, or a
+roster with no one flagged, means "not posted yet" and writes nothing.
+
+Names in the roster are abbreviated ("K. Allen"), so each inactive's athlete
+record is fetched for his full name and matched by team and name with
+`player_key`, exactly as the ESPN injury rows are.
+
+Rows go to their own `inactives` table, not `injuries`: that table's key has no
+source column, so an ESPN injury re-pull would overwrite an inactive row and the
+player would read as active. `first_seen_at` records when a list first
+appeared, to measure how long before kickoff ESPN posts it.
+`features.apply_inactives` turns the lists into play probabilities.
+"""
+
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timedelta, timezone
+
+import requests
+
+from . import config, db
+from .features import parse_dt
+from .http import get_json
+from .ingest_injuries import BROWSER_UA, _resolve_team, _snap_shares, player_key
+
+CORE = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl"
+SOURCE = "espn_inactives"
+# How long before kickoff to start asking. The NFL deadline is ~90 minutes
+# before kickoff; a reference implementation saw lists ~10 h out. Generous
+# until first_seen_at has measured it on a real Sunday.
+LOOKAHEAD_HOURS = 12.0
+ATHLETE_CACHE_MINUTES = 60 * 24 * 30
+
+
+def _get(url: str, params: dict | None = None) -> tuple[int | None, dict | None]:
+    """(HTTP status, JSON). A 404 is an answer here (not posted yet), not a failure."""
+    try:
+        r = requests.get(url, params=params, headers={"User-Agent": BROWSER_UA}, timeout=20)
+    except requests.RequestException:
+        return None, None
+    if r.status_code != 200:
+        return r.status_code, None
+    try:
+        return 200, r.json()
+    except ValueError:
+        return 200, None
+
+
+def _athlete(ref: str | None) -> tuple[str | None, str | None]:
+    """(full name, position abbreviation) from an athlete $ref. Names don't change, so it is cached."""
+    if not ref:
+        return None, None
+    try:
+        a = get_json(ref, headers={"User-Agent": BROWSER_UA}, retries=2, cache_minutes=ATHLETE_CACHE_MINUTES,
+                     cache_tag="espn_athlete")
+    except Exception:  # noqa: BLE001 - the abbreviated name is the fallback
+        return None, None
+    return a.get("displayName") or a.get("fullName"), ((a.get("position") or {}).get("abbreviation") or None)
+
+
+def fetch(store: db.Store, season: int, week: int, now: datetime | None = None,
+          include_final: bool = False, shares: dict | None = None) -> tuple[list[dict], list[dict]]:
+    """(inactive rows, one status line per game). Nothing is written here."""
+    now = now or datetime.now(timezone.utc)
+    games = [g for g in store.select("games", {"sport": "nfl"}) if g.get("season") == season and g.get("week") == week]
+    by_teams = {(g["home_team"], g["away_team"]): g for g in games}
+    known = {(t.get("full_name") or t["team"]): t["team"] for t in store.select("teams", {"sport": "nfl"})}
+    status, sb = _get(f"{config.ESPN_NFL}/scoreboard", params={"week": week, "seasontype": 2, "dates": season})
+    if not sb:
+        print(f"  [warn] ESPN scoreboard unavailable (HTTP {status}); no inactives this run")
+        return [], []
+
+    rows, log = [], []
+    for event in sb.get("events") or []:
+        comp = (event.get("competitions") or [{}])[0]
+        state = ((comp.get("status") or {}).get("type") or {}).get("state")
+        kickoff = parse_dt(event.get("date"))
+        sides = {c.get("homeAway"): (c["team"]["id"], _resolve_team(c["team"].get("displayName") or "", known))
+                 for c in comp.get("competitors") or []}
+        home, away = sides.get("home", (None, None)), sides.get("away", (None, None))
+        game = by_teams.get((home[1], away[1]))
+        label = f"{away[1]} @ {home[1]}"
+        if game is None:
+            log.append({"game": label, "result": "no matching game"})
+            continue
+        if state == "post" and not include_final:
+            log.append({"game": label, "result": "final, skipped"})
+            continue
+        if not include_final and kickoff and kickoff - now > timedelta(hours=LOOKAHEAD_HOURS):
+            log.append({"game": label, "result": "outside window"})
+            continue
+        for team_id, team in (home, away):
+            code, data = _get(f"{CORE}/events/{event['id']}/competitions/{event['id']}/competitors/{team_id}/roster")
+            entries = (data or {}).get("entries") or []
+            flagged = [x for x in entries if x.get("didNotPlay")]
+            if not flagged:
+                log.append({"game": label, "team": team, "result": f"not posted (HTTP {code}, {len(entries)} entries)"})
+                continue
+            for x in flagged:
+                name, pos = _athlete((x.get("athlete") or {}).get("$ref"))
+                name = name or x.get("displayName")
+                rows.append({
+                    "game_id": game["game_id"], "team": team, "player": name, "sport": "nfl",
+                    "season": season, "week": week, "espn_id": str(x.get("playerId") or ""),
+                    "position": pos, "snap_share": (shares or {}).get(player_key(team, name)),
+                    "source": SOURCE,
+                })
+            lead = (kickoff - now).total_seconds() / 3600 if kickoff else None
+            log.append({"game": label, "team": team, "result": f"posted: {len(flagged)} inactive",
+                        "hours_before_kickoff": None if lead is None else round(lead, 2)})
+    return rows, log
+
+
+def run(season: int | None = None, week: int | None = None, replay: bool = False) -> list[dict]:
+    """Fetch this week's posted lists and store them (replay: every game, stored nowhere)."""
+    from .ingest_injuries import _infer_week
+
+    store = db.get_store()
+    season = season or datetime.now(timezone.utc).year
+    week = week or _infer_week(store, "nfl", season)
+    try:
+        shares = _snap_shares(season)
+    except Exception:  # noqa: BLE001 - snap shares only size the injury charge
+        shares = {}
+    rows, log = fetch(store, season, week, include_final=replay, shares=shares)
+    posted = [x for x in log if x["result"].startswith("posted")]
+    print(f"[inactives] nfl {season} week {week}: {len(rows)} inactive players, "
+          f"{len(posted)} team lists posted" + (" (replay: nothing stored)" if replay else ""))
+    for x in log:
+        if x["result"].startswith("posted") or x["result"].startswith("not posted"):
+            lead = x.get("hours_before_kickoff")
+            print(f"  {x['game']:<12} {x.get('team', ''):<4} {x['result']}"
+                  + (f", {lead:+.1f} h to kickoff" if lead is not None and not replay else ""))
+    if rows and not replay:
+        prior = {(r["game_id"], r["team"], r["player"]): r.get("first_seen_at")
+                 for r in db.select_merged(store, "inactives", {"season": season, "week": week})}
+        now = db.utcnow()
+        for r in rows:
+            r["first_seen_at"] = prior.get((r["game_id"], r["team"], r["player"])) or now
+        where = db.upsert_or_mirror(store, "inactives", db.stamp(rows))
+        print(f"  wrote {len(rows)} rows to inactives ({where})")
+    store.close()
+    return rows
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Ingest NFL gameday inactives from ESPN.")
+    parser.add_argument("--season", type=int)
+    parser.add_argument("--week", type=int)
+    parser.add_argument("--replay", action="store_true", help="every game of the week, finished ones too; stores nothing")
+    args = parser.parse_args()
+    run(args.season, args.week, args.replay)
