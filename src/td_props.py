@@ -31,11 +31,26 @@ scorer (fringe players it omits would make the devigged market slightly too
 high). When a book does post both sides, its pair is devigged directly.
 
 Why this is lower confidence than the yardage list. TD scoring is binary and
-high-variance; the scorer split is usage extrapolation, the simulator's least
-certain output; and the engine running this week has PENALTY_REPLAY off, so
-the drive-length gap measured 2026-09-16 (plays/drive 5.15 vs 5.80 real) is
-live in these numbers. No bias correction is applied: none has been fitted
-for this market. Nothing here is a validated edge.
+high-variance, and the scorer split is usage extrapolation, the simulator's
+least certain output.
+
+Caveats re-checked 2026-09-20 against the shipped engine. The 2026-09-16
+drive-length gap is closed: PENALTY_REPLAY has been ON since 2026-09-19, so
+the old "replay-the-down fix is switched off" warning is gone. Two of this
+list's original defects are also fixed and are not repeated in the NOTE -
+Waller and the fullbacks are back in the box score (P25, k32+fb), and pocket
+quarterbacks no longer scramble at the league rate (P24). What remains open:
+
+  P18   the engine converts first-and-goal far below real (1st & 0-2.5 .323
+        vs .486), diagnosed 2026-09-16 and deliberately deferred. It is the
+        most relevant unfixed defect for a market settled at the goal line.
+  bias  the engine now runs ~8.3% hot on touchdowns overall (5.14 offensive
+        TDs a game vs the 4.75 the market totals imply, over the 2026 week-2
+        slate). This is the opposite direction to the 09-16 measurement, and
+        no bias correction has been fitted for this market, so it is raw in
+        every number here.
+
+Nothing here is a validated edge.
 
 Writes data/td_props.json and dashboard/public/td_props.json.
 """
@@ -50,7 +65,7 @@ from datetime import datetime, timezone
 from statistics import mean
 
 from . import config, market
-from .props import _sims, match_player
+from .props import _kicked_off, _sims, match_player
 
 TD_LINES_JSON = config.DATA_DIR / "td_props_lines.json"
 TD_PROPS_JSON = config.DATA_DIR / "td_props.json"
@@ -66,12 +81,23 @@ TOP_N = 25
 TD_MAX_GAP = 0.20
 
 CONFIDENCE = "exploratory"
+# Caveats re-checked against the live engine on 2026-09-20. The two defects
+# this list shipped with on 09-16 are fixed and are deliberately NOT repeated
+# here: Darren Waller and the fullbacks are back in the box score (P25,
+# k32+fb) and pocket quarterbacks no longer scramble at the league rate (P24).
+# Re-flagging a fixed bug misleads in the other direction. What is named below
+# is what is still open.
 NOTE = (
-    "Lower confidence than the yardage props. Touchdowns are binary and high-variance, "
-    "the scorer split is usage extrapolation, and the engine behind it still has an open "
-    "drive-length gap (the replay-the-down fix is switched off this week). Books post "
-    "Yes only, so the market probability is an estimate: prices are scaled to what the "
-    "game total implies. No bias correction has been fitted for this market."
+    "Lower confidence than the yardage props. Touchdowns are binary and high-variance, and "
+    "the scorer split is usage extrapolation - the simulator's least certain output. Two "
+    "open issues sit in these numbers. P18: the engine converts first-and-goal far below "
+    "real (1st & 0-2.5 converts .323 against .486), which is the single most relevant defect "
+    "for a market decided at the goal line, and it is diagnosed but not fixed. And the engine "
+    "now runs about 8.3% hot on touchdowns as a whole (5.14 offensive TDs a game against the "
+    "4.75 the market totals imply, measured across the 2026 week-2 slate), with no bias "
+    "correction fitted for this market, so that sits raw in every number below. Books post "
+    "Yes only, so the market probability is an estimate: prices are scaled to what the game "
+    "total implies."
 )
 
 
@@ -194,11 +220,24 @@ def rank(lines: dict, sims: dict[str, dict]) -> dict:
                              "market_spread": sim.get("market_spread"), "market_total": sim.get("market_total")},
                 "sim_generated_at": sim.get("generated_at"),
             })
+    # A game already under way cannot be bet at its pregame line, so it is
+    # kept but never ranked, exactly as props.rank does. Without this the
+    # carried-forward games dominate the list: on 2026-09-20 twelve of the
+    # top twenty-five sat on games that had already kicked off.
+    now = datetime.now(timezone.utc)
+    started = [r for r in rows if _kicked_off(r.get("kickoff"), now)]
+    rows = [r for r in rows if not _kicked_off(r.get("kickoff"), now)]
+    # Mark each game so the page can say "pulled but already kicked off"
+    # instead of counting it among the games it is still ranking.
+    started_ids = {r["game_id"] for r in started} - {r["game_id"] for r in rows}
+    for gid, g in games.items():
+        g["started"] = gid in started_ids
     held = [r for r in rows if abs(r["gap"]) > TD_MAX_GAP]
     ranked = sorted((r for r in rows if abs(r["gap"]) <= TD_MAX_GAP), key=lambda r: -abs(r["gap"]))
     for i, r in enumerate(ranked, 1):
         r["rank"] = i
     return {"ranked": ranked, "held_out": sorted(held, key=lambda r: -abs(r["gap"])),
+            "started": sorted(started, key=lambda r: -abs(r["gap"])),
             "games": games, "unmatched": sorted(unmatched, key=lambda u: -(u["p_market_raw"] or 0)),
             "team_entries": team_entries, "unprojected_players": unprojected}
 
@@ -229,7 +268,10 @@ def run(top_n: int = TOP_N) -> dict:
         "devig": {"method": "per-book log-space scale to market_total x td_per_point (Yes-only prices)",
                   "td_per_point": TD_PER_POINT, "min_book_players": MIN_BOOK_PLAYERS},
         "model_weight": config.MODEL_MARKET_WEIGHT, "edge_buffer": config.EDGE_BUFFER, "max_gap": TD_MAX_GAP,
-        "games_covered": len(result["games"]),
+        # Only the games this list is still ranking, so the count cannot
+        # contradict the board below it.
+        "games_covered": sum(1 for g in result["games"].values() if not g.get("started")),
+        "games_started": sum(1 for g in result["games"].values() if g.get("started")),
         "games_in_week": len(lines.get("games") or {}),
         "priced": len(everything),
         "unmatched_players": len(result["unmatched"]),
@@ -242,12 +284,16 @@ def run(top_n: int = TOP_N) -> dict:
         "props": result["ranked"][:top_n],
         "more": result["ranked"][top_n:],
         "held_out": result["held_out"],
+        # Kept for the record but never ranked: their pregame lines can no
+        # longer be bet.
+        "started": result["started"],
     }
     config.ensure_dirs()
     TD_PROPS_JSON.write_text(json.dumps(payload), encoding="utf-8")
     print(f"[td-props] week {payload['week']}: {payload['priced']} players priced across "
           f"{payload['games_covered']} game(s), {len(result['held_out'])} held out, "
-          f"{len(result['unmatched'])} names unmatched, {result['team_entries']} team defences skipped "
+          f"{len(result['unmatched'])} names unmatched, {result['team_entries']} team defences skipped, "
+          f"{len(result['started'])} from games already kicked off, not ranked "
           f"-> {TD_PROPS_JSON}")
     b = payload["bias"]
     if b:
