@@ -128,6 +128,93 @@ def test_snap_share_falls_back_per_player():
     check("rookie keeps current", shares[player_key("NE", "Rookie")], 0.4)
 
 
+# --- gameday inactives (P10) --------------------------------------------------
+
+def _rep(player, status, team="BUF", week=2, prob=0.55, snap=0.8):
+    return {"player": player, "team": team, "sport": "nfl", "season": 2026, "week": week, "position": "WR",
+            "status": status, "play_probability": prob, "snap_share": snap, "source": "espn",
+            "pulled_at": "2026-09-17T22:50:00+00:00"}
+
+
+def _inact(player, team="BUF", week=2, pulled="2026-09-17T22:45:00+00:00", game="g1", snap=None):
+    return {"game_id": game, "team": team, "player": player, "sport": "nfl", "season": 2026, "week": week,
+            "position": "RB", "snap_share": snap, "source": "espn_inactives", "pulled_at": pulled}
+
+
+def test_inactives_override():
+    from src.features import apply_inactives
+
+    report = [_rep("T.J. Sanders", "questionable"), _rep("Cole Bishop", "questionable"),
+              _rep("Ed Oliver", "out", prob=0.0), _rep("Joey Bosa", "questionable", team="MIA")]
+    out = {r["player"]: r for r in apply_inactives(report, [_inact("T.J. Sanders"), _inact("Ty Johnson", snap=0.2)])}
+    check("a questionable player on the list is out", (out["T.J. Sanders"]["status"], out["T.J. Sanders"]["play_probability"]),
+          ("inactive", 0.0))
+    check("a questionable player not on it is active", (out["Cole Bishop"]["status"], out["Cole Bishop"]["play_probability"]),
+          ("active", 1.0))
+    check("an Out row is left as it is", (out["Ed Oliver"]["status"], out["Ed Oliver"]["play_probability"]), ("out", 0.0))
+    check("a team with no posted list is unchanged", out["Joey Bosa"], report[3])
+    check("an unreported inactive is added, at his snap share",
+          (out["Ty Johnson"]["status"], out["Ty Johnson"]["play_probability"], out["Ty Johnson"]["snap_share"]),
+          ("inactive", 0.0, 0.2))
+    out2 = {r["player"]: r for r in apply_inactives(report, [_inact("Nobody Known")])}
+    check("an unreported inactive with no snaps on record costs nothing", out2["Nobody Known"]["snap_share"], 0.0)
+    check("nothing posted: report unchanged", apply_inactives(report, []), report)
+
+
+def test_inactives_never_gate_a_later_week():
+    from src.features import apply_inactives
+
+    report = [_rep("Cole Bishop", "questionable", week=3)]
+    check("last week's list does not touch this week's report",
+          apply_inactives(report, [_inact("Cole Bishop", week=2)]), report)
+
+
+def test_inactives_latest_pull_wins():
+    from src.features import apply_inactives
+
+    report = [_rep("T.J. Sanders", "questionable"), _rep("Cole Bishop", "questionable")]
+    rows = [_inact("T.J. Sanders", pulled="2026-09-17T22:00:00+00:00"),
+            _inact("Cole Bishop", pulled="2026-09-17T22:30:00+00:00")]
+    out = {r["player"]: r for r in apply_inactives(report, rows)}
+    check("a corrected list replaces the earlier one", (out["T.J. Sanders"]["status"], out["Cole Bishop"]["status"]),
+          ("active", "inactive"))
+
+
+def test_inactives_fetch_not_posted_writes_nothing():
+    from src import ingest_inactives as ii
+
+    class Store:
+        def select(self, table, where=None):
+            if table == "games":
+                return [{"game_id": "g1", "season": 2026, "week": 2, "home_team": "BUF", "away_team": "DET"}]
+            return [{"team": "BUF", "full_name": "Buffalo Bills"}, {"team": "DET", "full_name": "Detroit Lions"}]
+
+    board = {"events": [{"id": "1", "date": "2026-09-18T00:15Z", "competitions": [{
+        "status": {"type": {"state": "pre"}},
+        "competitors": [{"homeAway": "home", "team": {"id": "2", "displayName": "Buffalo Bills"}},
+                        {"homeAway": "away", "team": {"id": "8", "displayName": "Detroit Lions"}}]}]}]}
+    roster = {"entries": [{"playerId": 1, "displayName": "T. Sanders", "didNotPlay": True, "athlete": {"$ref": "x"}},
+                          {"playerId": 2, "displayName": "J. Allen", "didNotPlay": False, "athlete": {"$ref": "y"}}]}
+    from datetime import datetime, timezone
+    now = datetime(2026, 9, 17, 22, 0, tzinfo=timezone.utc)
+    saved = ii._get, ii._athlete
+    try:
+        ii._get = lambda url, params=None: (200, board) if "scoreboard" in url else (404, None)
+        rows, log = ii.fetch(Store(), 2026, 2, now=now)
+        check("404 before posting: no rows", rows, [])
+        check("and it is logged as not posted", sum(x["result"].startswith("not posted") for x in log), 2)
+        ii._get = lambda url, params=None: (200, board) if "scoreboard" in url else (200, roster)
+        ii._athlete = lambda ref: ("T.J. Sanders", "DT")
+        rows, log = ii.fetch(Store(), 2026, 2, now=now)
+        check("posted: only didNotPlay players, full names", sorted({(r["team"], r["player"]) for r in rows}),
+              [("BUF", "T.J. Sanders"), ("DET", "T.J. Sanders")])
+        far = datetime(2026, 9, 16, 0, 0, tzinfo=timezone.utc)
+        rows, log = ii.fetch(Store(), 2026, 2, now=far)
+        check("a game outside the window is not asked", (rows, log[0]["result"]), ([], "outside window"))
+    finally:
+        ii._get, ii._athlete = saved
+
+
 if __name__ == "__main__":
     for fn in [
         test_dropped_player_not_charged,
@@ -139,6 +226,10 @@ if __name__ == "__main__":
         test_espn_stays_whole_pull,
         test_empty,
         test_snap_share_falls_back_per_player,
+        test_inactives_override,
+        test_inactives_never_gate_a_later_week,
+        test_inactives_latest_pull_wins,
+        test_inactives_fetch_not_posted_writes_nothing,
     ]:
         print(f"\n{fn.__name__}")
         fn()

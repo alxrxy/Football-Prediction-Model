@@ -342,6 +342,15 @@ def run(sport: str = "nfl", season: int | None = None, week: int | None = None) 
             "no injury adjustment rather than being assumed healthy."
         )
     store.close()
+    if sport == "nfl":
+        # Gameday inactives (P10): only games near kickoff are asked, and a list
+        # not posted yet writes nothing, so this is cheap on any other day.
+        from .ingest_inactives import run as ingest_inactives
+
+        try:
+            ingest_inactives(season, week)
+        except Exception as exc:  # noqa: BLE001 - the injury report stands without it
+            print(f"  [warn] inactives skipped: {exc}")
     return len(rows)
 
 

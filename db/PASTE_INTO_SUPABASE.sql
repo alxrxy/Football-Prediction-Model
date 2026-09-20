@@ -382,6 +382,27 @@ create table if not exists clv_log (
     primary key (game_id, model_version, market)
 );
 
+-- Gameday inactives from ESPN (P10). One row per inactive player per game.
+-- Kept apart from injuries, whose key has no source column: an ESPN injury
+-- re-pull would otherwise overwrite an inactive row, and the player would then
+-- read as active. first_seen_at records when a list first appeared.
+create table if not exists inactives (
+    game_id           text not null,
+    team              text not null,
+    player            text not null,
+    sport             text not null,
+    season            integer not null,
+    week              integer not null,
+    espn_id           text,
+    position          text,
+    snap_share        double precision,
+    source            text,                    -- 'espn_inactives'
+    first_seen_at     timestamptz,
+    pulled_at         timestamptz not null default now(),
+    primary key (game_id, team, player)
+);
+
+
 
 -- ---------------------------------------------------------------------------
 -- 2. INDEXES
@@ -453,12 +474,13 @@ alter table live_tracking    enable row level security;
 alter table live_simulations enable row level security;
 alter table odds_snapshots   enable row level security;
 alter table clv_log          enable row level security;
+alter table inactives        enable row level security;
 
 
 -- ---------------------------------------------------------------------------
 -- 5. VERIFY
 --
--- Expected output: fourteen rows, with these column counts.
+-- Expected output: fifteen rows, with these column counts.
 --     depth_charts  6      predictions  17
 --     odds          8      games        20
 --     weather       7      injuries     13
@@ -466,6 +488,7 @@ alter table clv_log          enable row level security;
 --     team_ratings 14      game_simulations 42
 --     live_tracking 28     live_simulations 29
 --     odds_snapshots 13    clv_log      35
+--     inactives    12
 -- ---------------------------------------------------------------------------
 
 select
@@ -485,7 +508,7 @@ where t.table_schema = 'public'
   and t.table_name in (
       'venues', 'teams', 'games', 'team_ratings', 'injuries',
       'depth_charts', 'weather', 'odds', 'predictions', 'game_simulations',
-      'live_tracking', 'live_simulations', 'odds_snapshots', 'clv_log'
+      'live_tracking', 'live_simulations', 'odds_snapshots', 'clv_log', 'inactives'
   )
 group by t.table_name
 order by t.table_name;

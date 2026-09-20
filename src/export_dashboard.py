@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import config, db
-from .features import latest_injury_report, parse_dt
+from .features import apply_inactives, latest_injury_report, parse_dt
 from .predict_baseline import SLATE_START_UTC_HOUR, slate_window
 
 SPORTS = {"ncaaf": "College Football", "nfl": "NFL"}
@@ -106,7 +106,10 @@ def build(sport: str) -> dict:
             odds_rows.setdefault(row["game_id"], []).append(row)
 
     injuries: dict[str, list[dict]] = {}
-    for row in latest_injury_report(store.select("injuries", {"sport": sport})):
+    report = latest_injury_report(store.select("injuries", {"sport": sport}))
+    if sport == "nfl":
+        report = apply_inactives(report, db.select_merged(store, "inactives"))
+    for row in report:
         injuries.setdefault(row["team"], []).append(row)
 
     out_games = []

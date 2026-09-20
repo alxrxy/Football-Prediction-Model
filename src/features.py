@@ -258,6 +258,71 @@ def latest_injury_report(rows: list[dict]) -> list[dict]:
     return [r for r in rows if current(r)]
 
 
+# Game statuses a posted inactive list settles (P10). Out and IR are left as
+# they are: an Out player is inactive anyway, and IR players are not on the
+# game roster at all.
+GAME_STATUSES = ("questionable", "doubtful", "probable")
+
+
+def apply_inactives(report: list[dict], inactives: list[dict]) -> list[dict]:
+    """The injury report with each team's posted gameday inactive list applied.
+
+    Only the report's current week is touched, so a list can never gate a later
+    game (each team plays once a week). Within it each (game, team) list is
+    read from its latest pull, so a correction ESPN makes replaces the earlier
+    list rather than adding to it. For a team whose list is posted:
+      - an inactive player is out: play probability 0, status "inactive";
+      - a questionable / doubtful / probable player not on the list is active:
+        play probability 1.0 rather than the flat status estimate;
+      - an inactive nobody reported is added, sized by his snap share (0 if
+        he has none on record: a healthy scratch with no snaps costs nothing).
+    Teams without a posted list are unchanged.
+    """
+    from .ingest_injuries import player_key
+
+    if not inactives or not report:
+        return report
+    weeks = [(r.get("season"), r.get("week")) for r in report if r.get("season") is not None]
+    if not weeks:
+        return report
+    current_week = max(weeks)
+    rows = [r for r in inactives if (r.get("season"), r.get("week")) == current_week]
+    latest: dict = {}
+    for r in rows:
+        k, when = (r.get("game_id"), r.get("team")), parse_dt(r.get("pulled_at"))
+        if when and (k not in latest or when > latest[k]):
+            latest[k] = when
+    rows = [r for r in rows if parse_dt(r.get("pulled_at")) == latest.get((r.get("game_id"), r.get("team")))]
+    if not rows:
+        return report
+    posted = {r["team"] for r in rows}
+    out = {player_key(r["team"], r["player"]): r for r in rows}
+
+    result, seen = [], set()
+    for r in report:
+        if r.get("team") not in posted or (r.get("season"), r.get("week")) != current_week:
+            result.append(r)
+            continue
+        k = player_key(r["team"], r.get("player"))
+        if k in out:
+            result.append({**r, "status": "inactive", "play_probability": 0.0})
+            seen.add(k)
+        elif (r.get("status") or "").lower() in GAME_STATUSES:
+            result.append({**r, "status": "active", "play_probability": 1.0})
+        else:
+            result.append(r)
+    for k, r in out.items():
+        if k not in seen:
+            result.append({
+                "player": r["player"], "team": r["team"], "sport": r.get("sport", "nfl"),
+                "season": current_week[0], "week": current_week[1], "position": r.get("position"),
+                "status": "inactive", "practice_trend": None, "play_probability": 0.0,
+                "snap_share": r.get("snap_share") or 0.0, "source": r.get("source"),
+                "pulled_at": r.get("pulled_at"),
+            })
+    return result
+
+
 class FeatureContext:
     """Pre-loaded lookups so building N games' features costs one DB read each."""
 
@@ -270,6 +335,8 @@ class FeatureContext:
         self.venues = {v["venue_id"]: v for v in store.select("venues")}
         self.weather = {w["game_id"]: w for w in store.select("weather")}
         self.injuries = latest_injury_report(store.select("injuries", {"sport": sport}))
+        if sport == "nfl":
+            self.injuries = apply_inactives(self.injuries, db.select_merged(store, "inactives"))
 
         ratings = store.select("team_ratings", {"sport": sport})
         # Keep the most recent week per team.
