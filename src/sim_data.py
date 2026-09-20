@@ -742,6 +742,34 @@ def snap_participation(season: int) -> tuple[dict[tuple[str, str], float], set[s
     return out, set(team_weeks.index)
 
 
+def expected_starters(season: int) -> dict[tuple[int, str], str]:
+    """{(week, team): gsis id} of the quarterback expected to start (P28).
+
+    nflverse schedules carry `home_qb_id` / `away_qb_id`: the actual starter for
+    a completed game and the expected one for a game still to play, so reading
+    it before kickoff adds no lookahead. The depth chart names the wrong starter
+    in 9.6% of team-games and the misses are the injury cases, which is exactly
+    when the passing props matter.
+    """
+    import nfl_data_py as nfl
+
+    try:
+        sch = nfl.import_schedules([season])
+    except Exception:  # noqa: BLE001 - fall back to the depth chart
+        return {}
+    out = {}
+    for _, r in sch.iterrows():
+        try:
+            week = int(r["week"])
+        except (TypeError, ValueError):
+            continue
+        for side in ("home", "away"):
+            qb, team = r.get(f"{side}_qb_id"), r.get(f"{side}_team")
+            if isinstance(qb, str) and isinstance(team, str):
+                out[(week, team)] = qb
+    return out
+
+
 def player_roles(season: int, pbp: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     """Every current skill player's expected share of each opportunity type,
     before injuries."""

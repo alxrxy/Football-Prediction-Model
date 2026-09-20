@@ -43,7 +43,7 @@ from .ingest_nflverse import PLAYS_PER_GAME
 from .predict_baseline import predict_game, slate_window
 from .sim_data import (
     DIST_EDGES, N_DIST, PLAYING_SLOTS, USAGE_CATEGORIES, SimTables, build_tables, load_pbp,
-    pass_rate_oe, player_roles, qb_scramble_rates, scramble_factor,
+    expected_starters, pass_rate_oe, player_roles, qb_scramble_rates, scramble_factor,
 )
 from .simulate import (
     DR_CLOCK, DRIVE_OUTCOMES, Offense, PlayerPool, SimResult, allocate_scorers,
@@ -82,6 +82,7 @@ class SimInputs:
     proe: dict[str, float]
     scramble_rates: dict[str, float] = field(default_factory=dict)   # P24, by player_id
     scramble_league: float = 0.0
+    starters: dict = field(default_factory=dict)   # P28, {(week, team): gsis id}
 
 
 def load_inputs(season: int) -> SimInputs:
@@ -89,7 +90,8 @@ def load_inputs(season: int) -> SimInputs:
     pbp = load_pbp((season - 1, season))
     roles, as_of = player_roles(season, pbp)
     rates, league = qb_scramble_rates(pbp, season)
-    return SimInputs(tables, roles, as_of, pass_rate_oe(pbp, season), rates, league)
+    starters = expected_starters(season) if config.QB_EXPECTED_STARTER else {}
+    return SimInputs(tables, roles, as_of, pass_rate_oe(pbp, season), rates, league, starters)
 
 
 # --- per-side strength -----------------------------------------------------
@@ -197,7 +199,31 @@ def _participation_trim(squad: pd.DataFrame, base: np.ndarray) -> np.ndarray:
     return out
 
 
-def team_shares(roles: pd.DataFrame, team: str, injuries: list[dict]):
+def _promote_starter(squad: pd.DataFrame, starter_id: str) -> pd.DataFrame:
+    """Make the expected starter this team's QB1 (P28 part 1).
+
+    `passer_weights` walks quarterbacks in depth order, so the depth chart alone
+    decides who throws. It names the wrong man in 9.6% of team-games, and those
+    are the injury weeks, when the passing props matter most. Reordering the
+    ranks leaves every other position untouched, and the rest of the room keeps
+    its relative order behind him.
+    """
+    qbs = squad.index[squad["position"] == "QB"]
+    if not len(qbs):
+        return squad
+    match = [i for i in qbs if squad.at[i, "player_id"] == starter_id]
+    if not match or squad.at[match[0], "rank"] == 1:
+        return squad
+    out = squad.copy()
+    rest = [i for i in qbs if i != match[0]]
+    rest.sort(key=lambda i: out.at[i, "rank"])
+    out.at[match[0], "rank"] = 1
+    for n, i in enumerate(rest, start=2):
+        out.at[i, "rank"] = n
+    return out.sort_values(["position", "rank"]).reset_index(drop=True)
+
+
+def team_shares(roles: pd.DataFrame, team: str, injuries: list[dict], starter_id: str | None = None):
     """Depth-chart skill players and each one's share of every opportunity
     type, with injuries applied.
 
@@ -208,6 +234,8 @@ def team_shares(roles: pd.DataFrame, team: str, injuries: list[dict]):
     across the whole backfield.
     """
     squad = roles[roles["team"] == team].sort_values(["position", "rank"]).reset_index(drop=True)
+    if starter_id:
+        squad = _promote_starter(squad, starter_id)
     report = {player_key(team, r["player"]): r for r in injuries if r.get("team") == team}
     cats = list(USAGE_CATEGORIES)
     base = squad[cats].to_numpy(float)
@@ -297,7 +325,10 @@ def simulate_one(game: dict, ctx: FeatureContext, inputs: SimInputs, n: int = N_
     seed = zlib.crc32(game["game_id"].encode())
     anchor = pred["model_margin_home"] if anchor is None else float(anchor)
 
-    squads = {team: team_shares(inputs.roles, team, ctx.injuries) for team in (home, away)}
+    week = int(game.get("week") or 0)
+    squads = {team: team_shares(inputs.roles, team, ctx.injuries,
+                                inputs.starters.get((week, team)))
+              for team in (home, away)}
     pools = tuple(player_pool(squads[t][0], squads[t][1]) for t in (home, away))
     scramble = tuple(scramble_factor(squads[t][0], pool.passer_weights, inputs.scramble_rates,
                                      inputs.scramble_league) for t, pool in zip((home, away), pools))
