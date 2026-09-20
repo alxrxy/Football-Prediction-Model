@@ -196,7 +196,8 @@ def test_inactives_fetch_not_posted_writes_nothing():
     roster = {"entries": [{"playerId": 1, "displayName": "T. Sanders", "didNotPlay": True, "athlete": {"$ref": "x"}},
                           {"playerId": 2, "displayName": "J. Allen", "didNotPlay": False, "athlete": {"$ref": "y"}}]}
     from datetime import datetime, timezone
-    now = datetime(2026, 9, 17, 22, 0, tzinfo=timezone.utc)
+    # 23:00Z against a 00:15Z kickoff is 1.25 h out, inside the P33 window.
+    now = datetime(2026, 9, 17, 23, 0, tzinfo=timezone.utc)
     saved = ii._get, ii._athlete
     try:
         ii._get = lambda url, params=None: (200, board) if "scoreboard" in url else (404, None)
@@ -211,6 +212,51 @@ def test_inactives_fetch_not_posted_writes_nothing():
         far = datetime(2026, 9, 16, 0, 0, tzinfo=timezone.utc)
         rows, log = ii.fetch(Store(), 2026, 2, now=far)
         check("a game outside the window is not asked", (rows, log[0]["result"]), ([], "outside window"))
+    finally:
+        ii._get, ii._athlete = saved
+
+
+def test_inactives_ignore_rosters_read_early():
+    """P33. Asked more than 2 h out, the endpoint answers 200 with stale
+    didNotPlay flags that look exactly like a real list, so the gate is the
+    clock, not the contents."""
+    from datetime import datetime, timedelta, timezone
+
+    from src import ingest_inactives as ii
+
+    class Store:
+        def select(self, table, where=None):
+            if table == "games":
+                return [{"game_id": "g1", "season": 2026, "week": 2, "home_team": "BUF", "away_team": "DET"}]
+            return [{"team": "BUF", "full_name": "Buffalo Bills"}, {"team": "DET", "full_name": "Detroit Lions"}]
+
+    board = {"events": [{"id": "1", "date": "2026-09-18T00:15Z", "competitions": [{
+        "status": {"type": {"state": "pre"}},
+        "competitors": [{"homeAway": "home", "team": {"id": "2", "displayName": "Buffalo Bills"}},
+                        {"homeAway": "away", "team": {"id": "8", "displayName": "Detroit Lions"}}]}]}]}
+    # A full-looking 7-man list, the shape the premature reads took on 2026-09-20.
+    roster = {"entries": [{"playerId": i, "displayName": f"P. {i}", "didNotPlay": True, "athlete": {"$ref": str(i)}}
+                          for i in range(7)]}
+    kick = datetime(2026, 9, 18, 0, 15, tzinfo=timezone.utc)
+    saved = ii._get, ii._athlete
+    try:
+        ii._get = lambda url, params=None: (200, board) if "scoreboard" in url else (200, roster)
+        ii._athlete = lambda ref: (f"Player {ref}", "WR")
+        for hours, want_rows, label in (
+            (8.6, 0, "a roster 8.6 h out is not asked (the 2026-09-20 IND case)"),
+            (4.3, 0, "nor one 4.3 h out (the DEN/LAC/SEA cases)"),
+            (2.5, 0, "nor one just outside the gate"),
+            (1.58, 14, "a 20:25Z game at its own window's refresh is inside"),
+            (1.25, 14, "and so is the T-75m refresh the schedule aims for"),
+        ):
+            now = kick - timedelta(hours=hours)
+            rows, log = ii.fetch(Store(), 2026, 2, now=now)
+            check(label, len(rows), want_rows)
+            if not want_rows:
+                check(f"  and it is logged as outside the window at {hours} h", log[0]["result"], "outside window")
+        # --replay must still reach a finished game, whatever the clock says.
+        rows, _ = ii.fetch(Store(), 2026, 2, now=kick - timedelta(hours=8.6), include_final=True)
+        check("--replay is not gated by the lookahead", len(rows), 14)
     finally:
         ii._get, ii._athlete = saved
 
@@ -230,6 +276,7 @@ if __name__ == "__main__":
         test_inactives_never_gate_a_later_week,
         test_inactives_latest_pull_wins,
         test_inactives_fetch_not_posted_writes_nothing,
+        test_inactives_ignore_rosters_read_early,
     ]:
         print(f"\n{fn.__name__}")
         fn()

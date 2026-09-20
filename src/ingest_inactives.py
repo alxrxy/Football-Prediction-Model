@@ -6,8 +6,11 @@
 Each team's inactive list comes from ESPN's core API, one call per team:
 events/{event}/competitions/{event}/competitors/{team}/roster, where an
 inactive player has `didNotPlay: true`. (`active` is false even for starters,
-so it is ignored.) Before a list is posted the endpoint answers 404; that, or a
-roster with no one flagged, means "not posted yet" and writes nothing.
+so it is ignored.) Before a list is posted the endpoint usually answers 404;
+that, or a roster with no one flagged, means "not posted yet" and writes
+nothing. Asked well before kickoff it can instead answer 200 with a roster
+whose `didNotPlay` flags are stale and look exactly like a real list, so only
+games within LOOKAHEAD_HOURS of kickoff are asked at all (P33).
 
 Names in the roster are abbreviated ("K. Allen"), so each inactive's athlete
 record is fetched for his full name and matched by team and name with
@@ -15,8 +18,9 @@ record is fetched for his full name and matched by team and name with
 
 Rows go to their own `inactives` table, not `injuries`: that table's key has no
 source column, so an ESPN injury re-pull would overwrite an inactive row and the
-player would read as active. `first_seen_at` records when a list first
-appeared, to measure how long before kickoff ESPN posts it.
+player would read as active. `first_seen_at` records when a list first appeared;
+note it is bounded by when we poll, and since the endpoint serves a
+plausible-looking roster early (P33) it cannot witness a true posting time.
 `features.apply_inactives` turns the lists into play probabilities.
 """
 
@@ -35,9 +39,19 @@ from .ingest_injuries import BROWSER_UA, _resolve_team, _snap_shares, player_key
 CORE = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl"
 SOURCE = "espn_inactives"
 # How long before kickoff to start asking. The NFL deadline is ~90 minutes
-# before kickoff; a reference implementation saw lists ~10 h out. Generous
-# until first_seen_at has measured it on a real Sunday.
-LOOKAHEAD_HOURS = 12.0
+# before kickoff, and this endpoint is only trustworthy inside that window
+# (P33): asked earlier it answers 200 with a roster carrying stale didNotPlay
+# flags, which is indistinguishable from a real list by size. Measured on the
+# live 2026-09-20 slate, 93% of the ruled-out players were missing from the 11
+# lists read 4.3-8.6 h out, against 39% for the 16 read at T-72m, and a
+# re-poll 15 min later returned them byte-identical. Worse than a wrong list:
+# features.apply_inactives treats a "posted" team as resolved and promotes its
+# unlisted questionable players to a play probability of 1.0.
+#
+# 2.0 h loses nothing, because run_sunday.py refreshes once per kickoff cluster
+# at T-75m: the widest lead any game has at its own window's refresh is 1.58 h
+# (a 20:25Z game refreshed at 18:50Z with the 20:05Z kickoffs).
+LOOKAHEAD_HOURS = 2.0
 ATHLETE_CACHE_MINUTES = 60 * 24 * 30
 
 
