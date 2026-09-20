@@ -104,6 +104,67 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-09-20 — P31 design stage: the pool, not the share maths. Validated out of sample; nothing built
+
+Follows the diagnosis entry below, whose six criteria were written down first and are not changed here.
+
+**The diagnosis needed correcting, and the correction is the finding.** The first reading blamed `usage_rates`'
+denominators (each player's share taken over the games he appeared in). Three candidate rewrites were tested on a
+walk-forward and **all of them overcorrected**: weighting by availability put the top quartile at 1.12, a common
+per-team-game denominator at 1.11, harder shrinkage was worse than doing nothing.
+
+The test that settled it: restrict each week's vector to the players who **actually took an offensive snap**, using
+real snap counts, and score the *current* share maths. The top quartile comes out at **0.973**. The share maths is
+right. What is wrong is who is in the pool.
+
+On the production roles vector for today's slate: **10.1% of every team's target share sits on depth-chart players
+who have never taken an offensive snap this season**, 153 of 495 skill players. The vector sums to 1.131,
+`team_shares` divides that out proportionally, and the players with the most share to lose pay the most of it.
+
+**A graded weight is the wrong shape.** Multiplying each share by the player's participation rate overshoots badly
+(top quartile 1.16 at participation^0.25, rising to 1.55 at participation^1.0), because a starter's participation is
+~0.9 and a fringe player's ~0.2, so it redistributes far more than the dead weight. The signal is binary: will he
+play.
+
+**True walk-forward.** 2025 weeks 11-18, production pipeline replayed on **the depth chart as it actually stood**
+before each week's games (nflverse publishes dated snapshots), usage from prior weeks only, participation from
+prior snap counts only. Ratio of predicted to realised target share, by quartile of realised share:
+
+| design | per-team raw sum | Q1 | Q2 | Q3 | Q4 | MAE |
+|---|---|---|---|---|---|---|
+| current | 1.172 | 1.255 | 0.953 | 0.979 | **0.801** | 0.0430 |
+| drop participation < 0.05 | 1.059 | 1.255 | 0.947 | 1.022 | 0.876 | **0.0414** |
+| drop participation < 0.10 | **0.996** | 1.162 | 0.885 | 1.053 | 0.919 | 0.0424 |
+| drop participation < 0.15 | 0.922 | 1.076 | 0.815 | **0.971** | 0.0441 |
+| drop participation < 0.20 | 0.832 | 0.844 | 0.776 | 1.104 | 1.026 | 0.0476 |
+
+(Q3/Q4 columns for the 0.15 row: 1.066 / 0.971.)
+
+**Against the six criteria, honestly: no single threshold passes all of them.**
+
+1. per-team sum within 0.02 of 1.00 — **passes at 0.10** (0.996), fails elsewhere.
+2. Q4 *and* Q1 both in 0.95-1.05 — **fails at every threshold**. 0.15 puts Q4 at 0.971 but Q1 at 1.076; 0.20 puts Q4
+   at 1.026 but Q1 at 0.844. The low-share quartile cannot be fixed by trimming, because trimming is what pushes its
+   remaining players up.
+3. MAE not worse than current — **passes at 0.05 and 0.10** (0.0414, 0.0424 vs 0.0430), fails from 0.15 up.
+4-6 (team totals, rushing, raw P(over)) — not yet measurable; they need a production run.
+
+**The stop rule does not fire.** It was "stop if the best design leaves Q4 outside 0.90-1.10": 0.10 gives 0.919 and
+0.15 gives 0.971, both inside.
+
+**What is on offer.** A binary participation trim recovers roughly 60% of the top-quartile gap out of sample
+(0.801 -> 0.919 at tau = 0.10), brings the per-team sum to 1.00, and slightly improves MAE. It does not close Q1 or
+Q2. tau = 0.15 buys another 5 points of Q4, which is the quartile the priced props live in, and pays for it in Q2
+(0.815) and MAE (0.0441).
+
+**Caveat worth keeping.** The walk-forward models no injuries, no inactives and no questionable players. P10 and P21
+act on exactly the same defect from the other side — a player who will not play holding share — so live behaviour
+with P10 running should be better than these figures. That also means part of the residual gap is not P31's to fix.
+
+Nothing built. The threshold is the user's call.
+
+---
+
 ## 2026-09-20 — Receiving under-bias: root cause found (P30 answered, P31 opened). Read-only, nothing built
 
 Item 1 of the accuracy backlog. No production code touched. All measurements read-only.
