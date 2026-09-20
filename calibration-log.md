@@ -60,6 +60,7 @@ status only when its adoption test is met.
 | P30 | Why did 2026 week 1 show a 0.80 / 1.24 receiving-yards tercile split when the 2025 walk-forward shows 0.97 / 1.01? | investigate | 2026-09-19 | The P17 walk-forward found the current engine, given each receiver's targets and pre-week category mix, within ~3% per tercile across 2025 weeks 11-18. The 2026-09-18 week-1 check (n=138 starters, one week) measured 0.80x yards for the top tercile and 1.24x for the bottom. Candidates: one-week noise and selection; or the SIMULATED target distribution (who gets how many deep vs short targets, which the walk-forward held at each player's own historical mix) rather than efficiency. Distinct from P17 (efficiency given targets) and P25 (target volume) | to be written into this log when the diagnosis is scoped, before it runs (process rule, 2026-09-19) | **answered 2026-09-20: one-week noise.** Re-measured on every comparable window with a bootstrap CI; the 2026 wk 1-2 top tercile is 0.906 [0.793, 1.051], CI spanning 1.00, and pooled compression is 3-5%. Not the props bias. See the 2026-09-20 entry | **closed** |
 | P31 | Receiving: the target-share vector is flattened, so priced receivers get ~0.85 of their real targets | bug fix | 2026-09-20 | Healthy priced receivers (n=124): sim/real targets 0.851, catch rate correct (0.673 vs 0.668), team pass att 0.972. By quartile of real target share (n=277) the sim/real share runs 1.065 / 0.800 / 0.803 / **0.755**. Localised to `usage_rates`, which takes each player's share over the games he appeared in: a rotational WR5 is carried at ~1.93x his per-team-game rate, the per-team vector sums to **1.131**, and `team_shares` divides it out proportionally so the biggest shares pay the most. 0.890 x 0.972 = 0.865 vs 0.851 measured end to end. This is the receiving under-bias (receptions -0.119, rec yds -0.099 raw vs market) | see the six criteria in the 2026-09-20 entry; Q4 and Q1 share ratios in 0.95-1.05 out of sample, team totals within 1%, rushing not regressed | **built 2026-09-20 behind `USAGE_PARTICIPATION_TRIM` (tau 0.10), off.** Q4 0.889 -> 0.978, team totals identical, receptions sim/line 0.845 -> 0.944. Criteria 4-6 pass, 1 and 3 fail narrowly, 2 half. Held off pending the P10-vs-P31 comparison after the first live Sunday |
 | P32 | Target-category shares are computed on overlapping sets but picked on disjoint ones | bug fix | 2026-09-20 | `_usage_events` builds `tgt_deep` / `tgt_short` over **all** targets including red-zone ones, while `simulate._credit` picks rz, then non-rz deep, then non-rz short — three disjoint buckets. Red-zone targets are counted twice. Measured on 2025 (230 receivers, 25+ targets): engine/true share median 0.990 deep, 1.001 short, per-player p10-p90 0.90-1.22; effect on simulated volume 0.998 targets, 0.996 yards, and terciles 1.005 / 1.000 / 1.000. Real but minor, and **not** part of P31: stage 4 of the P31 decomposition adds nothing (0.893 vs 0.890) | engine share within 2% of the true disjoint share at p10 and p90; no change to team totals | proposed, low priority |
+| P33 | Inactives: a roster read hours before kickoff is stored as a posted list | bug fix | 2026-09-20 | `ingest_inactives.fetch` treats HTTP 200 + any `didNotPlay` entry as a posted list, and `LOOKAHEAD_HOURS` asks 12 h out. On the live 9/20 slate that stored 11 late-window team lists (T-4.3h to T-8.6h) that are not inactive lists at all: **93% of their ruled-out players are missing from them** (28 ruled out, 26 absent), against 39% for the 16 genuine T-72m lists. SEA's 9-man list omits Sam Darnold, who is ruled out; DEN's list has 1 player and misses all 9. Re-polled 15 min later, every list was byte-identical, so they are stale content rather than a list still filling. **List size cannot separate them** (bogus lists run 6-9, genuine 7-12); lead time separates them perfectly, 16/16 vs 11/11. Consequence is worse than a bad list: `features.apply_inactives` treats any team with a "posted" list as resolved, so every *unlisted* questionable player is promoted to play probability 1.0 - RJ Harvey (DEN, questionable RB) was flipped questionable -> active off the 1-player list | no stored list for a game more than 2 h from kickoff; on a live Sunday the stored lists cover >= 40% of ruled-out players **in aggregate** (genuine 60.6% vs premature 7.1% on 9/20; a per-list threshold is invalid, since an IR player is never on a gameday inactive list and genuine per-team coverage runs 0-100%); the 16 genuine T-72m lists of 9/20 are unchanged by the fix | **applied 2026-09-20**: `LOOKAHEAD_HOURS` 12.0 -> 2.0 in `src/ingest_inactives.py`. Validated live at 16:17Z (16 lists / 153 rows accepted, unchanged; 7 games skipped). New test pins the gate at 8.6/4.3/2.5 h rejected vs 1.58/1.25 h accepted, against a full-looking 7-man roster so it cannot be re-derived from list size; suite 438 pass. The 11 premature lists (71 rows) deleted and the slate re-predicted, re-simmed and re-exported |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -101,6 +102,168 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-20 — P33 found and FIXED on the live Sunday: rosters read hours early were stored as posted inactive lists
+
+Found while auditing the 12:00 CDT refresh for the P10/P31 comparison. The refresh reported "27 team lists
+posted", but only 16 of them are real.
+
+**What the feed actually returns.** `ingest_inactives.fetch` asks every game within `LOOKAHEAD_HOURS = 12.0`
+of kickoff and calls a team "posted" on HTTP 200 plus **any** entry flagged `didNotPlay`. At 15:47Z that
+produced 16 lists for the 17:00Z games (T-72m, genuine) and 11 more for games 4.3-8.6 h away.
+
+The late ones are not inactive lists. Checked against each team's own injury report:
+
+| group | teams | ruled-out players | missing from the "posted" list |
+|---|---|---|---|
+| genuine, T-72m | 16 | 33 | 13 (**39%**) |
+| premature, T-4.3h to T-8.6h | 11 | 28 | 26 (**93%**) |
+
+SEA's 9-man list omits **Sam Darnold**, who is ruled out. DEN's list contains one player and misses all nine
+of its ruled-out players. LAC 3/3 missing, MIA 3/3, DAL 2/2, WAS 2/2. The 39% residual on the genuine lists is
+expected — an IR player is not on the gameday inactive list because he is not on the active roster.
+
+Re-polled read-only at 16:02Z, 15 minutes later: **every one of the 27 lists was identical**, so these are not
+lists still filling in. They are some other roster state the endpoint serves early.
+
+**Why the obvious gate does not work.** Premature lists run 1, 6, 6, 6, 7, 7, 7, 7, 7, 8, 9; genuine ones run
+7, 7, 7, 8, 8, 8, 9, 10, 10, 10, 11, 11, 11, 12, 12, 12. A minimum-size rule at 7 would still accept LAC's 7,
+MIA's 7 and SEA's 9 — all bogus — while rejecting three 6s that may be real on a healthier week. **Lead time
+separates them perfectly: 16/16 genuine inside T-120m, 11/11 bogus outside it.**
+
+**Why it matters more than a wrong list.** `features.apply_inactives` treats any team with a posted list as
+*resolved*: a questionable player **not** on the list is promoted from the flat 0.55 to play probability 1.0.
+So a bogus list does not merely add false inactives, it silently clears the whole team's injury doubt.
+Confirmed on today's data: **RJ Harvey (DEN, questionable RB) flipped questionable → active** on the strength
+of the one-player list.
+
+**Proposed fix (not built).** `LOOKAHEAD_HOURS = 12.0` → **2.0**, plus its comment. One constant. The 12 h
+value was provisional — the docstring says "generous until `first_seen_at` has measured it on a real Sunday",
+and this is that Sunday. Nothing else changes: the "no one flagged" path already writes nothing, and
+`--replay` bypasses the window check via `include_final`, so the replay validation is unaffected.
+
+It strands no window, because `run_sunday.py` already refreshes once per kickoff cluster at T-75m:
+
+| window | refresh fires | each game's lead at that moment |
+|---|---|---|
+| 12:00 CDT | 15:45Z | 17:00Z games at 1.25 h |
+| 15:05 CDT | 18:50Z | 20:05Z at 1.25 h, 20:25Z at 1.58 h |
+| 19:20 CDT | 23:05Z | 00:20Z at 1.25 h |
+
+All inside 2 h. Applying a later game's list during an earlier window was never needed — that game's own
+refresh collects it.
+
+**Known residue if adopted.** The 11 bogus lists are already stored. `apply_inactives` takes the latest pull
+per (game, team), so each is replaced the moment its own window re-polls: the 15:05 games self-heal at 18:50Z.
+**IND@KC does not** — at 18:50Z it is 5.5 h out, outside the new gate, so its bogus 6-man list stands until the
+23:05Z refresh. Either accept that (the SNF refresh corrects it before kickoff) or delete the 11 premature
+rows as part of the change.
+
+**Adoption test.** No stored list for a game more than 2 h from kickoff; the stored lists cover >= 40% of
+ruled-out players **in aggregate**; the 16 genuine T-72m lists of 9/20 come back unchanged.
+
+A *per-list* coverage threshold would be wrong and is deliberately not used: an IR player is not on the active
+roster and so never appears on a gameday inactive list, and genuine per-team coverage on 9/20 runs the whole
+range 0-100% (CHI's real 8-man list covers neither of its two ruled-out players). Only the aggregate
+separates the two populations, 60.6% against 7.1%.
+
+**APPLIED 2026-09-20.** `LOOKAHEAD_HOURS = 12.0 -> 2.0` in `src/ingest_inactives.py`, with the comment rewritten
+to carry this evidence. One constant; no other code changed.
+
+**Validated against the live feed** at 16:17Z, read-only, with the gate in place: **16 lists accepted, 153 rows —
+exactly the 16 genuine T-72m teams and exactly their original row count** (7+7+7+8+8+8+9+10+10+10+11+11+11+12+12+12
+= 153). Seven games skipped as outside the window: JAX@DEN, LV@LAC, SEA@ARI, WAS@DAL, MIA@SF, IND@KC, NYG@LA.
+Zero "not posted" responses, so nothing genuine was lost to the change.
+
+**Tests.** New `test_inactives_ignore_rosters_read_early` pins the gate at 8.6 h, 4.3 h and 2.5 h out (rejected)
+against 1.58 h and 1.25 h (accepted) — the two leads the Sunday schedule actually produces — and asserts
+`--replay` is still ungated. The roster it feeds is a full-looking 7-man list, so the test fails if anyone
+re-derives the gate from list size. `test_inactives_fetch_not_posted_writes_nothing` needed its clock moved from
+22:00Z to 23:00Z: its 2.25 h lead was inside the old window and is correctly outside the new one. Full suite
+**438 pass, 0 fail** across 13 files.
+
+**Stored rows cleaned up.** The 11 premature lists (71 rows) were deleted from `inactives`, backed up first. The
+table now holds 153 rows across the 16 genuine teams, and **RJ Harvey (DEN) is back to questionable / 0.55** from
+the false active / 1.0. Predictions, simulations, props and both exports were re-run afterwards on the corrected
+data — no re-ingest, so no odds or props quota was spent.
+
+**What this does not close.** P10's criterion 6 (how long before kickoff a list really posts) is *less*
+measurable now, not more: `first_seen_at` was already bounded by when we poll, and today showed the endpoint
+serves a plausible-looking roster hours early, so it cannot witness a true posting time at all. Measuring that
+needs a different signal than this endpoint's `didNotPlay` flag.
+
+**Affected right now, pending the fix** — distrust inactives and any questionable-player pricing for:
+DEN, JAX, LAC, LV, ARI, DAL, MIA, SEA, SF, WAS (all 15:05 CDT) and IND (19:20 CDT). The eight 12:00 CDT
+games are clean. The P10/P31 comparison below is unaffected: its 8-game clean slice agrees with the full sample.
+
+---
+
+## 2026-09-20 — P10 vs P31 measured on the live Sunday. P31 earns its place; recommend flipping it after today
+
+The comparison the P31 build entry called for, run on the 12:00 CDT window's refresh. **Neither flag was
+flipped:** every arm re-simulated the slate in memory with `simulate_nfl.run(store_results=False)`, so the
+stored `game_simulations` remain the trim-off production run (15:48:41Z). `USAGE_PARTICIPATION_TRIM` is read
+inside `load_inputs`, so each arm ran in its own process with the env var already set.
+
+**Method.** 14 games, 10,000 sims, identical per-game seeds (`zlib.crc32(game_id)`, independent of either
+flag), against the prop lines pulled at 15:47Z. Raw P(over) **without** the `BIAS_FIT` offsets, over every
+priced prop including the held-out ones, since the bias is a property of the simulation and not of the
+shortlist. A third arm monkeypatches `features.apply_inactives` to a no-op, because "does P10 alone close
+enough of the gap" cannot be read without a no-P10 control on the same sample.
+
+| arm | receptions (n=144) | rec yds (n=145) | all receiving (n=289) | gap closed |
+|---|---|---|---|---|
+| no P10, no P31 | 0.392 (−0.106) | 0.418 (−0.084) | 0.405 (**−0.095**) | — |
+| P10 only (production today) | 0.396 (−0.102) | 0.417 (−0.084) | 0.407 (**−0.093**) | **2.1%** |
+| P10 + P31 | 0.447 (−0.051) | 0.460 (−0.042) | 0.453 (**−0.046**) | **51.0%** |
+
+Market 0.498 / 0.501 / 0.500. Paired per-prop |gap| improvement from the trim: mean **+0.0197** (sd 0.0488,
+t **+6.87**, n=289); 201 props closer, 81 further, 7 unchanged. On the 8-game 12:00 window alone — the only
+lists past the NFL's 90-minute deadline, see the P33 entry above — the answer is the same: −0.094 → −0.050, 46.8% closed.
+
+**The two are near-orthogonal, and the code says why.** `apply_inactives` sets an inactive player's play
+probability to 0, and `team_shares` then *carries his share down the depth chart*: the per-team vector sum is
+conserved, so the flattening P31 attacks survives P10 untouched. P31 *deletes* share before `team_shares`
+normalises. P10 fixes **who** is credited; P31 fixes **the denominator**. Measured on today's chart: only
+**19.1%** of the trim's 8.27 raw target-share mass sits on players P10 marks inactive, and 111 of the 132
+trimmed players are not inactive at all.
+
+**Side effects, same seeds, same slate.**
+
+| check | trim off | trim on | verdict |
+|---|---|---|---|
+| 4. team totals (28 team-sides: pass att/yds, rush att/yds) | — | — | **pass, exactly 0.000% drift on all four**; the trim changes who is credited, not the play stream |
+| 5. RB rush yds raw gap | −0.045 | **−0.001** | improves |
+| 5. QB rush yds raw gap | +0.084 | +0.094 | already outside the 0.02 criterion before the trim; QBs are not in `TRIM_POSITIONS`, they gain only from the smaller denominator. Separate defect |
+| pass yds raw gap | +0.012 | +0.012 | unchanged |
+
+**What it costs.** Two priced players are trimmed while active: Germie Bernard (PIT WR4, participation 0.040),
+whose two props left the board entirely because a trimmed player gets no projection, and LaJohntay Wester
+(BAL WR5, 0.074), who moves from 0.535 to 0.157 against a market 0.381. Both sit just under the 0.10 cliff.
+2 of 291 priced receiving props.
+
+**Recommendation: turn `USAGE_PARTICIPATION_TRIM` on, after today's games finish.** The objection that held it
+off — that P10 might make it redundant — is now measured and false: P10 closes 2% of the receiving gap where
+P31 closes 51%, and they work on different halves of the defect. Flipping mid-Sunday would leave the eight
+in-progress early games' stored sims inconsistent with the rest of the slate, so the flip belongs after the
+slate completes, with `game_simulations` and the props regenerated and `BIAS_FIT` refitted afterwards.
+
+**Two caveats that stand, and are not closed by this result:**
+1. **Per-team sum overshoot.** Criterion 1 wants the raw per-team target-share sum within 0.02 of 1.00. The
+   trim takes it from 1.132 to **1.032** — a large improvement, still 0.012 outside. The pool is smaller than
+   the chart but not yet the right size.
+2. **Q1 overcorrection.** Criterion 2 wants Q4 *and* Q1 in 0.95-1.05. Q4 goes 0.889 → **0.978** and passes;
+   Q1 goes 1.086 → **1.118** and does not, with Q2 and Q3 overshooting to 1.09 and 1.11. Trimming lifts
+   everyone who remains, so the low and middle quartiles are now priced above their real share, and share MAE
+   is 5.6% worse (0.0251 → 0.0265). The trim is a net win on the quartile that carries the priced props, not
+   a clean fix of the share vector.
+
+A residual **−0.046** remains on receiving after P31, so roughly half the original bias is still something
+else (P17 / P25 territory) and is not P31's to fix.
+
+**Nothing built or changed by this run.** Scratch harness only; `git status` clean.
 
 ---
 
