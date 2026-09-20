@@ -58,7 +58,7 @@ status only when its adoption test is met.
 | P28 | Starter designation: when the starter is out or disputed, the sim's next QB follows the depth chart while the market prices a different passer (SEA: Lock; ATL: Cooper Rush) | investigate | 2026-09-18 | Week 2, SEA @ ARI. Books price only Lock for SEA pass yds (207.5), with no Sam Darnold line posted. The stored sim has Darnold QB1 (17.8 att, median 172 yds) and Lock QB2 (12.0 att, **median 0**, mean 93), so the raw sim reads Lock's under at 0.746 against a market 0.500, and he sits **#2 on the ranked list**. His rushing prop (6.5) is held out as QB rushing. Looks like a depth-chart / starter-designation or injury-status mismatch, distinct from the usage and efficiency items. Not diagnosed **Second team, 2026-09-19 (targeted re-pull):** with Penix now OUT, books price **Cooper Rush** as ATL's passer (183.5, 5 books) and post no Tua Tagovailoa line, while the sim starts Tua (QB2, 18.3 att, median 156) with Rush as QB3 (12.0 att, **median 0**). So it is not SEA-specific: the sim's next man up follows the depth chart, and the books' does not. Rush's pass-yds prop is currently dropped by P29, and his rushing prop is held out as QB rushing, so nothing about it shows on the page **ATL game-level check, 2026-09-19 (read-only):** inconsistent, and the CAR@ATL numbers correspond to neither QB. (1) The sim cannot disagree with the baseline at game level: `anchored_simulation` pins the margin to the baseline's; QB identity only routes box-score credit. So the question is the baseline's −5.59 Penix charge (1.0 × 0.932 snap share × 6.0, a generic starter-out value that never asks who replaces him). (2) ATL's rating is ~94% 2025 ATL offense, whose dropbacks were split Cousins 283 (−0.023 EPA/db) / Penix 303 (+0.035): mix +0.007, so the rating is only about half Penix. **Cooper Rush started ATL's week-1 game** (Penix did not play; 57 plays, −0.321 EPA/play). (3) On the same scale (EPA/db difference × 0.603 dropbacks/play × 63), relative to the rating: Tua +0.4 (2025) to +4.3 (2024-25); Rush −7.3 (2024-26, 404 db, −0.185 EPA/db, 43rd of 44). So the correct charge is about 0 if Tua starts, and about −7.3 if Rush starts. The −5.59 charged is neither. The sim's own mix (Tua 0.6 from an nflverse row with no status, Rush 0.4) implies about −0.3 to −2.7. (4) Consequence: if Rush starts (the market's view, and who started week 1), ATL is ~1.7 pts too strong, so ≈ CAR +1.5 vs the market's CAR −2.5, with no flag either way. If Tua starts, ATL is ~6-10 pts too weak and the true number is an ATL edge. The edge's sign depends on the QB, and the served number reflects neither. The ML model uses the same generic `qb_availability_loss`. **Labelled 2026-09-19 at the user's call** (see status) | the sim's QB1 for every team matches the market's priced passer (or the confirmed starter) before props are ranked; a priced QB2 with sim median 0 is flagged, not ranked | proposed; **queued for the week of 2026-09-22** (user, 2026-09-19: log, don't fix tonight). Affects **SEA and ATL**, not just SEA. **First step when picked up: check the ATL game-level prediction for impact. It has not been checked.** The sim runs ATL with Tua starting (depth-chart QB2) while the market prices Cooper Rush, and the baseline charges Penix out at 5.59 pts against an unexamined replacement, so the CAR@ATL margin (baseline ATL −0.2, ML CAR −1.6, market CAR −2.5) may carry this error. Only after that, the props side. SEA's Lock pass-yds prop is labelled on the page via `props.KNOWN_DEFECTS`; ATL has no label, because Rush's pass-yds prop is dropped by P29 and his rushing prop is held out as QB rushing. **CAR@ATL labelled 2026-09-19:** `export_dashboard.KNOWN_GAME_ISSUES` puts a "known issue, treat with caution" caveat on the game view and a tag on the games list, and passes it into the game Q&A context; `props.KNOWN_DEFECTS` gained a team-wide key, `(game_id, "team:ATL")`, so every ATL prop carries the note. The numbers themselves are unchanged. Remove both entries once P28 is fixed or the game kicks off. **2026-09-19:** Lock's rushing prop is held out via `props.PROP_HOLDOUTS` now that QB rushing is ranked again; remove it together with the KNOWN_DEFECTS entries |
 | P29 | Props: `market_view` silently drops a prop when two lines tie for most books | bug fix | 2026-09-19 | `point = median(tied modal lines)`: with an even number of tied lines, the median is a line no book posts (Cooper Rush 182.5 ×2 / 183.5 ×2 → 183.0), no book matches it, and the prop returns None: never ranked or held out, and not counted as unmatched either. **37 of 424** priced player-markets on the 2026-09-19 lines (38/398 on the 9/17 file), and they are skewed to starting QBs' pass yds (Herbert, Mayfield, Purdy, D. Jones, Willis, Stafford/Dart on 9/17). The 2026-09-18 pass-yds offset refit (n=20) and the 9/16 fits were therefore taken on a sample missing these props | every priced player-market either produces a row or is counted as a named exclusion; then refit the pass-yds offset on the full set | proposed; **queued for the week of 2026-09-22** (user, 2026-09-19: log, don't fix tonight). **Knock-on: the live pass-yds offset (+0.005, fitted 2026-09-18, n=20) was fit on an incomplete sample missing roughly a third of starting QBs. Refit it once P29 is fixed; do not treat it as final.** The receiving and rushing fits are exposed too, less heavily (e.g. Rashee Rice, Alec Pierce, Josh Downs, Noah Gray rec yds were dropped) |
 | P30 | Why did 2026 week 1 show a 0.80 / 1.24 receiving-yards tercile split when the 2025 walk-forward shows 0.97 / 1.01? | investigate | 2026-09-19 | The P17 walk-forward found the current engine, given each receiver's targets and pre-week category mix, within ~3% per tercile across 2025 weeks 11-18. The 2026-09-18 week-1 check (n=138 starters, one week) measured 0.80x yards for the top tercile and 1.24x for the bottom. Candidates: one-week noise and selection; or the SIMULATED target distribution (who gets how many deep vs short targets, which the walk-forward held at each player's own historical mix) rather than efficiency. Distinct from P17 (efficiency given targets) and P25 (target volume) | to be written into this log when the diagnosis is scoped, before it runs (process rule, 2026-09-19) | **answered 2026-09-20: one-week noise.** Re-measured on every comparable window with a bootstrap CI; the 2026 wk 1-2 top tercile is 0.906 [0.793, 1.051], CI spanning 1.00, and pooled compression is 3-5%. Not the props bias. See the 2026-09-20 entry | **closed** |
-| P31 | Receiving: the target-share vector is flattened, so priced receivers get ~0.85 of their real targets | bug fix | 2026-09-20 | Healthy priced receivers (n=124): sim/real targets 0.851, catch rate correct (0.673 vs 0.668), team pass att 0.972. By quartile of real target share (n=277) the sim/real share runs 1.065 / 0.800 / 0.803 / **0.755**. Localised to `usage_rates`, which takes each player's share over the games he appeared in: a rotational WR5 is carried at ~1.93x his per-team-game rate, the per-team vector sums to **1.131**, and `team_shares` divides it out proportionally so the biggest shares pay the most. 0.890 x 0.972 = 0.865 vs 0.851 measured end to end. This is the receiving under-bias (receptions -0.119, rec yds -0.099 raw vs market) | see the six criteria in the 2026-09-20 entry; Q4 and Q1 share ratios in 0.95-1.05 out of sample, team totals within 1%, rushing not regressed | **diagnosed 2026-09-20, design not yet built** |
+| P31 | Receiving: the target-share vector is flattened, so priced receivers get ~0.85 of their real targets | bug fix | 2026-09-20 | Healthy priced receivers (n=124): sim/real targets 0.851, catch rate correct (0.673 vs 0.668), team pass att 0.972. By quartile of real target share (n=277) the sim/real share runs 1.065 / 0.800 / 0.803 / **0.755**. Localised to `usage_rates`, which takes each player's share over the games he appeared in: a rotational WR5 is carried at ~1.93x his per-team-game rate, the per-team vector sums to **1.131**, and `team_shares` divides it out proportionally so the biggest shares pay the most. 0.890 x 0.972 = 0.865 vs 0.851 measured end to end. This is the receiving under-bias (receptions -0.119, rec yds -0.099 raw vs market) | see the six criteria in the 2026-09-20 entry; Q4 and Q1 share ratios in 0.95-1.05 out of sample, team totals within 1%, rushing not regressed | **built 2026-09-20 behind `USAGE_PARTICIPATION_TRIM` (tau 0.10), off.** Q4 0.889 -> 0.978, team totals identical, receptions sim/line 0.845 -> 0.944. Criteria 4-6 pass, 1 and 3 fail narrowly, 2 half. Held off pending the P10-vs-P31 comparison after the first live Sunday |
 | P32 | Target-category shares are computed on overlapping sets but picked on disjoint ones | bug fix | 2026-09-20 | `_usage_events` builds `tgt_deep` / `tgt_short` over **all** targets including red-zone ones, while `simulate._credit` picks rz, then non-rz deep, then non-rz short — three disjoint buckets. Red-zone targets are counted twice. Measured on 2025 (230 receivers, 25+ targets): engine/true share median 0.990 deep, 1.001 short, per-player p10-p90 0.90-1.22; effect on simulated volume 0.998 targets, 0.996 yards, and terciles 1.005 / 1.000 / 1.000. Real but minor, and **not** part of P31: stage 4 of the P31 decomposition adds nothing (0.893 vs 0.890) | engine share within 2% of the true disjoint share at p10 and p90; no change to team totals | proposed, low priority |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
@@ -101,6 +101,57 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-20 — P31 built behind `USAGE_PARTICIPATION_TRIM`, tau = 0.10. Validated, NOT live
+
+Built to the design in the entry below, at the threshold the user chose. **The flag is off.** It stays off until
+today's Sunday windows have run with real P10 inactives, so the two can be compared: P10 and P31 attack the same
+defect (a player who will not play holding target share) from different sides, and P10 may already close part of it.
+
+**What it does.** `sim_data.snap_participation(season)` reads nflverse offensive snap counts for the prior and
+current season and returns each player's snaps per team game, keyed `(team, player_key)`. The denominator runs from
+his **first appearance for that team**, so a rookie who has played every snap of two games is at 1.0 rather than
+2/19 — the walk-forward ran on weeks 11-18 and never exposed that, but it would have trimmed week-one starters.
+`player_roles` attaches it as a `participation` column, and `simulate_nfl._participation_trim` zeroes the raw share
+of any skill player below `USAGE_MIN_PARTICIPATION` before `team_shares` normalises.
+
+Two guards, both tested:
+- a player **inside his position's playing slots is never trimmed**, whatever the feed says, so a missing snap row
+  cannot remove a starter;
+- a player missing from a **covered** team reads as 0 (he has taken no snap, which is the case the trim exists
+  for), while a team absent from the feed altogether reads as unknown and is left alone, so a broken pull cannot
+  empty a pool.
+
+**Effect on the production roles vector** (today's slate, 495 skill players): 148 trimmed, **8.9%** of target-share
+mass removed.
+
+| | per-team raw sum | Q1 | Q2 | Q3 | Q4 | share MAE |
+|---|---|---|---|---|---|---|
+| flag off | 1.132 | 1.086 | 1.011 | 1.011 | **0.889** | 0.0251 |
+| flag on | 1.032 | 1.118 | 1.093 | 1.109 | **0.978** | 0.0265 |
+
+**Against the six criteria, measured on the production code:**
+
+| criterion | result | verdict |
+|---|---|---|
+| 1. per-team sum within 0.02 of 1.00 | 1.132 -> 1.032 | **fail**, 0.012 outside; was 0.132 outside |
+| 2. Q4 *and* Q1 in 0.95-1.05 | Q4 0.889 -> **0.978** passes; Q1 1.086 -> 1.118 does not | **half**, as forecast at the design stage |
+| 3. share MAE not worse | 0.0251 -> 0.0265 | **fail**, 5.6% worse |
+| 4. team totals within 1% | worst drift across 4 re-simmed games **0.000000%** | **pass**, exactly: the trim changes who is credited, not the play stream, so the random draw and every game outcome are identical |
+| 5. rushing not regressed | rush yds +1.63%, rush att +1.77% over 4 games | **pass**; rushing sat 1.7pp under the market, so a small lift helps |
+| 6. receiving moves toward the market | receptions sim/line **0.845 -> 0.944**, receiving yds **0.910 -> 1.017**, 39 and 38 priced props in those games | **pass** |
+
+So it does what it was built to do on the quartile and the props that live there, and it does not pay for it in team
+totals or rushing. It does not fix the low quartile, and share MAE is marginally worse because trimming lifts
+everyone who remains — Q2 and Q3 overshoot to 1.09 and 1.11.
+
+**Not shipped.** 4 new tests (11 checks); 126 pass. Flipping the flag changes simulated output, so stored
+`game_simulations` and any props ranked against them go stale and must be regenerated.
+
+**Next, after today's windows:** re-measure the receiving raw P(over) gap with P10 inactives applied and the flag
+still off, then with the flag on, and compare. Decide from that whether P31 earns its place on top of P10.
 
 ---
 

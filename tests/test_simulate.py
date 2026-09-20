@@ -184,6 +184,68 @@ def test_suffix_names_match_injury_report():
     check("'Walker III' on the chart matches 'Walker' on the report", round(float(shares["car_gl"][0]), 6), 0.0)
 
 
+def _wr_roles(participation):
+    """One team's receivers, WR1-WR5, with a participation column (P31)."""
+    cats = {c: 0.0 for c in USAGE_CATEGORIES}
+    share = [0.30, 0.22, 0.15, 0.08, 0.05]
+    return pd.DataFrame([
+        dict(team="KC", player=f"Wr{i + 1}", position="WR", rank=i + 1,
+             participation=participation[i], **{**cats, "tgt_all": share[i], "tgt_short": share[i]})
+        for i in range(5)
+    ])
+
+
+def test_participation_trim_drops_only_the_unused():
+    """A receiver who has taken no offensive snap carries no target share."""
+    from src.simulate_nfl import _participation_trim
+
+    roles = _wr_roles([0.95, 0.88, 0.60, 0.02, 0.0])
+    base = roles[list(USAGE_CATEGORIES)].to_numpy(float)
+    out = _participation_trim(roles, base)
+    kept = [round(float(x), 6) for x in out[:, list(USAGE_CATEGORIES).index("tgt_all")]]
+    check("WR4 and WR5 below the threshold are dropped", kept, [0.30, 0.22, 0.15, 0.0, 0.0])
+
+
+def test_participation_trim_never_drops_a_playing_slot():
+    """A week-one starter with no snap record must survive a missing feed."""
+    from src.simulate_nfl import _participation_trim
+
+    roles = _wr_roles([0.0, 0.0, 0.0, 0.0, 0.0])
+    base = roles[list(USAGE_CATEGORIES)].to_numpy(float)
+    out = _participation_trim(roles, base)
+    kept = [round(float(x), 6) for x in out[:, list(USAGE_CATEGORIES).index("tgt_all")]]
+    check("WR1-WR3 are inside the playing slots and kept",
+          kept, [0.30, 0.22, 0.15, 0.0, 0.0])
+
+
+def test_participation_trim_leaves_unknown_alone():
+    """No snap data for the team at all means no trim, not an empty pool."""
+    import numpy as np
+
+    from src.simulate_nfl import _participation_trim
+
+    roles = _wr_roles([np.nan] * 5)
+    base = roles[list(USAGE_CATEGORIES)].to_numpy(float)
+    out = _participation_trim(roles, base)
+    check("unknown participation changes nothing",
+          [round(float(x), 6) for x in out[:, list(USAGE_CATEGORIES).index("tgt_all")]],
+          [0.30, 0.22, 0.15, 0.08, 0.05])
+
+
+def test_participation_trim_preserves_the_rest_of_the_vector():
+    """Trimming reweights the survivors; it must not alter a kept player's raw share."""
+    from src.simulate_nfl import _participation_trim
+
+    roles = _wr_roles([0.95, 0.88, 0.60, 0.02, 0.0])
+    base = roles[list(USAGE_CATEGORIES)].to_numpy(float)
+    out = _participation_trim(roles, base)
+    check("kept players' raw shares are untouched",
+          [round(float(x), 6) for x in out[:3, list(USAGE_CATEGORIES).index("tgt_short")]],
+          [0.30, 0.22, 0.15])
+    check("the input array is not mutated",
+          round(float(base[4, list(USAGE_CATEGORIES).index("tgt_all")]), 6), 0.05)
+
+
 def test_depth_slot_governs_volume():
     from src.sim_data import USAGE_CATEGORIES, blend_roles
 
@@ -312,6 +374,10 @@ if __name__ == "__main__":
         test_bucket_index, test_scorer_allocation_conserves_tds, test_summary_shapes,
         test_injured_starter_shifts_to_next_man, test_questionable_starter_splits,
         test_suffix_names_match_injury_report, test_depth_slot_governs_volume,
+        test_participation_trim_drops_only_the_unused,
+        test_participation_trim_never_drops_a_playing_slot,
+        test_participation_trim_leaves_unknown_alone,
+        test_participation_trim_preserves_the_rest_of_the_vector,
         test_carry_shares_are_designed_runs_only, test_scramble_factor, test_injury_split, test_storage_roundtrip,
     ]:
         print(f"\n{fn.__name__}")
