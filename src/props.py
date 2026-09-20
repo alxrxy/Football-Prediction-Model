@@ -145,14 +145,23 @@ BIAS_FIT = {
     # Passing yards refitted again after QB-specific scramble rates (P24) moved
     # some running QBs' pass attempts to scrambles: -0.0475 -> -0.0212. Still
     # provisional under P29, which remains open.
+    # ALL REFITTED 2026-09-20 on the complete sample P29 restores. The tied-line
+    # bug had been dropping 8.7% of priced markets, skewed to starting
+    # quarterbacks, and the two offsets built mostly on quarterbacks were the
+    # two that moved: passing yards CHANGES SIGN (-0.0212 -> +0.0732, n 23 ->
+    # 32) and QB rushing grows 41% (-0.1818 -> -0.2564, n 21 -> 27). The
+    # receiving offsets barely move, which is consistent with the bug taking
+    # mostly quarterbacks. Fitted on the simulations stored 2026-09-19 with
+    # USAGE_PARTICIPATION_TRIM and QB_EXPECTED_STARTER both off; either flag
+    # changes simulated output and needs another refit.
     "offsets": {
-        "player_pass_yds": -0.0212,
-        "player_receptions": +0.5242,
+        "player_pass_yds": +0.0732,
+        "player_receptions": +0.5522,
     },
-    "measured_at_by_market": {"player_pass_yds": "2026-09-19", "player_receptions": "2026-09-19",
-                              "player_reception_yds": "2026-09-19"},
-    "n": {"player_pass_yds": 23, "player_reception_yds": 129, "player_receptions": 138},
-    "raw_bias_pp": {"player_pass_yds": +0.50, "player_reception_yds": -9.40, "player_receptions": -11.48},
+    "measured_at_by_market": {"player_pass_yds": "2026-09-20", "player_receptions": "2026-09-20",
+                              "player_reception_yds": "2026-09-20"},
+    "n": {"player_pass_yds": 32, "player_reception_yds": 155, "player_receptions": 154},
+    "raw_bias_pp": {"player_pass_yds": -1.69, "player_reception_yds": -9.55, "player_receptions": -12.07},
     # Rushing is corrected by position (P26). The single category offset hid two
     # biases pulling opposite ways, QBs over and backs under. Refitted
     # 2026-09-18 after scrambles and kneels left the carry shares (P23), on the
@@ -173,13 +182,13 @@ BIAS_FIT = {
     # which excludes the category fit of +0.40). Receptions did not split: all
     # three positions sit within each other's intervals.
     "position_offsets": {
-        "player_rush_yds": {"RB": +0.2181, "QB": -0.1818},
-        "player_reception_yds": {"WR": +0.4469, "TE": +0.5369, "RB": +0.2124},
+        "player_rush_yds": {"RB": +0.1929, "QB": -0.2564},
+        "player_reception_yds": {"WR": +0.4342, "TE": +0.5417, "RB": +0.2668},
     },
-    "position_n": {"player_rush_yds": {"RB": 41, "QB": 21}, "player_reception_yds": {"WR": 66, "TE": 31, "RB": 32}},
-    "position_raw_bias_pp": {"player_rush_yds": {"RB": -4.84, "QB": +4.22},
-                             "player_reception_yds": {"WR": -10.16, "TE": -12.28, "RB": -5.06}},
-    "position_measured_at": "2026-09-19",
+    "position_n": {"player_rush_yds": {"RB": 55, "QB": 27}, "player_reception_yds": {"WR": 81, "TE": 38, "RB": 36}},
+    "position_raw_bias_pp": {"player_rush_yds": {"RB": -4.26, "QB": +5.67},
+                             "player_reception_yds": {"WR": -9.88, "TE": -12.46, "RB": -6.34}},
+    "position_measured_at": "2026-09-20",
     "position_notes": {
         "player_rush_yds": {"RB": (
             "Mean-fitted: it lifts every back by the same amount, but starters (the higher lines) still run "
