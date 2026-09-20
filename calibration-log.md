@@ -104,6 +104,46 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-09-20 — P28 part 1 built behind `QB_EXPECTED_STARTER`. Validated, NOT live
+
+Part 2 stays rejected (entry below). This is the starter-identity half only: it changes who is credited with the
+passing, and touches no injury charge, no rating and no margin.
+
+**Built.**
+- `sim_data.expected_starters(season)` -> `{(week, team): gsis id}` from nflverse schedules' `home_qb_id` /
+  `away_qb_id`. That field is the actual starter for a finished game and the expected one for a game still to
+  play, so reading it before kickoff adds no lookahead. Carried on `SimInputs.starters`, loaded once per run.
+- `simulate_nfl._promote_starter` moves that quarterback to rank 1 within his team, with the rest of the room
+  keeping its relative order behind him. `passer_weights` walks quarterbacks in depth order, so this is all it
+  takes; every other position is untouched.
+- `props._starter_mismatch`: **any** quarterback the books price whose simulation has him at a median of 0 is held
+  out of the ranking with a note. That is the general form of the hand-written `PROP_HOLDOUTS` entry added for
+  Drew Lock on 2026-09-19, so it no longer needs one row per quarterback per week.
+
+**Validation, today's slate (32 teams).** 3 changed, 29 already agreed, 0 had no expected starter:
+
+| team | depth chart | expected starter |
+|---|---|---|
+| SEA | Sam Darnold | **Drew Lock** — the market's priced passer, the original P28 case |
+| MIN | Kyler Murray | **Carson Wentz** — not previously identified |
+| ATL | Michael Penix Jr. | Tua Tagovailoa |
+
+3 of 32 is 9.4%, against the 9.6% measured historically (52 of 544 team-games in 2025), so today is an ordinary
+week for this defect rather than an unusual one.
+
+**MIN is new.** It was not in P28's write-up, which had SEA and ATL. Kyler Murray leads MIN's depth chart and
+Carson Wentz is expected to start, so MIN's passing props and box score carry the same defect SEA's did and nobody
+had noticed. Found by the fix, not by the original investigation.
+
+**ATL is improved but not resolved.** The chart says Penix (who is OUT), nflverse says Tua, the books price Cooper
+Rush. The fix moves the sim from Penix to Tua, which is better, and still disagrees with the market. Today's
+inactive list settles it. The `KNOWN_GAME_ISSUES` caveat on CAR@ATL stays.
+
+**Not shipped.** `QB_EXPECTED_STARTER` is off, so today's slate is untouched, and the props holdout is gated on the
+same flag. 1 new test (6 checks); 127 pass.
+
+---
+
 ## 2026-09-20 — P28 replacement-value design TESTED AND REJECTED. Part 1 still stands. Nothing built
 
 Validated against the seven criteria in the entry below. **The design fails and is not being built.** This entry

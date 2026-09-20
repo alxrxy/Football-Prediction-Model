@@ -213,6 +213,30 @@ PROP_HOLDOUTS = {
     ),
 }
 
+# A quarterback the books price as a starter whose simulation has him at a
+# median of zero is not a disagreement about the player, it is a disagreement
+# about who is playing (P28). Held out wherever it occurs, so this does not
+# need a hand-written entry per quarterback per week. Gated on
+# QB_EXPECTED_STARTER with the rest of P28 part 1.
+QB_MARKETS = {"player_pass_yds", "player_pass_tds", "player_pass_attempts",
+              "player_pass_completions", "player_pass_interceptions"}
+
+
+def _starter_mismatch(market: str, position: str, line, q: dict) -> str | None:
+    """Held-out note when a priced quarterback simulates at a median of zero."""
+    if not config.QB_EXPECTED_STARTER or market not in QB_MARKETS:
+        return None
+    if not (position or "").upper().startswith("QB"):
+        return None
+    median = (q or {}).get("median")
+    if median is None or median > 0 or not line or line <= 0:
+        return None
+    return ("Starter mismatch (P28): the books price this quarterback with a line of "
+            f"{line}, but the simulation has him at a median of 0, which means it does not "
+            "expect him to play. That gap measures who is starting, not the player, so it "
+            "is held out of the ranking.")
+
+
 # Props known to be measuring a defect, labelled on the page but left in the
 # ranking. Keyed by (game_id, the books' player name), or (game_id, "team:XXX")
 # for every prop of that team's players. Remove each entry once its item is
@@ -405,7 +429,9 @@ def rank(lines: dict, sims: dict[str, dict], now: datetime | None = None) -> dic
                                  "total": (sim.get("total") or {}).get("p50")},
                     "sim_generated_at": sim.get("generated_at"),
                     "_q": q,   # the full stat summary, for pricing alt lines; not exported
-                    "_structural": STRUCTURAL_HOLDOUTS.get((mkey, pos)) or PROP_HOLDOUTS.get((gid, name, mkey)),
+                    "_structural": (STRUCTURAL_HOLDOUTS.get((mkey, pos))
+                                    or PROP_HOLDOUTS.get((gid, name, mkey))
+                                    or _starter_mismatch(mkey, pos, mv["point"], q)),
                     "defect_note": KNOWN_DEFECTS.get((gid, name)) or KNOWN_DEFECTS.get((gid, f"team:{team}")),
                 })
     started = [r for r in rows if _kicked_off(r["kickoff"], now)]

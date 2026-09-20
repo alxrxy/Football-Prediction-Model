@@ -219,8 +219,32 @@ def test_context():
     check("live model vs pregame", "BUF win 78% (pregame 63%)" in live, True)
 
 
+def test_starter_mismatch_holdout():
+    """A priced quarterback the sim has at a median of 0 is held out, not ranked (P28)."""
+    import src.config as cfg
+    from src.props import _starter_mismatch
+
+    was = cfg.QB_EXPECTED_STARTER
+    try:
+        cfg.QB_EXPECTED_STARTER = True
+        note = _starter_mismatch("player_pass_yds", "QB2", 207.5, {"median": 0.0})
+        check("QB2 with a median of 0 is held", bool(note), True)
+        check("the note names the line", "207.5" in (note or ""), True)
+        check("a QB who does simulate is not held",
+              _starter_mismatch("player_pass_yds", "QB1", 245.5, {"median": 238.0}), None)
+        check("a receiver at 0 is not a starter mismatch",
+              _starter_mismatch("player_reception_yds", "WR4", 25.5, {"median": 0.0}), None)
+        check("no line, nothing to compare",
+              _starter_mismatch("player_pass_yds", "QB2", 0, {"median": 0.0}), None)
+        cfg.QB_EXPECTED_STARTER = False
+        check("off behind the flag",
+              _starter_mismatch("player_pass_yds", "QB2", 207.5, {"median": 0.0}), None)
+    finally:
+        cfg.QB_EXPECTED_STARTER = was
+
+
 if __name__ == "__main__":
-    for fn in [test_p_over, test_market_view, test_names, test_rank, test_qb_rushing_ranked_with_its_own_offset, test_started_games_not_ranked, test_pick_alt, test_context]:
+    for fn in [test_p_over, test_starter_mismatch_holdout, test_market_view, test_names, test_rank, test_qb_rushing_ranked_with_its_own_offset, test_started_games_not_ranked, test_pick_alt, test_context]:
         print(f"\n{fn.__name__}")
         fn()
     print(f"\n{PASS} passed, {FAIL} failed")

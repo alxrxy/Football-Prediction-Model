@@ -120,6 +120,16 @@ PROPS_BIAS_ADJUST = os.getenv("PROPS_BIAS_ADJUST", "0").strip().lower() in ("1",
 USAGE_PARTICIPATION_TRIM = os.getenv("USAGE_PARTICIPATION_TRIM", "0").strip().lower() in ("1", "true", "yes")
 USAGE_MIN_PARTICIPATION = float(os.getenv("USAGE_MIN_PARTICIPATION", "0.10"))
 
+# P28 part 1. Take the simulated game's QB1 from nflverse's expected starter
+# (schedules home_qb_id / away_qb_id) instead of the depth chart's top slot.
+# Reconstructed from the dated depth-chart snapshots that preceded each 2025
+# game, the chart names the wrong starter in 9.6% of team-games (52 of 544),
+# and the misses are the injury cases. It changes who is credited with passing,
+# not the injury charge: P28's replacement-value idea was tested and rejected
+# (see calibration-log 2026-09-20). Off until it has been run against a clean
+# slate rather than swapped in mid-Sunday.
+QB_EXPECTED_STARTER = os.getenv("QB_EXPECTED_STARTER", "0").strip().lower() in ("1", "true", "yes")
+
 # Claude API: the one metered piece of the stack. Low effort suits short,
 # data-grounded answers; the daily cap stops a runaway page or loop from
 # running up a bill (src/claude_ai.py refuses calls past it).
