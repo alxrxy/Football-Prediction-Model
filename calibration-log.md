@@ -104,6 +104,83 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-09-20 — P28 diagnosed: the QB injury charge is ~3.7 points too harsh. Read-only, nothing built
+
+Item 2. Read-only. **This changes the priority order and is flagged to the user.** It is a game-level error on every
+team with a quarterback injury, not a props problem, and it is larger than anything found in item 1.
+
+**Part 1: the depth chart names the wrong starting quarterback in 9.6% of team-games.** Reconstructed from the dated
+nflverse depth-chart snapshots that preceded each 2025 game (544 team-games): 52 misses, and they are exactly the
+injury cases — Purdy/Mac Jones, Lamar Jackson/Cooper Rush, Kyler Murray/Brissett, McCarthy/Wentz.
+
+nflverse schedules carry `home_qb_id` / `away_qb_id`, the expected starter for an upcoming game. For today's slate
+it names **Drew Lock for SEA**, which is the market's priced passer and the one the sim gets wrong. It names **Tua
+for ATL**, where the books price Cooper Rush, so it fixes SEA and not ATL; the two sources genuinely disagree there
+and today's inactive list settles it. Switching the sim's QB1 to this field is a real improvement on the depth
+chart, not a complete answer.
+
+**Part 2, the larger finding: the flat charge over-penalises by about 3.7 points.**
+
+The current rule charges position weight 1.0 x snap share x (1 - play probability) x 6.0, so a starter ruled out
+costs about **5.58 points whoever replaces him**. Measured against what actually happened, over 2022-2025, 2174
+team-games. For each, the starter's EPA per dropback (leave-one-out, shrunk by 200 dropbacks) minus the team's own
+dropback-weighted quarterback mix over its other games, converted at 0.603 dropbacks per play x 63 plays:
+
+| predicted drop | n | predicted pts | actual pts | se |
+|---|---|---|---|---|
+| < -4 | 149 | -5.57 | **-2.88** | 1.07 |
+| -4 to -2 | 206 | -2.80 | -1.23 | 0.84 |
+| -2 to -1 | 175 | -1.50 | +0.37 | 0.85 |
+| -1 to +1 | 847 | +0.19 | +0.41 | 0.37 |
+| > +1 | 797 | +2.10 | +0.34 | 0.42 |
+
+Directionally right and monotone where it matters, but **the EPA arithmetic overstates by roughly 3.5x**. Fitting
+actual = k x predicted through the origin:
+
+| sample | n | k |
+|---|---|---|
+| fit on 2022-23 | 1086 | 0.183 +/- 0.145 |
+| held out 2024-25 | 1088 | 0.379 +/- 0.160 |
+| all four seasons | 2174 | **0.281 +/- 0.108** |
+
+k is about 0.28, different from zero (t = 2.6) and a long way from 1.
+
+On the 355 team-games where the predicted drop is worse than 2 points — the cases the flat rule exists for:
+
+| charge | bias | MAE |
+|---|---|---|
+| current flat -5.58 | **+3.66** | 10.40 |
+| EPA difference, unshrunk | +2.04 | 9.99 |
+| EPA difference x 0.18 | **-1.20** | 9.78 |
+
+(MAE is ~10 because a single game's EPA residual is very noisy; the bias is the meaningful column.)
+
+So the model has been charging about 5.6 points for a quarterback who is out when the true average cost is about
+2.9 at worst and near zero when the replacement is competent. The naive EPA fix the 2026-09-19 ATL note proposed
+(-7.3 for Cooper Rush) would have been **worse than the flat rule**, not better. That is the correction this entry
+exists to make.
+
+**This connects to P9**, which found the injury term had no relationship with the cover residual and that
+`|injury adj| >= 1` went 0-5 ATS. An over-penalty of this size on the biggest single component is a candidate
+explanation.
+
+**Pass criteria for the P28 fix, written down before anything is built:**
+1. Quarterback charge = `k x (E[EPA/db of who plays] - rating-implied EPA/db) x dropback rate x 63`, replacing the
+   flat position-weight term for QB only. `k` fitted on 2022-23 and **judged on 2024-25**, not refitted.
+2. On held-out 2024-25 team-games with a predicted drop worse than 2 points, the charge's bias against realised
+   points is within +/- 1.5, against +3.66 for the flat rule.
+3. Band monotonicity: predicted and actual stay ordered across the five bands on held-out data.
+4. Games with no quarterback on the injury report are unchanged, exactly.
+5. Baseline margin MAE over 2024-25 games with a quarterback change does not get worse.
+6. P9's check re-run: correlation between the injury term and the cover residual does not get worse.
+7. The sim's QB1 comes from the nflverse expected starter where it exists, and a priced QB2 with a sim median of 0
+   is flagged rather than ranked (the original P28 criterion).
+
+**Stop rule.** If `k` on held-out data is within one standard error of 0, drop the EPA term and simply reduce the
+flat charge to the measured average instead.
+
+---
+
 ## 2026-09-20 — P31 built behind `USAGE_PARTICIPATION_TRIM`, tau = 0.10. Validated, NOT live
 
 Built to the design in the entry below, at the threshold the user chose. **The flag is off.** It stays off until
