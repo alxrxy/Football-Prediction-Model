@@ -49,7 +49,7 @@ import sys
 import time
 import traceback
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import numpy as np
 
@@ -95,6 +95,103 @@ def _espn(path: str, params: dict | None = None):
         f"{config.ESPN_NFL}/{path}", params=params, headers=BROWSER_UA,
         transport="urllib", timeout=ESPN_TIMEOUT, retries=ESPN_RETRIES,
     )
+
+
+# --- core-API fallback -----------------------------------------------------
+# site.api.espn.com is the only host this tracker reads, and on 2026-09-20 it
+# began answering every request with an Akamai 403 ("Access Denied") while
+# sports.core.api.espn.com - the host ingest_inactives already uses - kept
+# serving. The two carry the same game state in different shapes, so rather
+# than fail the whole cycle the tracker rebuilds a scoreboard-shaped payload
+# from the core API and hands it to the unchanged parse_scoreboard.
+#
+# It costs about four calls a game against the site API's one, so it is a
+# fallback and not the default: it runs only when the scoreboard call fails,
+# and the tracker returns to the single call the moment that host recovers.
+CORE_NFL = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl"
+_TEAM_ABBR: dict[str, str] = {}   # team id -> abbreviation; teams do not change
+
+
+def _core(url: str, params: dict | None = None):
+    return safe_get_json(url, params=params, headers=BROWSER_UA, transport="urllib",
+                         timeout=ESPN_TIMEOUT, retries=ESPN_RETRIES)
+
+
+def _ref_id(ref: str | None) -> str:
+    """The trailing id of a core-API $ref, without fetching it."""
+    path = str(ref or "").split("?")[0].rstrip("/")
+    return path.rsplit("/", 1)[-1] if path else ""
+
+
+def _core_team(team_ref: str | None) -> str:
+    """Abbreviation for a team $ref, fetched once and remembered."""
+    tid = _ref_id(team_ref)
+    if not tid:
+        return ""
+    if tid not in _TEAM_ABBR:
+        data = _core(f"{CORE_NFL}/teams/{tid}") or {}
+        _TEAM_ABBR[tid] = str(data.get("abbreviation") or "")
+    return _TEAM_ABBR[tid]
+
+
+def core_scoreboard(day: date | None = None) -> dict | None:
+    """A scoreboard-shaped payload built from the core API, or None.
+
+    Only the fields parse_event reads are filled. `situation` is deliberately
+    left out: the core API carries down/distance and possession on a separate
+    drives feed, and an absent situation already means "no live spot known" to
+    every consumer, whereas a half-built one would be read as fact.
+    """
+    day = day or _now().date()
+    index = _core(f"{CORE_NFL}/events", params={"dates": day.strftime("%Y%m%d"), "limit": 100})
+    if not isinstance(index, dict):
+        return None
+    events = []
+    for item in index.get("items") or []:
+        event = _core(_ref_id_url(item.get("$ref")))
+        if not isinstance(event, dict):
+            continue
+        comp = (event.get("competitions") or [{}])[0]
+        eid = str(event.get("id") or "")
+        status = _core(f"{CORE_NFL}/events/{eid}/competitions/{eid}/status") or {}
+        stype = status.get("type") or {}
+        state = str(stype.get("state") or "")
+        competitors = []
+        for c in comp.get("competitors") or []:
+            # A game yet to start has no score document; 0 is right for it.
+            score = 0
+            if state != "pre":
+                doc = _core(str((c.get("score") or {}).get("$ref") or "")) or {}
+                score = doc.get("value") or 0
+            competitors.append({
+                "homeAway": c.get("homeAway"),
+                "team": {"id": _ref_id((c.get("team") or {}).get("$ref")),
+                         "abbreviation": _core_team((c.get("team") or {}).get("$ref"))},
+                "score": score,
+            })
+        events.append({
+            "id": eid,
+            "date": event.get("date"),
+            "competitions": [{
+                "status": {"type": {"state": state,
+                                    "name": str(stype.get("name") or ""),
+                                    "shortDetail": str(stype.get("shortDetail")
+                                                       or stype.get("detail") or "")},
+                           "period": status.get("period"),
+                           "clock": status.get("clock"),
+                           "displayClock": status.get("displayClock")},
+                "competitors": competitors,
+            }],
+        })
+    if not events:
+        return None
+    season = (index.get("season") or {}) if isinstance(index.get("season"), dict) else {}
+    return {"season": season, "events": events}
+
+
+def _ref_id_url(ref: str | None) -> str:
+    """A core-API $ref, forced to https (the feed hands back http)."""
+    return str(ref or "").replace("http://", "https://", 1)
 
 
 def _abbr(code) -> str:
@@ -539,6 +636,7 @@ class Tracker:
         self.finalized: set[str] = set()
         self.last_states: list[LiveState] = []
         self.failures = 0
+        self.used_fallback = False
 
     def _load_context(self) -> FeatureContext:
         """Games, ratings and odds, read once at startup.
@@ -713,6 +811,19 @@ class Tracker:
     def cycle(self) -> None:
         payload = _espn("scoreboard")
         states, skipped = parse_scoreboard(payload)
+        if payload is None or (not states and skipped):
+            # site.api is down or blocking; rebuild the same shape from the
+            # core API rather than lose the cycle entirely.
+            payload = core_scoreboard()
+            states, skipped = parse_scoreboard(payload)
+            if states:
+                if not self.used_fallback:
+                    print(f"[{_now():%H:%M:%S}Z] site.api unavailable; "
+                          f"falling back to the core API ({len(states)} game(s))")
+                self.used_fallback = True
+        elif self.used_fallback:
+            print(f"[{_now():%H:%M:%S}Z] site.api is answering again; leaving the core-API fallback")
+            self.used_fallback = False
         if payload is None or (not states and skipped):
             self.failures += 1
             print(f"[{_now():%H:%M:%S}Z] scoreboard unavailable (failure {self.failures}); "

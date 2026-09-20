@@ -105,6 +105,86 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-09-20 — live_tracker: a core-API fallback, after site.api.espn.com started refusing every request
+
+`site.api.espn.com` is the only host the live tracker reads, and from about 15:47Z it answered every request with
+an Akamai **403 "Access Denied"**. That is not a network failure, though `safe_get_json` reports it as a
+`FetchError`, which is what made it look like flaky connectivity for a while. Confirmed by hand: a plain request
+and a full browser set (Chrome UA, `Accept`, `Accept-Language`, `Referer`, `Origin: espn.com`) both return 403,
+so it is an edge block rather than a user-agent check. DNS resolves normally.
+
+`sports.core.api.espn.com` - the host `ingest_inactives` already uses - kept serving 200 throughout. That split
+explains the whole day: P10's inactives worked all morning while the injuries feed, `export_sims`' scoreboard
+call and the tracker all warned or died.
+
+**The fix.** `live_tracker.core_scoreboard()` rebuilds a scoreboard-shaped payload from the core API and hands it
+to the **unchanged** `parse_scoreboard`, so no parsing, no `LiveState` and nothing downstream had to change. It
+runs only when the site-API call fails, announces the switch once, and returns to the single call the moment that
+host recovers. Team abbreviations are read out of the `$ref` URL and cached, since teams do not change.
+
+`situation` is deliberately left empty: the core API carries down, distance and possession on a separate drives
+feed, and an absent situation already reads as "no live spot known" to every consumer, whereas a half-built one
+would be taken as fact.
+
+**Cost.** About four calls a game against the site API's one (event, status, two scores), so ~57 a cycle for a
+14-game Sunday against 1. Acceptable for an outage fallback, which is why it is a fallback and not the default.
+
+**Validated** with a single `--once` cycle before it was allowed to run: 14 events parsed, 0 skipped, matching
+reality exactly - seven finals, CLE@TB delayed, the late games in the second quarter, IND@KC still `pre`. Six
+live games then tracked with pace and margin percentiles and live win probabilities against the pregame sims.
+Tests: live 59, live_sim 37, both unchanged.
+
+**Known gap, not fixed.** The `summary` endpoint is also on the blocked host, so **scoring-play alerts are
+unavailable**: each live game logs a warning and the tracker continues without them. Scores, clock, pace, margin
+and win probability all work; "who just scored" does not. The core API exposes a plays feed that returns 200, so
+this is fixable; deliberately deferred rather than start a second integration mid-slate.
+
+---
+
+## 2026-09-20 — Sunday windows: the 15:05 refresh was MISSED. 19:20 ran. ESPN's site API blocked all afternoon
+
+Operational record for the day, so the week-2 grading is read against what actually happened rather than the
+schedule.
+
+**The 12:00 CDT window ran on time** (15:45Z trigger, refresh 15:46-15:49Z): 16/16 inactive lists, odds at
+15:47:33Z, 14 games simulated, props pulled and ranked. Those eight games' pregame numbers are sound.
+
+**The 15:05 CDT window was missed.** Its refresh was due at 18:50Z and nobody ran it; the day's single pass had
+already been spent on the 12:00 window (`run_sunday.py` without `--watch` refreshes one window and exits). The
+five games - JAX@DEN, LV@LAC, SEA@ARI, WAS@DAL, MIA@SF - therefore went to kickoff on the **16:20Z** pregame
+state: odds from 15:47Z and, worse, **no inactive lists**, because at 15:47Z every one of them was outside the
+new P33 two-hour gate. Their questionable players were priced at the flat 0.55 rather than resolved.
+
+**Deliberately not corrected.** Re-running them at 21:00Z would have overwritten a pregame prediction with
+mid-game inputs, which is the exact failure `slate_games` and `upcoming_only` exist to prevent. They are left as
+they stand and should be graded as a **degraded window**: pregame numbers built without gameday inactives. Any
+prop or flag from those five games is weaker evidence than the 12:00 window's and should not be pooled with it
+without noting this.
+
+**The 19:20 window (IND@KC) ran at 21:05Z**, about two hours early, and the protections all held:
+
+- odds: `6 game(s) already under way: kept their pregame line`
+- predict: `13 game(s) already kicked off; keeping their stored pregame predictions`
+- simulate: `skipping 13 game(s) already kicked off`, 1 game re-simulated
+- props: 397 of 447 rows `from games already kicked off, not ranked`
+
+So exactly one game was touched. **IND@KC still has no inactive list** - at 21:05Z it was 3.25 h from kickoff,
+correctly outside the P33 gate, and the run said so: *"no inactive list has posted for this window yet... Re-run
+closer to kickoff."* **It needs one more refresh after 22:20Z** to pick the list up.
+
+A side effect worth recording: that run re-pulled inactives for the six games then in progress and **replaced the
+premature lists P33 had deleted** with the real ones (92 players, 12 teams, all at negative lead times). Those
+games' predictions were not re-run, so this corrects the stored record only.
+
+**ESPN's `site.api.espn.com` has been Akamai-403 blocked since about 15:47Z** ("Access Denied", not a network
+error; `sports.core.api.espn.com` kept serving throughout). Consequences today:
+- the ESPN injuries source was skipped at both refreshes - other sources covered it, 31/32 teams;
+- **`grade` could not reach the scoreboard**, so today's finals are ungraded until the block lifts or grading is
+  pointed at another source;
+- `live_tracker` was dead for ~3.5 h until a core-API fallback was built (see the entry above).
+
+---
+
 ## 2026-09-20 — Anytime-TD tab wired in, on the live engine, with its caveats rewritten to what is actually broken
 
 The TD list has been unreachable since 2026-09-18, waiting on the usage fixes. Those have all shipped, so it is
