@@ -7,7 +7,7 @@
 --   3. Select this entire file, copy, paste into the editor
 --   4. Click Run (or press Ctrl+Enter)
 --   5. The last statement prints a table of what was created - check that all
---      fourteen tables are listed with the expected column counts.
+--      fifteen tables are listed with the expected column counts.
 --
 -- Then, back in the project folder:
 --   python -m src.sync_to_supabase --check    verify the tables are visible
