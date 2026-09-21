@@ -142,7 +142,11 @@ def core_scoreboard(day: date | None = None) -> dict | None:
     drives feed, and an absent situation already means "no live spot known" to
     every consumer, whereas a half-built one would be read as fact.
     """
-    day = day or _now().date()
+    # ESPN dates are US Eastern days, not UTC ones (clv.espn_event_id does the
+    # same subtraction). A Sunday night game kicking at 00:20Z belongs to the
+    # previous Eastern day, so asking for the UTC date returns the wrong slate
+    # and the tracker concludes there is nothing left to watch.
+    day = day or (_now() - timedelta(hours=5)).date()
     index = _core(f"{CORE_NFL}/events", params={"dates": day.strftime("%Y%m%d"), "limit": 100})
     if not isinstance(index, dict):
         return None
