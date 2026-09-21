@@ -113,11 +113,12 @@ PROPS_BIAS_ADJUST = os.getenv("PROPS_BIAS_ADJUST", "0").strip().lower() in ("1",
 # the most of it. Out of sample over 2025 weeks 11-18, replayed on the depth
 # chart as it stood, the trim moves the top target-share quartile from 0.801
 # to 0.919 of realised, brings the per-team sum to 0.996 and improves share
-# MAE from 0.0430 to 0.0424. Off until it has been compared against a live
-# Sunday with P10 inactives applied, since P10 attacks the same defect.
-# Flipping it changes simulated output, so stored game_simulations and any
-# props ranked against them go stale and must be regenerated.
-USAGE_PARTICIPATION_TRIM = os.getenv("USAGE_PARTICIPATION_TRIM", "0").strip().lower() in ("1", "true", "yes")
+# MAE from 0.0430 to 0.0424. ON since 2026-09-21: on the 9/20 Sunday, with
+# P10 inactives applied, P10 closed 2% of the receiving gap to the market and
+# this trim 51%. USAGE_PARTICIPATION_TRIM=0 for the old behaviour; either way,
+# flipping it changes simulated output, so stored game_simulations and any
+# props ranked against them go stale, and props.BIAS_FIT was fitted with it on.
+USAGE_PARTICIPATION_TRIM = os.getenv("USAGE_PARTICIPATION_TRIM", "1").strip().lower() in ("1", "true", "yes")
 USAGE_MIN_PARTICIPATION = float(os.getenv("USAGE_MIN_PARTICIPATION", "0.10"))
 
 # P28 part 1. Take the simulated game's QB1 from nflverse's expected starter

@@ -154,14 +154,21 @@ BIAS_FIT = {
     # mostly quarterbacks. Fitted on the simulations stored 2026-09-19 with
     # USAGE_PARTICIPATION_TRIM and QB_EXPECTED_STARTER both off; either flag
     # changes simulated output and needs another refit.
+    # REFITTED 2026-09-21 for USAGE_PARTICIPATION_TRIM on (P31), on the 9/20
+    # pregame in-memory sims (14 Sunday games, P10 inactives applied, 12:00 CDT
+    # lines). Receiving roughly halves: receptions +0.5522 -> +0.2315. Passing
+    # yards is NOT refitted: the trim leaves it bit-identical, and a refit on
+    # this smaller sample (-0.049, n=28) would move it on sample noise alone.
+    # The same method on the trim-off sims of this sample lands ~0.1 from the
+    # 9/19 fit, which is the size of the refit's own sampling noise.
     "offsets": {
         "player_pass_yds": +0.0732,
-        "player_receptions": +0.5522,
+        "player_receptions": +0.2315,
     },
-    "measured_at_by_market": {"player_pass_yds": "2026-09-20", "player_receptions": "2026-09-20",
-                              "player_reception_yds": "2026-09-20"},
-    "n": {"player_pass_yds": 32, "player_reception_yds": 155, "player_receptions": 154},
-    "raw_bias_pp": {"player_pass_yds": -1.69, "player_reception_yds": -9.55, "player_receptions": -12.07},
+    "measured_at_by_market": {"player_pass_yds": "2026-09-20", "player_receptions": "2026-09-21",
+                              "player_reception_yds": "2026-09-21"},
+    "n": {"player_pass_yds": 32, "player_reception_yds": 145, "player_receptions": 144},
+    "raw_bias_pp": {"player_pass_yds": -1.69, "player_reception_yds": -4.10, "player_receptions": -5.13},
     # Rushing is corrected by position (P26). The single category offset hid two
     # biases pulling opposite ways, QBs over and backs under. Refitted
     # 2026-09-18 after scrambles and kneels left the carry shares (P23), on the
@@ -181,14 +188,18 @@ BIAS_FIT = {
     # about half as far under as WRs and TEs (RB +0.21, 90% CI +0.08 to +0.34,
     # which excludes the category fit of +0.40). Receptions did not split: all
     # three positions sit within each other's intervals.
+    #
+    # All five refitted 2026-09-21 with the P31 trim on, same sample as above.
+    # RB rushing falls to ~0 (+0.1929 -> +0.0036): the trim returns the carries
+    # k32+fb had spread to backs who do not play.
     "position_offsets": {
-        "player_rush_yds": {"RB": +0.1929, "QB": -0.2564},
-        "player_reception_yds": {"WR": +0.4342, "TE": +0.5417, "RB": +0.2668},
+        "player_rush_yds": {"RB": +0.0036, "QB": -0.4005},
+        "player_reception_yds": {"WR": +0.1605, "TE": +0.2771, "RB": +0.1296},
     },
-    "position_n": {"player_rush_yds": {"RB": 55, "QB": 27}, "player_reception_yds": {"WR": 81, "TE": 38, "RB": 36}},
-    "position_raw_bias_pp": {"player_rush_yds": {"RB": -4.26, "QB": +5.67},
-                             "player_reception_yds": {"WR": -9.88, "TE": -12.46, "RB": -6.34}},
-    "position_measured_at": "2026-09-20",
+    "position_n": {"player_rush_yds": {"RB": 48, "QB": 26}, "player_reception_yds": {"WR": 73, "TE": 36, "RB": 36}},
+    "position_raw_bias_pp": {"player_rush_yds": {"RB": -0.08, "QB": +9.41},
+                             "player_reception_yds": {"WR": -3.64, "TE": -6.31, "RB": -3.11}},
+    "position_measured_at": "2026-09-21",
     "position_notes": {
         "player_rush_yds": {"RB": (
             "Mean-fitted: it lifts every back by the same amount, but starters (the higher lines) still run "
