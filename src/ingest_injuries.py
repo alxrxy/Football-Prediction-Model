@@ -97,6 +97,11 @@ def _status(value) -> str | None:
     value = (str(value) or "").strip().lower()
     if value in ("out", "doubtful", "questionable", "probable"):
         return value
+    # "Injured Reserve" is kept as its own status rather than folded into
+    # "out": an IR player is not on the game roster at all, which is why
+    # features.GAME_STATUSES leaves him alone when a list is posted (P20).
+    if value == "injured reserve":
+        return "ir"
     return None
 
 
@@ -105,7 +110,7 @@ def _practice(value) -> str | None:
 
 
 def play_probability(status: str | None, practice: str | None) -> float:
-    if status == "out":
+    if status in ("out", "ir"):
         return 0.0
     key = (status, practice)
     if key in PLAY_PROBABILITY:
@@ -262,6 +267,14 @@ def ingest_espn(store: db.Store, sport: str, season: int, week: int,
             status = _status(item.get("status"))
             if status is None:
                 continue
+            share = (shares or {}).get(player_key(team, athlete.get("displayName")))
+            if status == "ir" and share is None:
+                # No snaps for this team means he is not inside the rating the
+                # charge is deducted from, so there is nothing to deduct. Without
+                # this the 0.65 college fallback would price a camp body like a
+                # rotation regular (P20). A starter traded in and hurt before he
+                # played is uncharged too; that is the known cost of the rule.
+                continue
             rows.append(
                 {
                     "player": athlete.get("displayName") or "unknown",
@@ -276,9 +289,7 @@ def ingest_espn(store: db.Store, sport: str, season: int, week: int,
                     # by name. Without this every ESPN row would fall back to a
                     # single default and a third-stringer would be priced like
                     # a starter, which is the failure this layer must avoid.
-                    "snap_share": (shares or {}).get(
-                        player_key(team, athlete.get("displayName"))
-                    ),
+                    "snap_share": share,
                     "play_probability": play_probability(status, None),
                     "source": "espn",
                 }
@@ -321,8 +332,10 @@ def run(sport: str = "nfl", season: int | None = None, week: int | None = None) 
     espn_rows = ingest_espn(store, sport, season, week, shares)
 
     # nflverse is the authority where both cover a player; ESPN only fills gaps.
-    seen = {(r["team"], r["player"]) for r in rows}
-    added = [r for r in espn_rows if (r["team"], r["player"]) not in seen]
+    # Matched on player_key, not the raw name: the feeds disagree about
+    # generational suffixes, and an unmatched duplicate is charged twice (P20).
+    seen = {player_key(r["team"], r["player"]) for r in rows}
+    added = [r for r in espn_rows if player_key(r["team"], r["player"]) not in seen]
     rows += added
     if espn_rows:
         print(f"  espn: {len(espn_rows)} rows ({len(added)} new, {len(espn_rows) - len(added)} already covered)")
