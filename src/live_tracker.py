@@ -198,6 +198,97 @@ def _ref_id_url(ref: str | None) -> str:
     return str(ref or "").replace("http://", "https://", 1)
 
 
+# The summary endpoint is on the blocked host too, which left the live
+# simulation with no box score: no usage so far, no passer, no touchdowns so
+# far. core_summary rebuilds the two parts it reads - boxscore.players and
+# scoringPlays - so live_sim.game_usage and scoring_so_far run unchanged.
+# drives (the live spot for the start state) is not rebuilt.
+_ATHLETE: dict[str, tuple[str, str]] = {}   # athlete id -> (full name, position)
+USAGE_POSITIONS = {"QB", "RB", "FB", "WR", "TE"}
+CORE_STAT_WORKERS = 8
+_CORE_STATS = {   # the summary's box-score keys, from the core API's stat names
+    "passing": ("completions/passingAttempts", "passingYards", "passingTouchdowns", "interceptions"),
+    "rushing": ("rushingAttempts", "rushingYards", "rushingTouchdowns"),
+    "receiving": ("receptions", "receivingTargets", "receivingYards", "receivingTouchdowns"),
+}
+
+
+def _core_athlete(entry: dict) -> tuple[str, str]:
+    """(full name, position abbreviation) for a roster entry, fetched once.
+    The roster itself carries only the surname."""
+    ref = (entry.get("athlete") or {}).get("$ref")
+    aid = _ref_id(ref)
+    if aid not in _ATHLETE:
+        data = _core(_ref_id_url(ref)) or {}
+        name = str(data.get("displayName") or "")
+        if not name:
+            return str(entry.get("displayName") or ""), ""   # not cached: retry next poll
+        _ATHLETE[aid] = (name, str((data.get("position") or {}).get("abbreviation") or ""))
+    return _ATHLETE[aid]
+
+
+def _core_box_line(entry: dict) -> tuple[str, dict] | None | bool:
+    """(name, {category: {key: value}}) for one skill player with stats,
+    None for a player who is not one, False if his stats could not be read."""
+    name, position = _core_athlete(entry)
+    if not name or (position and position not in USAGE_POSITIONS):
+        return None
+    doc = _core(_ref_id_url((entry.get("statistics") or {}).get("$ref")))
+    if not doc:
+        return False
+    cats = {c.get("name"): {s.get("name"): s.get("value") for s in c.get("stats") or []}
+            for c in (doc.get("splits") or {}).get("categories") or []}
+    out = {}
+    for kind, keys in _CORE_STATS.items():
+        v = cats.get(kind) or {}
+        if kind == "passing":
+            out[kind] = {keys[0]: f"{_int(v.get('completions'))}/{_int(v.get('passingAttempts'))}",
+                         **{k: _int(v.get(k)) for k in keys[1:]}}
+        else:
+            out[kind] = {k: _int(v.get(k)) for k in keys}
+    return name, out
+
+
+def core_summary(espn_id: str, team_ids: tuple[str, str]) -> dict | None:
+    """A summary-shaped payload (box score and scoring plays only), or None."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    base = f"{CORE_NFL}/events/{espn_id}/competitions/{espn_id}"
+    players = []
+    for tid in team_ids:
+        roster = _core(f"{base}/competitors/{tid}/roster")
+        if not roster:
+            return None
+        entries = [e for e in roster.get("entries") or [] if e.get("statistics")]
+        with ThreadPoolExecutor(CORE_STAT_WORKERS) as pool:
+            lines = list(pool.map(_core_box_line, entries))
+        if any(x is False for x in lines):
+            return None      # a missing line would understate that player's usage
+        lines = [x for x in lines if x]
+        statistics = [{"name": kind, "keys": list(keys),
+                       "athletes": [{"athlete": {"displayName": name},
+                                     "stats": [cats[kind][k] for k in keys]}
+                                    for name, cats in lines]}
+                      for kind, keys in _CORE_STATS.items()]
+        players.append({"team": {"id": str(tid)}, "statistics": statistics})
+
+    plays = _core(f"{base}/plays", params={"limit": 1000})
+    if not plays or _int(plays.get("pageCount")) > 1:
+        return None          # a missing page would drop scoring plays
+    scoring = []
+    for p in plays.get("items") or []:
+        if not p.get("scoringPlay"):
+            continue
+        team_ref = (p.get("team") or {}).get("$ref")
+        scoring.append({
+            "team": {"id": _ref_id(team_ref), "abbreviation": _core_team(team_ref)},
+            "type": p.get("type") or {}, "text": p.get("text"),
+            "period": p.get("period") or {}, "clock": p.get("clock") or {},
+            "homeScore": p.get("homeScore"), "awayScore": p.get("awayScore"),
+        })
+    return {"boxscore": {"players": players}, "scoringPlays": scoring}
+
+
 def _abbr(code) -> str:
     code = str(code or "").upper()
     return ESPN_ALIASES.get(code, code)
@@ -888,6 +979,8 @@ class Tracker:
         if s.state == "in":
             self.live_seen.add(gid)
             summary = _espn("summary", {"event": s.espn_id})
+            if summary is None:
+                summary = core_summary(s.espn_id, (s.home_id, s.away_id))
             scoring = recent_scoring(summary)
             path = scoring_path(summary, s.postseason)
         previous = self.latest.get(gid) or {}

@@ -261,13 +261,62 @@ def test_storage_roundtrip():
     check("flags survive as JSON", '"pace_high"' in got[0]["flags"], True)
 
 
+def test_core_summary_feeds_game_usage():
+    """The core-API fallback yields a box score game_usage reads unchanged,
+    and gives up whole rather than understate a player it could not read."""
+    from src import live_tracker as lt
+    from src.live_sim import game_usage, scoring_so_far
+
+    base = f"{lt.CORE_NFL}/events/E/competitions/E"
+    stat = lambda cats: {"splits": {"categories": [  # noqa: E731
+        {"name": k, "stats": [{"name": n, "value": v} for n, v in d.items()]} for k, d in cats.items()]}}
+    docs = {
+        f"{base}/competitors/1/roster": {"entries": [
+            {"athlete": {"$ref": "http://x/athletes/10"}, "statistics": {"$ref": "http://x/s/10"}},
+            {"athlete": {"$ref": "http://x/athletes/11"}, "statistics": {"$ref": "http://x/s/11"}},
+            {"athlete": {"$ref": "http://x/athletes/12"}}]},          # no stats yet: never fetched
+        f"{base}/competitors/2/roster": {"entries": [
+            {"athlete": {"$ref": "http://x/athletes/20"}, "statistics": {"$ref": "http://x/s/20"}}]},
+        "https://x/athletes/10": {"displayName": "Q Back", "position": {"abbreviation": "QB"}},
+        "https://x/athletes/11": {"displayName": "R Back Jr.", "position": {"abbreviation": "RB"}},
+        "https://x/athletes/20": {"displayName": "Line Backer", "position": {"abbreviation": "LB"}},
+        "https://x/s/10": stat({"passing": {"completions": 3, "passingAttempts": 5, "passingYards": 20}}),
+        "https://x/s/11": stat({"rushing": {"rushingAttempts": 4, "rushingYards": 14},
+                                "receiving": {"receivingTargets": 2, "receptions": 1, "receivingYards": 9,
+                                              "receivingTouchdowns": 1}}),
+        f"{base}/plays": {"pageCount": 1, "items": [
+            {"scoringPlay": True, "team": {"$ref": "http://x/teams/1"}, "type": {"text": "Passing Touchdown"},
+             "period": {"number": 1}, "clock": {"value": 300.0, "displayValue": "5:00"},
+             "homeScore": 7, "awayScore": 0},
+            {"scoringPlay": False, "type": {"text": "Rush"}}]},
+    }
+    real_core, real_team = lt._core, lt._core_team
+    lt._core = lambda url, params=None: docs.get(url)
+    lt._core_team = lambda ref: "HOM"
+    lt._ATHLETE.clear()
+    try:
+        summary = lt.core_summary("E", ("1", "2"))
+        usage = game_usage(summary, {"1": 0, "2": 1})
+        check("passer read", (usage[0]["Q Back"]["pass_att"], usage[0]["Q Back"]["pass_cmp"]), (5, 3))
+        check("carries, targets, receptions", {k: usage[0]["R Back Jr."][k] for k in ("car", "tgt", "rec", "td")},
+              {"car": 4, "tgt": 2, "rec": 1, "td": 1})
+        check("defenders left out", usage[1], {})
+        check("touchdowns so far", scoring_so_far(summary, {"1": 0, "2": 1}), ([1, 0], [0, 0]))
+        check("scoring plays feed the alerts", recent_scoring(summary)[0]["home_score"], 7)
+        docs.pop("https://x/s/11")
+        check("an unreadable line gives up whole", lt.core_summary("E", ("1", "2")), None)
+    finally:
+        lt._core, lt._core_team = real_core, real_team
+        lt._ATHLETE.clear()
+
+
 if __name__ == "__main__":
     for fn in [
         test_parse_scoreboard, test_team_aliases, test_field_position, test_home_possession_from_scoreboard,
         test_unusable_payloads, test_elapsed_minutes,
         test_recent_scoring, test_scoring_path, test_percentiles_are_mid_ranked, test_underdog_flag,
         test_pace_and_margin_flags, test_alert_dedupe, test_startup_survives_database_errors,
-        test_storage_roundtrip,
+        test_storage_roundtrip, test_core_summary_feeds_game_usage,
     ]:
         print(f"\n{fn.__name__}")
         fn()
