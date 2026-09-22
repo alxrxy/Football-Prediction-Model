@@ -66,6 +66,7 @@ status only when its adoption test is met.
 | P36 | ATS: a zero edge (model spread = stored line) is graded as backing the away side | grading rule | 2026-09-21 | `grade.evaluate` sets `took_home = float(edge) > 0`, so edge 0 falls to the away side and gets a W/L; `export_dashboard` (`_ats`, `_graded_pick`) matches it deliberately so the Record page adds up to the grader. With no edge the model had no side, so arguably the pick should be no-action (like a push) and leave the ATS denominator. Blast radius today: **1 of 226 stored predictions** - ml-v1 on 2026_01_GB_MIN (model -1.5, line -1.5), graded L. It moves ML's season ATS by one game: 9-20-1 as graded vs 9-19-1 as no-action; baseline unaffected | decide the rule once, then apply it in `grade.evaluate`, `export_dashboard._ats` and `_graded_pick` in the same change so the grader and the page never disagree; the grader CLI and the Record page must show identical ATS totals after the change; slate reports (`calibration/analyze_nfl_slate.py` already treats edge 0 as no lean) reconciled to the same rule | **open, deferred - leave grading as-is mid-season (decision 2026-09-21).** Not urgent: one game. Note the slate-report script already disagrees with the grader here (it drops edge 0), and `calibration/2026-09-13_nfl.md` shows GB @ MIN's ML ATS as "—" (no action) where the grader and the Record page count it an L |
 | P37 | Baseline ATS gets worse as its edge grows (4+ pts: 4-10-1 season, week 1 1-4, week 2 3-6-1) - why? | investigate | 2026-09-21 | Two weeks of negative best-fit weight on the edge (w = -0.64 week 1, -0.68 week 2). Overlaps P5 (stale early-season ratings), P22 (defense-heavy, unadjusted rating), P9/P2 (injury charges) | diagnosis only; the questions, tests and decision rules are in the 2026-09-21 scoping entry and were written before any test ran | **diagnosed 2026-09-21: noise, by the pre-set rules.** The 2026 gradient is not significant (slope perm p 0.27, corr p 0.11). The live Layer 1 replayed over 2016-2025 (reproduces live exactly) shows no negative early-season relation (weeks 1-4 corr +0.05, CI -0.03 to +0.13). The bigger finding: across 2,582 games the baseline edge covers **~50% at every size** (b = -0.02, CI -0.13 to +0.08), so it carries essentially no ATS information at any edge size. No fix proposed. See the 2026-09-21 findings entry **Part 2 (2026-09-22): noise still stands.** 2026's edges are at the high end of the normal range, not above it (3rd of 11 seasons). The market did not move against the big edges (CLV -0.30 pp at >= 4 vs -0.22 below, no size effect; corrected after P34). 2026's lines were among the least accurate, not sharper. Lead: QB-change games 1-9-1 (post-hoc, n = 11); see the 2026-09-22 cross-reference "QB mismatch: one mechanism, three observations" (P2 / P9 / P37). |
 | P38 | Tests: every module's `check()` prints a failure but never raises, so pytest reports a failing check as passed | tooling | 2026-09-22 | Found building P34: a new `test_clv` check failed (0.5166 vs 0.5171), and `pytest -q` still printed 133 passed. `python -m tests.test_clv` printed 22 passed, 1 failed. All 14 modules in `tests/` define the same non-raising `check()`, and only their `__main__` runners count failures and exit 1 | until fixed, validation runs **each module's own runner** (`python -m tests.<module>`) as well as pytest, and reads the pass/fail count it prints; a pytest pass alone is not evidence | **open, not fixed.** The likely fix is to make `check()` raise (or assert) under pytest while the runners keep their counts; not scoped yet |
+| P39 | QB-vs-rating term: the unrestricted P28 part 2 term (margin MAE 11.557 -> 10.903 over 2024-25), tested for edge against the line and, separately, as the simulator's anchor | logic | 2026-09-22 | Set aside 2026-09-20 as out of P28's scope. The restricted form lost to the flat rule, and corr(term, market spread) = -0.324 says the market already prices QB changes. Never tested for value against the line. The sim pins its mean margin to the baseline anchor, so an accuracy gain could still pay there | see the 2026-09-22 "P39 scoped" entry, written before any run: gate 0 (the rebuild reproduces the logged term), then phase 1 (edge) and phase 2 (anchor), each with its own pass rules | **tested 2026-09-22: fails both phases by the pre-set rules; nothing built.** The 9/20 gain doesn't reproduce: against P37's verified baseline it is 10.709 -> 10.608 over 2024-25, not 11.557 -> 10.903. No edge on any arm (pooled corr with the cover residual -0.024 / -0.012 / -0.041). As the anchor, a real but small gain: identity arm pooled -0.075, 6/7 seasons; full term -0.090, 7/7; both short of the 0.10 bar. The gain is QB identity, not scale |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -107,6 +108,89 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-22 — P39 findings: the QB-vs-rating term carries no edge, and as the sim anchor it gains less than the 0.10 bar
+
+Script `calibration/p39_qb_rating_term.py`, full output `calibration/2026-09-22_p39_qb_rating_term.md`. Arms and rules as scoped in the entry below, fixed before running. **Nothing built; no production code.**
+
+**Gate 0: the 9/20 headline doesn't reproduce, and the reason is its baseline.** Rebuilt to the logged formula over 2,661 games, 0 dropped. Split exactly: max |U - I - S| is 2e-15.
+
+| 2024-25, k fitted on 2022-23 | logged 9/20 | rebuild |
+|---|---|---|
+| margin MAE without the term | 11.557 | **10.709** |
+| margin MAE with the term | 10.903 | **10.608** |
+| k | 0.780 | 0.548 (0.831 on 2024-25 itself) |
+| corr(term, spread) | -0.324 | +0.108 |
+
+The rebuild's baseline is P37's replay, which matches live Layer 1 exactly (30/30). The 9/20 baseline was 0.85 pts worse on the same seasons, so it wasn't the live model; its script wasn't kept, so the difference can't be pinned down. **The 0.65-pt gain was measured against a weaker baseline. Against the real one the term is worth about 0.10.** Both phases run on the rebuild, as scoped.
+
+**Phase 1, edge: fails on every arm, clearly.** Pooled 2019-25 walk-forward, 1,881 games, k refitted each season on the seasons before it:
+
+| arm | corr(term, cover residual) | one-sided p | ATS without -> with |
+|---|---|---|---|
+| U, full term | -0.024 | 0.85 | 911-927 -> 910-928 |
+| I, identity | -0.012 | 0.70 | 911-927 -> 909-929 |
+| S, scale | -0.041 | 0.96 | 911-927 -> 905-933 |
+
+The identity arm correlates -0.187 with the spread (-0.336 in 2025): **the line already prices QB changes**, which is the 9/20 finding in a cleaner form. The term is market-redundant, so it is not to be used for baseline edges or Stage-1 flags.
+
+**Phase 2, the sim anchor: a real, consistent gain below the pre-set bar.**
+
+| arm | pooled MAE change | 2025 | seasons better | Brier |
+|---|---|---|---|---|
+| U, full term | **-0.090** | -0.193 | 7/7 | 0.2295 -> 0.2274 |
+| I, identity | **-0.075** | -0.185 | 6/7 | 0.2295 -> 0.2268 |
+| S, scale | +0.014 | +0.002 | 4/7 | worse |
+
+**S1 fails for U and I:** 2025 clears the >= 0.10 bar, but the pooled change doesn't (0.090 and 0.075). S2 and S3 pass for both. **By the rules set in advance, phase 2 fails.** The bar is not moved after the fact. For scale: the line's own MAE on these games is 9.813 against the baseline's 10.578, so the term closes about 12% of that gap.
+
+**S4: the gain is QB identity, not scale.** Arm S is about zero or harmful (k -0.07 to +0.40, unstable). So the 9/20 worry that the term might just be undoing the x 0.75 prior regression doesn't hold. What there is comes from "a different quarterback than the one in the rating".
+
+**Caveats that make these numbers an upper bound for live.**
+- The starter is nflverse's *actual* starter. Live would use the *expected* starter, which is wrong in about 9.6% of team-games (P28 part 1; `QB_EXPECTED_STARTER` is still off).
+- The baseline has no injury term. Live, the flat QB charge already prices part of the same event (+0.250 cover correlation where it fires, P28), so the identity arm's incremental value on top of it would be smaller than measured here.
+
+**What it means.** Nothing here is a production change by the pre-set rules. The honest summary is "a small, consistent anchor accuracy gain (about 0.08-0.09 pts), no edge, and an overlap with the live injury charge that wasn't tested". If it is ever revisited, it's as a sim-anchor-only change, with a new pre-set bar and the injury-overlap test, not by relaxing this one.
+
+---
+
+## 2026-09-22 — P39 scoped: the QB-vs-rating term, tested for edge first and then as the sim anchor (design and validation only, written before running)
+
+**What the term is (re-derived from the 2026-09-20 P28 entry; its script wasn't kept, so it is rebuilt here).** For each team-game, `k x (E[EPA/db of the QB who plays] - rating-implied EPA/db) x 0.603 dropbacks/play x 63 plays`. Home minus away, added to the baseline margin. Rebuilt with pre-kickoff data only:
+- **Starter:** nflverse schedules `home_qb_id` / `away_qb_id`. For a completed game this is the actual starter, known at kickoff.
+- **Q (the starter's EPA/db):** all his REG-season dropbacks (`qb_dropback == 1`), for any team, in the prior season plus the current season before this week. Shrunk to the league mean dropback EPA over the same window by 200 dropbacks, as in the P28 diagnosis.
+- **R (rating-implied EPA/db):** the team's dropback EPA, blended exactly as Layer 1 blends offence. Weight on the current season `w = plays/(plays + 900)`; the prior season is regressed x 0.75.
+- **k:** fitted through the origin on (actual margin - baseline margin) against the term, on training seasons only.
+- **Baseline margin:** P37's exact replay of live Layer 1 plus HFA/rest/travel/wind. There is no injury term, since the live injury layer has no leak-free history. **Line:** nflverse `spread_line` (near-close, as in P37).
+
+**Design question the arms answer.** R is regressed x 0.75 and Q isn't, so `Q - R` mixes two things. Arm U is split exactly into:
+- **arm I (identity):** Q of the starter minus the rating-weighted mix of Q over the quarterbacks whose dropbacks are inside R (same blend weights). It is about 0 when the starter is the rating's quarterback and fires on a QB change.
+- **arm S (scale):** that rating-weighted Q mix minus R. It is non-zero for every team. It measures how much the rating's regression and shrinkage understate or overstate passing, whoever starts.
+
+If arm S carries the gain, the finding is about the rating's prior regression and belongs to P22 / P5, not a QB term.
+
+**Placement, if anything passes.** The term is additive in Layer 2, next to HFA and rest; it doesn't replace Layer 1. It has no interaction with k32+fb, P24 or PENALTY_REPLAY on the baseline side: they are simulator-only, and the baseline imports nothing from the simulator (P37). In the simulator they only shape the distribution, because `anchored_simulation` re-solves the mean margin to the anchor. **Known overlap, not testable here:** when the expected starter is a backup because the starter is injured, arm I and the live flat injury QB charge price the same event. A production design must charge it once. That needs its own test against the real 2022-25 injury reports (the P28 reconstruction) before any build.
+
+**Gate 0: the rebuild must be the logged term.** Fit k on 2022-23, judge 2024-25, arm U. Logged: k 0.780; MAE 11.557 -> 10.903; mean |term| 4.17; corr(term, spread) -0.324. **Reproduced** if both MAEs are within 0.10 and k within 0.10. If not, the rebuild is labelled "not an exact rebuild", with the differences stated, and both phases still run on it.
+
+**Walk-forward for both phases.** For each season 2019-2025, k is fitted on every prior season from 2016 and judged on that season. The headline is 2025; pooled means 2019-25. Every arm (U, I, S) is reported. The pass rules below are applied to each arm separately.
+
+**Phase 1, edge against the line (a pass requires all three):**
+- **E1:** pooled corr(term, cover residual) > 0 at one-sided p < 0.05. The cover residual is actual margin minus the line's margin, so a positive value means the term knows something the line doesn't.
+- **E2:** pooled ATS of the lean with the term added is not below the baseline's ATS.
+- **E3:** in 2025 alone, corr(term, cover residual) > 0 (sign only).
+- **Fail on every arm:** the term is market-redundant, it is never used for baseline edges or Stage-1 flags, and phase 2 decides the rest.
+
+**Phase 2, the sim anchor (runs whatever phase 1 finds; a pass requires S1-S3, and S4 decides what the gain is):**
+- **S1:** walk-forward margin MAE improves by >= 0.10 pts in 2025 **and** pooled over 2019-25.
+- **S2:** it improves in >= 5 of the 7 walk-forward seasons.
+- **S3:** the win-probability Brier score (normal, the live NFL margin sigma) is not worse, pooled.
+- **S4:** if arm S delivers >= 2/3 of arm U's pooled MAE gain, the result is recorded as a rating-regression finding for P22 / P5, not built as a QB term. Only an arm I gain counts as a QB-vs-rating gain.
+- **Limit stated up front:** full historical simulations are not run. `load_inputs` has no as-of cutoff, so a replayed sim would leak outcomes. Phase 2 judges the anchor the sim is pinned to, which fixes the sim's mean margin; it doesn't measure knock-on effects on props.
+
+**Stop.** Report the results to the user either way; write no production code from this entry.
 
 ---
 
