@@ -4,7 +4,13 @@
 
 The tests and decision rules were fixed in calibration-log.md (2026-09-21, "P37
 scoped") before this ran. <pbp_dir> holds pbp_<season>.parquet for 2015-2026:
-pass/run plays with season, week, season_type, posteam, defteam, epa.
+pass/run plays with season, week, season_type, posteam, defteam, epa. To build it:
+
+    import nfl_data_py as nfl
+    cols = ["season", "week", "season_type", "posteam", "defteam", "epa", "play_type"]
+    for y in range(2015, 2027):
+        d = nfl.import_pbp_data([y], columns=cols, downcast=True, cache=False)
+        d[d.play_type.isin(["pass", "run"]) & d.posteam.notna()].to_parquet(f"{pbp_dir}/pbp_{y}.parquet")
 
 Part A reads the graded 2026 baseline predictions from the configured store.
 Part B replays the live Layer 1 (src/ingest_nflverse.compute_ratings) as of each
