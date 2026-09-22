@@ -311,6 +311,7 @@ def _results(store, sport: str) -> dict:
             "by_slate": by_slate,
             "by_edge": {str(k): v for k, v in stats["by_edge"].items()},
             "by_conf": stats["by_conf"],
+            "edges": _edge_record(rows, games),
         }
     return {
         "total_graded": len(graded),
@@ -425,6 +426,7 @@ def _weeks(graded: list[dict], games: dict[str, dict]) -> list[dict]:
                 "market_mae": stats["market_mae"],
                 "brier": stats["brier"],
                 "score": correctness_score(stats),
+                "edges": _edge_record(rows, games),
             }
 
         # Every game of the week, not only the graded ones, so the week's real
@@ -450,6 +452,59 @@ def _weeks(graded: list[dict], games: dict[str, dict]) -> list[dict]:
     return out
 
 
+EDGE_THRESHOLDS = (0.0, 2.0, 3.0, 4.0, 6.0)   # the same cut-offs grade.evaluate reports
+
+
+def _ats(row: dict) -> str | None:
+    """W / L / P on the side the edge leaned, against the stored line. A zero
+    edge counts as the away side, exactly as grade.evaluate grades it, so these
+    records add up to the headline ATS on the same page."""
+    edge, market = row.get("edge"), row.get("market_spread")
+    if edge is None or market is None:
+        return None
+    cover = row["actual_margin"] + float(market)   # + => home covered
+    return "P" if cover == 0 else ("W" if (float(edge) > 0) == (cover > 0) else "L")
+
+
+def _edge_record(rows: list[dict], games: dict[str, dict]) -> dict:
+    """ATS split by whether the pick was flagged and by the size of its edge.
+
+    The question this answers every week is whether disagreeing with the line
+    pays: on weeks 1 and 2 of 2026 the baseline did worse the more it disagreed.
+    Unlike grade.evaluate's by_edge, pushes are counted rather than dropped, so
+    each bucket's record adds up to the games in it. The flagged games are
+    listed one by one, since there are rarely more than a handful.
+    """
+    def tally(rs):
+        out = {"win": 0, "loss": 0, "push": 0}
+        for r in rs:
+            result = _ats(r)
+            if result:
+                out[{"W": "win", "L": "loss", "P": "push"}[result]] += 1
+        return out
+
+    graded = [r for r in rows if _ats(r)]
+    flagged = [r for r in graded if r.get("is_value")]
+    listed = []
+    for r in sorted(flagged, key=lambda r: (games.get(r["game_id"]) or {}).get("kickoff_time") or ""):
+        g = games.get(r["game_id"]) or {}
+        edge = float(r["edge"])
+        listed.append({
+            "game_id": r["game_id"], "week": g.get("week"),
+            "home": g.get("home_team"), "away": g.get("away_team"),
+            "lean": g.get("home_team") if edge > 0 else g.get("away_team"),
+            "edge": round(edge, 2), "market_spread": r.get("market_spread"),
+            "ats": _ats(r),
+        })
+    return {
+        "flagged": tally(flagged),
+        "unflagged": tally([r for r in graded if not r.get("is_value")]),
+        "by_edge": [{"min": t, **tally([r for r in graded if abs(float(r["edge"])) >= t])}
+                    for t in EDGE_THRESHOLDS],
+        "flagged_games": listed,
+    }
+
+
 def _graded_pick(row: dict | None, actual: int) -> dict | None:
     """One model's result on one game, graded exactly as grade.evaluate does."""
     if not row:
@@ -470,6 +525,7 @@ def _graded_pick(row: dict | None, actual: int) -> dict | None:
         "error": round(float(margin) - actual, 1) if margin is not None else None,
         "confidence": row.get("confidence"),
         "baseline_source": row.get("baseline_source"),
+        "is_value": bool(row.get("is_value")),
     }
 
 

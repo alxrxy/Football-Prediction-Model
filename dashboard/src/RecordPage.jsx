@@ -1,4 +1,5 @@
 import BacktestPanel from './BacktestPanel.jsx'
+import EdgeRecord from './EdgeRecord.jsx'
 import RecordTotals from './RecordTotals.jsx'
 import ResultsPanel from './ResultsPanel.jsx'
 import ScoreStrip from './ScoreStrip.jsx'
@@ -6,7 +7,7 @@ import WeekBreakdown from './WeekBreakdown.jsx'
 import { PageHead } from './ui.jsx'
 
 // How the models are doing: the total record split into moneyline and spread,
-// then the same split week by week with every game under it, the running
+// the flagged picks and ATS by edge size, then the same split week by week with every game under it, the running
 // record and the backtest behind the gates.
 
 export default function RecordPage({ sport }) {
@@ -25,6 +26,7 @@ export default function RecordPage({ sport }) {
           {graded ? (
             <div className="card">
               <RecordTotals results={results} />
+              <EdgeRecord results={results} />
               <WeekBreakdown weeks={results?.weeks} />
             </div>
           ) : (
