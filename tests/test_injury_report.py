@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sys
 
-from src.features import latest_injury_report
+from src.features import latest_injury_report, score_injuries
 
 PASS, FAIL = 0, 0
 
@@ -161,6 +161,39 @@ def test_inactives_override():
     check("nothing posted: report unchanged", apply_inactives(report, []), report)
 
 
+def test_ir_counts_as_out():
+    """P20: ESPN's "Injured Reserve" was dropped, so an IR'd starter vanished."""
+    from src.ingest_injuries import _status, play_probability
+
+    check("Injured Reserve becomes ir", _status("Injured Reserve"), "ir")
+    check("an IR player does not play", play_probability("ir", None), 0.0)
+    for status in ("out", "doubtful", "questionable", "probable"):
+        check(f"{status} unchanged", _status(status.title()), status)
+    check("an unknown status is still dropped", _status("Suspension"), None)
+    # The charge is position weight x snap share x (1 - play prob) x 6.5:
+    # HOU's To'oTo'o at 0.88 snaps is the case P20 was logged on.
+    points, breakdown = score_injuries(
+        [{"player": "Henry To'oTo'o", "team": "HOU", "position": "LB", "status": "ir",
+          "snap_share": 0.88, "play_probability": 0.0}], "nfl")
+    check("an IR linebacker is charged", round(points, 2), -1.06)
+    check("and says why in the breakdown", breakdown[0]["status"], "ir")
+
+
+def test_ir_survives_a_posted_inactive_list():
+    """An IR player is not on the game roster, so a list that omits him says
+    nothing about him -- and one that names him must not add a second row."""
+    from src.features import apply_inactives
+
+    report = [_rep("Henry Tooto'o", "ir", prob=0.0), _rep("Cole Bishop", "questionable")]
+    out = apply_inactives(report, [_inact("T.J. Sanders")])
+    rows = {r["player"]: r for r in out}
+    check("IR is left alone by a list that omits him",
+          (rows["Henry Tooto'o"]["status"], rows["Henry Tooto'o"]["play_probability"]), ("ir", 0.0))
+    listed = apply_inactives(report, [_inact("Henry Tooto'o")])
+    check("a list naming him does not add a second row", len(listed), len(report))
+    check("and he stays out", [r["play_probability"] for r in listed if "Tooto" in r["player"]], [0.0])
+
+
 def test_inactives_never_gate_a_later_week():
     from src.features import apply_inactives
 
@@ -272,6 +305,8 @@ if __name__ == "__main__":
         test_espn_stays_whole_pull,
         test_empty,
         test_snap_share_falls_back_per_player,
+        test_ir_counts_as_out,
+        test_ir_survives_a_posted_inactive_list,
         test_inactives_override,
         test_inactives_never_gate_a_later_week,
         test_inactives_latest_pull_wins,

@@ -87,7 +87,7 @@ STARTER_SLOTS = {
 DEFAULT_STARTER_SLOTS = 3
 
 PLAY_PROBABILITY = {
-    "out": 0.0, "doubtful": 0.15, "questionable": 0.55,
+    "out": 0.0, "ir": 0.0, "doubtful": 0.15, "questionable": 0.55,
     "probable": 0.85, "available": 1.0,
 }
 
@@ -258,9 +258,9 @@ def latest_injury_report(rows: list[dict]) -> list[dict]:
     return [r for r in rows if current(r)]
 
 
-# Game statuses a posted inactive list settles (P10). Out and IR are left as
-# they are: an Out player is inactive anyway, and IR players are not on the
-# game roster at all.
+# Game statuses a posted inactive list settles (P10). Out and IR ("ir", P20)
+# are left as they are: an Out player is inactive anyway, and IR players are
+# not on the game roster at all.
 GAME_STATUSES = ("questionable", "doubtful", "probable")
 
 
