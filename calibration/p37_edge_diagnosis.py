@@ -7,10 +7,11 @@ scoped") before this ran. <pbp_dir> holds pbp_<season>.parquet for 2015-2026:
 pass/run plays with season, week, season_type, posteam, defteam, epa. To build it:
 
     import nfl_data_py as nfl
-    cols = ["season", "week", "season_type", "posteam", "defteam", "epa", "play_type"]
+    # game_id must be requested: the loader joins participation data on it.
+    cols = ["game_id", "season", "week", "season_type", "posteam", "defteam", "epa", "play_type"]
     for y in range(2015, 2027):
         d = nfl.import_pbp_data([y], columns=cols, downcast=True, cache=False)
-        d[d.play_type.isin(["pass", "run"]) & d.posteam.notna()].to_parquet(f"{pbp_dir}/pbp_{y}.parquet")
+        d[d.play_type.isin(["pass", "run"]) & d.posteam.notna()][cols[1:]].to_parquet(f"{pbp_dir}/pbp_{y}.parquet")
 
 Part A reads the graded 2026 baseline predictions from the configured store.
 Part B replays the live Layer 1 (src/ingest_nflverse.compute_ratings) as of each
@@ -36,6 +37,9 @@ OUT = Path(sys.argv[2]) if len(sys.argv) > 2 else None
 RNG = np.random.default_rng(37)
 N_PERM = 10_000
 THRESHOLDS = (0.0, 2.0, 3.0, 4.0, 6.0)
+# The training file uses the old codes for relocated teams, pbp the current ones.
+# Without this the replay silently drops those 79 games (found 2026-09-22).
+CANON = {"OAK": "LV", "SD": "LAC", "STL": "LA"}
 lines: list[str] = []
 
 
@@ -260,7 +264,7 @@ def replay(pbp):
         if key not in cache:
             cache[key] = ratings(*key, pbp)
         rt = cache[key]
-        h, a = rt.get(g["home_team"]), rt.get(g["away_team"])
+        h, a = rt.get(CANON.get(g["home_team"], g["home_team"])), rt.get(CANON.get(g["away_team"], g["away_team"]))
         if not h or not a:
             continue
         parts = {k: h[k] - a[k] for k in h}
