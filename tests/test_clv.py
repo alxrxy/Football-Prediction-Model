@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sys
 
+from src import market
 from src.clv import _num, apply_close, ats_result
 
 PASS, FAIL = 0, 0
@@ -39,6 +40,21 @@ def test_same_book():
     # away 112/212 = 0.52830, home 108/208 = 0.51923; share 0.50433
     check("DEN's close probability", out["p_close"], 0.5043, 1e-4)
     check("CLV positive: the price moved toward DEN", out["clv_pp"], 0.0043, 1e-4)
+
+
+def test_straddling_close_unmoved_line():
+    """P34, CIN@HOU 2026-09-20: the line stayed at -2.5 and the books straddled
+    even money on the away side. The old price-space median stored -1 and read
+    the home side at 98%, +46 pp of CLV; the close must be near 0 CLV."""
+    row = {**ROW, "line": -2.5, "side": "home", "p_market": 0.5223}
+    close = {"close_line": -2.5, "close_price_home": -116,
+             "close_price_away": market.median_price([-108, -105, -102, 100, 100, 104]),
+             "close_source": "oddsapi_last_pregame", "close_at": None}
+    out = apply_close(row, close)
+    check("close price is a real price", close["close_price_away"] <= -100, True)
+    # 0.5171 with the configured devig (the logged diagnosis); 0.5166 multiplicative, as here
+    check("home close probability ~0.517", out["p_close"], 0.517, 2e-3)
+    check("CLV ~0, not +46 pp", out["clv_pp"], -0.005, 2e-3)
 
 
 def test_consensus_line_moved_against():
@@ -84,7 +100,7 @@ def test_espn_strings():
 
 
 if __name__ == "__main__":
-    for fn in [test_same_book, test_consensus_line_moved_against, test_implausible_move_is_suspect,
+    for fn in [test_same_book, test_straddling_close_unmoved_line, test_consensus_line_moved_against, test_implausible_move_is_suspect,
                test_after_kickoff_has_no_clv, test_ats_result, test_espn_strings]:
         print(f"\n{fn.__name__}")
         fn()

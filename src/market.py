@@ -47,6 +47,18 @@ def to_american(prob: float) -> int:
     return round(-100 * prob / (1 - prob)) if prob >= 0.5 else round(100 * (1 - prob) / prob)
 
 
+def median_price(prices) -> int | None:
+    """The median of several books' American prices, taken in probability space.
+
+    American odds have no values strictly between -100 and +100, so a plain
+    median of books straddling even money lands in that gap: [-102, +100] gives
+    -1, which implied() reads as a 1% chance (P34). Implied probability is
+    continuous, so the median is taken there and converted back.
+    """
+    probs = [implied(p) for p in prices if p is not None]
+    return to_american(median(probs)) if probs else None
+
+
 def _bisect(f, lo: float, hi: float, iters: int = 200) -> float:
     """Root of f on [lo, hi], where f(lo) > 0 > f(hi)."""
     for _ in range(iters):
@@ -219,7 +231,7 @@ def side_price(line: float, books: list[dict], side: str) -> float:
     """The going price for one side at exactly `line` (median across books)."""
     key = "spread_price_home" if side == "home" else "spread_price_away"
     prices = [b[key] for b in _priced(books) if float(b["spread"]) == line]
-    return median(prices) if prices else ASSUMED_PRICE
+    return median_price(prices) if prices else ASSUMED_PRICE
 
 
 def market_win_prob(books: list[dict], method: str | None = None) -> float | None:
