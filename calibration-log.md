@@ -109,6 +109,21 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-09-22 — Standing rule: baseline flags are "not yet statistically validated" (display only)
+
+**Decision (user, 2026-09-22), closing the checkpoint's open policy question.** Baseline value flags are not treated as trustworthy. They stay on the dashboard for tracking, labelled "not yet statistically validated", and are not presented as an actionable signal. Basis: P37 (the replayed baseline edge covers ~50% at every size) and baseline flags 3-10 over weeks 1-2.
+
+**Re-trust condition (corrected before adoption).** The first wording, "until the P37 slope test clears p < 0.05", was dropped: that test is one-sided for slope < 0, so passing it would confirm the problem. The condition adopted is positive evidence that the flags win:
+- count every graded baseline flag from 2026 week 1, pushes excluded, per sport;
+- at least **50** decided flags; and
+- one-sided binomial P(wins >= observed | p = 0.524) **< 0.05**. At 50 that means 33-17 or better, at 75 it's 47-28, and at 100 it's 62-38.
+
+It's checked automatically on every dashboard load from the exported flag record (`dashboard/src/flagTrust.js`), and the label comes off by itself when the condition is met. The P37 script is still re-run weekly as a diagnostic, but it no longer controls this label. Given the ten-season replay, the condition may never be met with Layer 1 as it stands.
+
+**Scope: display and trust labelling only.** No change to the edge calculation, Layer 1/2, the Stage-1 blended test, `is_value`, `clv_log` or grading. The flag is still computed, stored and graded exactly as before. The rule covers `baseline-v1` flags only (ml-v1's value gate is separately shut) and applies to NCAAF baseline flags too (18-19 to date).
+
+---
+
 ## 2026-09-21 — CHECKPOINT (session paused). Next session: read this entry before taking any action
 
 **State when paused**

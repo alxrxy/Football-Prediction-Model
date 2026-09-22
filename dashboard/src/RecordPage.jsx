@@ -27,7 +27,7 @@ export default function RecordPage({ sport }) {
             <div className="card">
               <RecordTotals results={results} />
               <EdgeRecord results={results} />
-              <WeekBreakdown weeks={results?.weeks} />
+              <WeekBreakdown weeks={results?.weeks} results={results} />
             </div>
           ) : (
             <div className="card empty">

@@ -4,6 +4,8 @@
 // 2026 the baseline did worse the more it disagreed with the market, and one
 // week of that is noise while five in a row is not.
 
+import { ALPHA, MIN_FLAGS, UNVALIDATED_TEXT, flagTrust, labelled } from './flagTrust.js'
+
 const MODEL_LABELS = {
   'baseline-v1': 'Baseline',
   'ml-v1': 'ML model',
@@ -64,7 +66,20 @@ function FlagList({ games }) {
   )
 }
 
-function ModelEdges({ version, season, weeks }) {
+function TrustNote({ trust }) {
+  return (
+    <p className="trust-note">
+      <b>Flags {UNVALIDATED_TEXT}.</b> Shown for tracking, not as picks to act on: over ten
+      replayed seasons the baseline edge covered about 50% at every size (P37). They count as
+      a signal once graded flags beat 52.4% at p&nbsp;&lt;&nbsp;{ALPHA} over at least {MIN_FLAGS}{' '}
+      (e.g. {trust.winsNeeded}-{trust.target - trust.winsNeeded} at {trust.target}). So far{' '}
+      {trust.win}-{trust.loss}{trust.push ? `-${trust.push}` : ''}, {trust.decided} of {MIN_FLAGS}.
+    </p>
+  )
+}
+
+function ModelEdges({ version, season, weeks, trust }) {
+  const unvalidated = labelled(trust, version)
   // Newest first; the season's older flags fold away once there are many.
   const flaggedGames = [...(season.flagged_games || [])].reverse()
   const recent = flaggedGames.slice(0, FLAGS_SHOWN)
@@ -73,10 +88,11 @@ function ModelEdges({ version, season, weeks }) {
     <div className="total-card edge-card">
       <h4>{MODEL_LABELS[version] || version}</h4>
       <div className="total-pair">
-        <Stat label="Flagged picks" r={season.flagged}
+        <Stat label={unvalidated ? 'Flagged picks · unvalidated' : 'Flagged picks'} r={season.flagged}
               note={flaggedGames.length ? undefined : 'no pick flagged yet'} />
         <Stat label="Not flagged" r={season.unflagged} />
       </div>
+      {unvalidated && <TrustNote trust={trust} />}
 
       <div className="table-wrap">
         <table className="micro edge-table">
@@ -129,6 +145,7 @@ export default function EdgeRecord({ results }) {
   const models = Object.entries(results?.models || {}).filter(([, m]) => m.edges)
   if (!models.length) return null
   const weeks = results?.weeks || []
+  const trust = flagTrust(results)
 
   return (
     <section className="totals edge-record">
@@ -138,7 +155,7 @@ export default function EdgeRecord({ results }) {
       </h3>
       <div className="total-grid">
         {models.map(([version, m]) => (
-          <ModelEdges key={version} version={version} season={m.edges} weeks={weeks} />
+          <ModelEdges key={version} version={version} season={m.edges} weeks={weeks} trust={trust} />
         ))}
       </div>
       <p className="muted small">

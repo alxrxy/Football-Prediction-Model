@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react'
 import GameDetail from './GameDetail.jsx'
 import { edgeSide, kickoffLabel, signed, spreadParts, pct } from './format.js'
+import { UNVALIDATED_TEXT, flagTrust, labelled, trustTitle } from './flagTrust.js'
 
 function SpreadCell({ spread, game }) {
   const parts = spreadParts(spread, game.home, game.away)
@@ -19,7 +20,8 @@ const SORTS = {
   matchup: (a, b) => a.home.localeCompare(b.home),
 }
 
-export default function SlateTable({ games }) {
+export default function SlateTable({ games, results }) {
+  const trust = flagTrust(results)
   const [open, setOpen] = useState(null)
   const [sort, setSort] = useState('kickoff')
   // An NFL week runs Thursday to Monday; show the day when the slate spans several.
@@ -112,9 +114,11 @@ export default function SlateTable({ games }) {
                           {side}
                           {b?.is_value && (
                             <span
-                              className="tag flag"
+                              className={labelled(trust) ? 'tag unvalidated' : 'tag flag'}
                               title={
-                                b?.market_edge
+                                labelled(trust)
+                                  ? trustTitle(trust)
+                                  : b?.market_edge
                                   ? `Blended with the devigged market (model weight ${b.market_edge.weight}): ` +
                                     `${(b.market_edge.p_side_blend * 100).toFixed(1)}% to cover vs ` +
                                     `${(b.market_edge.breakeven * 100).toFixed(1)}% break-even. ` +
@@ -122,7 +126,7 @@ export default function SlateTable({ games }) {
                                   : 'Baseline heuristic only, at a fixed threshold. Not backtested.'
                               }
                             >
-                              unvalidated
+                              {labelled(trust) ? `flag · ${UNVALIDATED_TEXT}` : 'unvalidated'}
                             </span>
                           )}
                         </>
