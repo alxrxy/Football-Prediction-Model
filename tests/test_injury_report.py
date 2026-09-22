@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sys
 
-from src.features import latest_injury_report, score_injuries
+from src.features import latest_injury_report, qb_availability_loss, score_injuries
 
 PASS, FAIL = 0, 0
 
@@ -179,6 +179,27 @@ def test_ir_counts_as_out():
     check("and says why in the breakdown", breakdown[0]["status"], "ir")
 
 
+def test_zero_snap_share_does_not_take_a_slot():
+    """P41: `share or DEFAULT` read a known 0.0 as 0.65, so a player who takes
+    no snaps outranked the starter for the one QB slot and the team was
+    charged nothing. PIT, week 2: all three QBs inactive."""
+    rows = [
+        {"player": "Will Howard", "team": "PIT", "position": "QB", "status": "inactive",
+         "snap_share": 0.0, "play_probability": 0.0},
+        {"player": "Mason Rudolph", "team": "PIT", "position": "QB", "status": "inactive",
+         "snap_share": 0.3, "play_probability": 0.0},
+    ]
+    points, breakdown = score_injuries(rows, "nfl")
+    check("the slot goes to the man who plays", [b["player"] for b in breakdown], ["Mason Rudolph"])
+    check("and the team is charged for him", round(points, 2), -1.8)
+    check("qb_availability_loss sees him too", round(qb_availability_loss(rows), 3), 0.3)
+    # An unknown share still falls back to DEFAULT_SNAP_SHARE and outranks 0.0.
+    unknown = [{"player": "Unknown Guy", "team": "PIT", "position": "QB", "status": "out",
+                "snap_share": None, "play_probability": 0.0}, rows[0]]
+    check("unknown still outranks a known zero",
+          [b["player"] for b in score_injuries(unknown, "nfl")[1]], ["Unknown Guy"])
+
+
 def test_ir_survives_a_posted_inactive_list():
     """An IR player is not on the game roster, so a list that omits him says
     nothing about him -- and one that names him must not add a second row."""
@@ -306,6 +327,7 @@ if __name__ == "__main__":
         test_empty,
         test_snap_share_falls_back_per_player,
         test_ir_counts_as_out,
+        test_zero_snap_share_does_not_take_a_slot,
         test_ir_survives_a_posted_inactive_list,
         test_inactives_override,
         test_inactives_never_gate_a_later_week,
