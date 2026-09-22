@@ -41,6 +41,8 @@ function WeekTag({ version, stats }) {
   const suRight = su.right || 0
   const decided = ats.decided || 0
   const beat = decided ? ats.win / decided > BREAK_EVEN : null
+  const flagged = stats.edges?.flagged
+  const flaggedN = flagged ? flagged.win + flagged.loss + flagged.push : 0
   return (
     <span className="week-tag">
       <b>{MODEL_LABELS[version] || version}</b>
@@ -51,6 +53,12 @@ function WeekTag({ version, stats }) {
         ATS {ats.win || 0}-{ats.loss || 0}
         {ats.push ? `-${ats.push}` : ''}
       </span>
+      {flagged && flaggedN > 0 && (
+        <span className={flagged.win / Math.max(flagged.win + flagged.loss, 1) > BREAK_EVEN ? 'good' : 'bad'}>
+          Flags {flagged.win}-{flagged.loss}
+          {flagged.push ? `-${flagged.push}` : ''}
+        </span>
+      )}
     </span>
   )
 }
@@ -155,6 +163,7 @@ export default function WeekBreakdown({ weeks }) {
                       <SpreadCell spread={b?.model_spread} game={game} />
                       <td className="lean">
                         {b?.lean ? (b.lean === 'home' ? game.home : game.away) : '—'}
+                        {b?.is_value && <span className="tag flag">flag</span>}
                       </td>
                       <Result value={b?.ats} />
                       <Moneyline value={b?.su} />
@@ -169,7 +178,7 @@ export default function WeekBreakdown({ weeks }) {
           </div>
           <p className="muted small week-note">
             Final is away–home, winner in bold. Leaned is the side the baseline
-            edge pointed to; ATS grades that side against the stored line. A
+            edge pointed to, tagged when it was a flagged pick; ATS grades that side against the stored line. A
             moneyline ✓ means the model&rsquo;s favourite won outright.
           </p>
         </details>

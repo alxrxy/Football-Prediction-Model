@@ -49,7 +49,7 @@
 .card.empty { text-align: center; padding: 36px 24px; }
 .card.empty strong { display: block; font-size: 17px; margin-bottom: 4px; }
 .split { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; }
-@media (max-width: 1080px) { .split { grid-template-columns: 1fr; } }
+@media (max-width: 1080px) { .split { grid-template-columns: minmax(0, 1fr); } }
 .split-side { position: sticky; top: 16px; }
 .split-side.stack { display: flex; flex-direction: column; gap: 16px; position: static; }
 .split-side .qa { margin-top: 0; }
@@ -305,6 +305,26 @@ ul.scoring li:last-child { border-bottom: 0; }
 .total-stat strong.bad { color: var(--bad); }
 .total-stat span { font-size: 11.5px; color: var(--text-dim); }
 .totals > p { margin-bottom: 0; }
+
+/* flagged edges and ATS by edge size */
+.edge-record { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); }
+.edge-card .table-wrap { margin-top: 12px; }
+.edge-table td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.edge-table td.num small { color: var(--text-dim); font-size: 10.5px; margin-left: 2px; }
+.edge-table td.good { color: var(--good); }
+.edge-table td.bad { color: var(--bad); }
+.edge-table td.muted { color: var(--text-dim); }
+.flag-list { list-style: none; margin: 12px 0 0; padding: 10px 0 0; border-top: 1px dashed var(--border); display: grid; gap: 5px; }
+.flag-list li { display: grid; grid-template-columns: 38px auto minmax(0, 1fr) 16px; gap: 8px; align-items: baseline; font-size: 12.5px; }
+.flag-list li > span:nth-child(2) { font-weight: 600; white-space: nowrap; }
+.flag-list li > span:nth-child(3) { text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flag-list b.result { font-family: var(--mono); text-align: right; }
+.flag-list b.result.W { color: var(--good); }
+.flag-list b.result.L { color: var(--bad); }
+.flag-list b.result.P { color: var(--text-dim); }
+.flag-more summary { cursor: pointer; margin-top: 8px; }
+.flag-more .flag-list { border-top: 0; padding-top: 4px; margin-top: 4px; }
+.lean .tag.flag { margin-left: 6px; font-size: 10px; padding: 0 6px; }
 
 .weeks { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); }
 .week { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); margin-top: 10px; }
