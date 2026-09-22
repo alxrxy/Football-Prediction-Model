@@ -116,6 +116,12 @@ def normal_cdf(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
 
+def _share_or_default(row: dict) -> float:
+    """A player's snap share for ranking: unknown falls back, known zero doesn't."""
+    share = row.get("snap_share")
+    return DEFAULT_SNAP_SHARE if share is None else float(share)
+
+
 def score_injuries(rows: list[dict], sport: str) -> tuple[float, list[dict]]:
     """Cost of one team's injury report, in points. Negative = weakened.
 
@@ -138,7 +144,9 @@ def score_injuries(rows: list[dict], sport: str) -> tuple[float, list[dict]]:
         by_position.setdefault((row.get("position") or "").upper(), []).append(row)
     eligible = []
     for position, group in by_position.items():
-        group.sort(key=lambda r: -(r.get("snap_share") or DEFAULT_SNAP_SHARE))
+        # `or` would read a known 0.0 as the 0.65 unknown-player fallback and
+        # hand the slot to someone who takes no snaps (P41).
+        group.sort(key=lambda r: -_share_or_default(r))
         eligible.extend(group[: STARTER_SLOTS.get(position, DEFAULT_STARTER_SLOTS)])
 
     penalty = 0.0
@@ -188,7 +196,7 @@ def qb_availability_loss(rows: list[dict]) -> float:
     qbs = [r for r in rows if (r.get("position") or "").upper() == "QB"]
     if not qbs:
         return 0.0
-    qbs.sort(key=lambda r: -(r.get("snap_share") or DEFAULT_SNAP_SHARE))
+    qbs.sort(key=lambda r: -_share_or_default(r))   # 0.0 is a known zero, not unknown (P41)
     starter = qbs[0]
     play_prob = starter.get("play_probability")
     if play_prob is None:

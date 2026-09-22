@@ -36,7 +36,7 @@ status only when its adoption test is met.
 | P6 | CFB home field 2.4 → ~2.8 | weight | 2026-09-12 | slate: model leaned away 30/47, -2.1 pts vs market; history: market-implied HFA 3.2 (2017-25) but 0.5 in 2025 | mean signed edge on non-neutral games < -1.0 across 4+ weeks | watch |
 | P7 | Do not use the CFB ML model's margins until its compression is explained | investigate | 2026-09-12 | mean \|ML margin\| 9.5 vs actual 24.7; MAE 20.6. *Correction 09-15: the "Georgia −27 vs market −69.5" example below used an in-play line (P15); DK closed −40.5* | n/a, diagnose first | investigate |
 | P8 | NFL: consider the ML margin (or a blend) as the headline number | model selection | 2026-09-14 | 9/13: ML SU 10/13 vs baseline 6/13, MAE 11.46 vs 13.10, Brier 0.214 vs 0.256; ATS both poor (4-8, 3-10) | ML MAE below baseline MAE over 4+ NFL weeks (~60 games), and not worse vs market | watch |
-| P9 | NFL injury term: check its magnitude | weight | 2026-09-14 | 9/13: \|injury adj\| ≥ 1 went 0-5 ATS, MAE 12.3 vs market 8.8; corr(injury term, cover residual) −0.00. 9/14 DEN@KC: term −0.95 toward DEN (−2.63 with real snap shares, P14), market already −2.5 with the same report; lost | fitted coefficient on the injury term (actual − market ~ injury) positive and significant over 100+ games. **Exclude 2026-09-17 DET@BUF**: its term (1.56) was set before P20, which understates DET's side (Pacheco on IR uncounted), and before P10/P21 — four players priced at the flat 0.55 with the official inactives already public. The fixed code would not produce that number, so the game cannot speak to this coefficient | watch; see the 2026-09-22 cross-reference "QB mismatch: one mechanism, three observations" (P2 / P9 / P37). |
+| P9 | NFL injury term: check its magnitude | weight | 2026-09-14 | 9/13: \|injury adj\| ≥ 1 went 0-5 ATS, MAE 12.3 vs market 8.8; corr(injury term, cover residual) −0.00. 9/14 DEN@KC: term −0.95 toward DEN (−2.63 with real snap shares, P14), market already −2.5 with the same report; lost | fitted coefficient on the injury term (actual − market ~ injury) positive and significant over 100+ games. **Exclude 2026-09-17 DET@BUF**: its term (1.56) was set before P20, which understates DET's side (Pacheco on IR uncounted), and before P10/P21 — four players priced at the flat 0.55 with the official inactives already public. The fixed code would not produce that number, so the game cannot speak to this coefficient | watch; see the 2026-09-22 cross-reference "QB mismatch: one mechanism, three observations" (P2 / P9 / P37). **Re-check due after P41 (2026-09-22)**: that fix makes charges larger where it fires (PHI 2.07, PIT 1.80 pts on the week-2 report), so the coefficient must be refitted on the corrected numbers. |
 | P10 | Props: apply game-day inactives before simulating | data | 2026-09-14 | DAL@NYG: 4 projected players recorded nothing (N. Harris 5.3 car, Beckham, Cambre, Abanikanda), none on the injury list; Singletary took 10 touches + TD unprojected. **Widened 2026-09-17 (DET@BUF):** this is not a sequencing problem. There is no inactives ingestion path anywhere in the pipeline, and the ESPN feed structurally cannot supply one — a full league pull at 22:50Z returned only `Active` (614), `Questionable` (134), `Injured Reserve` (40), `Out` (9), `Doubtful` (3), with no gameday inactive designation. `ingest_injuries._status` would discard one anyway (see P20, P21). Consequence at T-75 min, with the official list already public: DET@BUF still priced 4 players at the flat questionable/limited 0.55 (D.J. Reed 0.75 pts, Cole Bishop, T.J. Sanders, Ty Johnson) when each was by then resolved to 0 or 1 **Source found and confirmed 2026-09-19:** the ESPN core API per-competition roster flags inactives `didNotPlay` (DET@BUF: 8 BUF / 9 DET, incl. T.J. Sanders and Ty Johnson); 404 before posting. Week-1 payoff: 6 inactive projected players, 1.4% of projected touches (Kamara, N. Harris). See the 2026-09-19 P10 entry | acquire a real inactives source first (ESPN gameday roster endpoint or equivalent), then re-sim after it lands; track "projected, no stats" rate weekly | **built and validated on replay 2026-09-19; committed 2026-09-20 (`164fdd9`); not yet run live.** Criteria 1-5 pass; criterion 6 (posting time) needs a live Sunday. The Sunday windows run as one command, `python run_sunday.py --watch` (2026-09-20 entry). New `inactives` table: paste `db/PASTE_INTO_SUPABASE.sql` to create it upstream (the local mirror is used until then). See the 2026-09-19 P10 build entry |
 | P11 | Props: rushing volume bands too narrow (game script) | investigate | 2026-09-14 | DAL@NYG: rush att in the 50% band 2/8, rush yds 1/8; team rush att −8 (trailing DAL), +9 (leading NYG). DEN@KC: leading KC 38 rush att vs median 25 (p90 31), trailing DEN 15 | 50% band hit rate for rush att in 40-60% over 10+ simulated games | **engine change applied 2026-09-15** (game-script play-calling): calibration rush att by final margin 21.4 → 32.5 vs real 20.7 → 31.6, was flat 24.1 → 27.9; league totals within 3%. The band test itself still needs 10+ graded games |
 | P12 | Run pregame sims before the first kickoff | process | 2026-09-14 | 12/13 week-1 sims written 23:11Z, after kickoff, so only DAL@NYG props are gradeable | n/a | proposed |
@@ -67,6 +67,8 @@ status only when its adoption test is met.
 | P37 | Baseline ATS gets worse as its edge grows (4+ pts: 4-10-1 season, week 1 1-4, week 2 3-6-1) - why? | investigate | 2026-09-21 | Two weeks of negative best-fit weight on the edge (w = -0.64 week 1, -0.68 week 2). Overlaps P5 (stale early-season ratings), P22 (defense-heavy, unadjusted rating), P9/P2 (injury charges) | diagnosis only; the questions, tests and decision rules are in the 2026-09-21 scoping entry and were written before any test ran | **diagnosed 2026-09-21: noise, by the pre-set rules.** The 2026 gradient is not significant (slope perm p 0.27, corr p 0.11). The live Layer 1 replayed over 2016-2025 (reproduces live exactly) shows no negative early-season relation (weeks 1-4 corr +0.05, CI -0.03 to +0.13). The bigger finding: across 2,582 games the baseline edge covers **~50% at every size** (b = -0.02, CI -0.13 to +0.08), so it carries essentially no ATS information at any edge size. No fix proposed. See the 2026-09-21 findings entry **Part 2 (2026-09-22): noise still stands.** 2026's edges are at the high end of the normal range, not above it (3rd of 11 seasons). The market did not move against the big edges (CLV -0.30 pp at >= 4 vs -0.22 below, no size effect; corrected after P34). 2026's lines were among the least accurate, not sharper. Lead: QB-change games 1-9-1 (post-hoc, n = 11); see the 2026-09-22 cross-reference "QB mismatch: one mechanism, three observations" (P2 / P9 / P37). |
 | P38 | Tests: every module's `check()` prints a failure but never raises, so pytest reports a failing check as passed | tooling | 2026-09-22 | Found building P34: a new `test_clv` check failed (0.5166 vs 0.5171), and `pytest -q` still printed 133 passed. `python -m tests.test_clv` printed 22 passed, 1 failed. All 14 modules in `tests/` define the same non-raising `check()`, and only their `__main__` runners count failures and exit 1 | until fixed, validation runs **each module's own runner** (`python -m tests.<module>`) as well as pytest, and reads the pass/fail count it prints; a pytest pass alone is not evidence | **FIXED 2026-09-22** by `tests/conftest.py` (see that day's P38 entry). No test module was edited. Under pytest a failed check now fails its test; the runners are unchanged |
 | P39 | QB-vs-rating term: the unrestricted P28 part 2 term (margin MAE 11.557 -> 10.903 over 2024-25), tested for edge against the line and, separately, as the simulator's anchor | logic | 2026-09-22 | Set aside 2026-09-20 as out of P28's scope. The restricted form lost to the flat rule, and corr(term, market spread) = -0.324 says the market already prices QB changes. Never tested for value against the line. The sim pins its mean margin to the baseline anchor, so an accuracy gain could still pay there | see the 2026-09-22 "P39 scoped" entry, written before any run: gate 0 (the rebuild reproduces the logged term), then phase 1 (edge) and phase 2 (anchor), each with its own pass rules | **tested 2026-09-22: fails both phases by the pre-set rules; nothing built.** The 9/20 gain doesn't reproduce: against P37's verified baseline it is 10.709 -> 10.608 over 2024-25, not 11.557 -> 10.903. No edge on any arm (pooled corr with the cover residual -0.024 / -0.012 / -0.041). As the anchor, a real but small gain: identity arm pooled -0.075, 6/7 seasons; full term -0.090, 7/7; both short of the 0.10 bar. The gain is QB identity, not scale |
+| P40 | Injury feeds: nflverse precedence can mask an ESPN "Injured Reserve" designation | logic | 2026-09-22 | `ingest_injuries.run` treats nflverse as authoritative wherever both feeds cover a player, so an ESPN `ir` row is discarded when nflverse also lists him. NYG's Paulson Adebo on the cached 09-18 pull: ESPN says Injured Reserve, nflverse carries him with no game status, so he is charged at his practice-based probability instead of 0. IR is a roster fact, not a report status | a scoped pass of its own: feed precedence per field rather than per player, measured over the cached payloads; no live row may lose a status it has today | **logged 2026-09-22, not built.** One known case; touches precedence between feeds generally, so it needs its own scope rather than a patch inside P20 |
+| P41 | `score_injuries` ranks starter slots with `-(snap_share or DEFAULT)`, so a 0.0-share row sorts as 0.65 and can take a slot from a genuinely injured starter | bug fix | 2026-09-22 | `features.py:141` and `:191`. `0.0 or 0.65` is 0.65 in Python. Live today: 138 of 353 report rows sit at exactly 0.0 (the rows `apply_inactives` adds for posted inactives), and 5 teams' slots are mis-assigned, worth up to **2.07 pts** (PHI), PIT 1.80. PIT's single QB slot goes to Will Howard (0.0 snaps) instead of Mason Rudolph (0.30), so the team is charged 0 for its quarterbacks. Historically much rarer: 1,202 of 33,163 rows (3.6%), changing 16 of 5,446 team-weeks (0.3%), mean 0.23 and max 0.59 pts, and `qb_availability_loss` never changes | fix: `DEFAULT_SNAP_SHARE if share is None else share` in both sort keys; then per-team before/after on the live report, plus the historical count above; rebuild decision for training features recorded before building | **FIXED 2026-09-22** (see that day's P41 entry): `_share_or_default` in both sort keys, training rebuilt and the model retrained in the same change. Live: the 5 teams land exactly as scoped (PHI -2.07, PIT -1.80, CHI -0.40, KC -0.34, TB -0.22) and PIT's QB slot goes to Rudolph. Isolated A/B on the 2025 holdout: fundamentals MAE +0.029, with-market -0.002 -- noise from 20 changed training rows |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -108,6 +110,76 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-22 — P41 built: known-zero snap shares no longer take starter slots. Training rebuilt, model retrained
+
+Built to the design in the entry below. `features._share_or_default` replaces `(share or DEFAULT_SNAP_SHARE)` in both sort keys (`score_injuries`, `qb_availability_loss`): unknown still falls back to 0.65, a known 0.0 now ranks last.
+
+**The scoped live cases land exactly.**
+
+| team | before | after | delta (scoped) |
+|---|---|---|---|
+| PHI | -0.61 | -2.68 | **-2.07** (-2.07) |
+| PIT | -3.91 | -5.71 | **-1.80** (-1.80) |
+| CHI | -2.72 | -3.12 | -0.40 (-0.40) |
+| KC | -2.94 | -3.28 | -0.34 (-0.34) |
+| TB | -1.78 | -2.00 | -0.22 (-0.22) |
+
+PIT's single QB slot now holds **Mason Rudolph** (0.30 snaps, 1.80 pts) instead of Will Howard (0.0), and PIT's `qb_availability_loss` goes 0.0 -> 0.30. No other team's charge moves.
+
+**The training file on disk was stale, which the rebuild exposed.** It held 2,761 rows built on 2026-09-12; the rebuild wrote **3,060**, and `elo_diff` / `epa_diff` moved on almost every row (max 205 Elo). That is everything shipped since 09-12 (k32 among them) reaching the training set for the first time, **not** P41. The model that had been serving was trained on the 09-12 features.
+
+**So P41 was isolated with a second rebuild** on the same code with the fix reverted. Against the P41 build, on identical game sets: `injury_diff` differs on **20 of 3,060 rows** (max 0.588), `qb_loss_diff` on **0**, `elo_diff` / `epa_diff` on 0. That is P41's entire footprint in training.
+
+**A/B on the 2025 holdout (same code, same 3,060 rows, fix off vs on; `save=False`):**
+
+| | closing line | fundamentals MAE | with-market MAE | ATS all leans (fundamentals / with market) |
+|---|---|---|---|---|
+| fix off | 9.670 | 10.080 | 9.606 | 143/285, 151/285 |
+| **fix on** | 9.670 | **10.109** (+0.029) | **9.604** (-0.002) | 140/285, 153/285 |
+
+Mixed and tiny, as 20 rows of 3,060 should be: **no regression, and no gain**. P41 is a correctness fix, not an accuracy change.
+
+**Against the model that was serving** (trained 09-12, stale features): fundamentals 10.152 -> **10.109**, with-market 9.602 -> 9.604, ATS all leans 137/285 -> 140/285. The newly trained model is not worse overall.
+
+**Saved model:** `nfl_margin.json` retrained on the rebuilt file, holdout 2025 as before, `trained_at` 2026-09-22T17:53Z. `models/*.json` and `data/` are gitignored, so the commit carries the code and this entry; the artifacts are local. The previous model and training file are backed up outside the repo for this session.
+
+**Tests:** pytest 136 passed (135 + 1 new regression test pinning PIT's QB slot); every module runner 0 failed.
+
+**P9 is now due a re-check.** The fix makes charges larger wherever it fires, which is the direction P9 is watching. P9's criterion (a fitted coefficient on the injury term, positive and significant over 100+ games) should be re-run against the corrected numbers rather than the ones logged before today.
+
+---
+
+## 2026-09-22 — P41 scoped: the 0.0-share slot-ranking bug, and what fixing it does to ML training features
+
+**Diagnosis.** `features.score_injuries` picks which reported players can occupy a position's starter slots with
+
+    group.sort(key=lambda r: -(r.get("snap_share") or DEFAULT_SNAP_SHARE))
+
+and `qb_availability_loss` (`features.py:191`) does the same. In Python `0.0 or 0.65` is `0.65`, so **a row whose snap share is exactly 0.0 is ranked as if it were a 0.65 regular** and can take the slot from a genuinely injured starter, who is then charged nothing. The `or` is correct for `None` (share unknown) and wrong for `0.0` (share known to be zero).
+
+**Correction to the premise.** P20 does **not** make this fire more often: its IR rows with no snap share are skipped, not emitted at 0.0. The 0.0 rows come from `apply_inactives`, which adds a posted inactive nobody reported at `snap_share or 0.0`, and from snap counts where a player's offensive and defensive percentages are both zero (special-teams only).
+
+**How often it bites, measured.**
+
+| | rows at exactly 0.0 | team-weeks affected | points moved |
+|---|---|---|---|
+| live report today (week 2 + posted inactives) | **138 of 353** (29 teams) | **5 teams' slots change** | PHI **-2.07**, PIT -1.80, CHI -0.40, KC -0.34, TB -0.22 |
+| history 2016-2025 (nflverse reports, as training scores them) | 1,202 of 33,163 (3.6%) | 16 of 5,446 (0.3%) | mean 0.23, median 0.215, max 0.588; one case above 0.5 |
+
+The live rate is far higher than the historical one because inactive lists only exist in 2026, and every unreported inactive enters at 0.0. **PIT is the clearest case:** all three quarterbacks are inactive, the single QB slot goes to Will Howard (0.0 snaps) instead of Mason Rudolph (0.30), and the team is charged nothing at quarterback.
+
+**Proposed fix.** In both sort keys, `-(DEFAULT_SNAP_SHARE if r.get("snap_share") is None else r["snap_share"])`. Unknown still falls back to 0.65; known-zero now ranks last, which is what "he takes no snaps" means. Nothing else changes: the cost arithmetic already treats 0.0 correctly, so only *which* rows occupy slots moves.
+
+**What it means for ML training features.** `build_training._nfl_injury_features` scores historical reports with this same function, and the docstring's rule is that training and live must score identically. So the fix moves training features too, by the amounts in the table: **16 team-weeks of 5,446 (0.3%), at most 0.588 pts**, and `qb_availability_loss` is unchanged in every one of the 5,446. Two ways to land it:
+- **Fix and rebuild:** change the code, rebuild `data/training_nfl.csv` and retrain, so training and live agree exactly. Correct by the docstring's rule; costs a rebuild and a retrain, and the retrained model is not bit-identical to the one now serving.
+- **Fix live only, rebuild at the next scheduled retrain:** the live pipeline is right immediately, and training keeps a 0.3% / <=0.6 pt mismatch on a feature the model weights lightly, until the next rebuild.
+
+**Interaction to note before building.** The fix makes charges **larger** (every live delta above is more negative), and P9 is an open question about whether the injury term is already too harsh. P41 is a correctness fix, not a magnitude change, but it moves the term in the direction P9 is watching, so the P9 re-check should be run after it, not before.
+
+**Not built yet: the build-now-or-queue decision is the user's.**
 
 ---
 
