@@ -109,6 +109,22 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-09-21 — CHECKPOINT (session paused). Next session: read this entry before taking any action
+
+**State when paused**
+- Everything is committed and pushed to `origin/main`. The working tree is clean except `cross-sport-research.md`, which is untracked, predates this work and was deliberately left alone.
+- Nothing is running or waiting on a timer. The live tracker exited by itself after MNF (03:12Z). The Q&A server started this session was stopped. A dashboard dev server on :5174 that predates this session was left running.
+- Week 2 is fully graded (16/16). The Record page shows flagged picks and ATS by edge size, season beside each week.
+
+**P37: diagnosed, no code bug.** Neither the injury term, the prior-season ratings nor P22's defence concern explains the 2026 "bigger edge = worse ATS" gradient. By the pre-set rules it's noise: 2026 slope permutation p 0.27, and the replayed live Layer 1 covers ~50% at every edge size over 2016-2025 (2,582 games). Full findings are in the entry below.
+
+**Open question: a policy decision, not a fix.** Should baseline edges drive value flags at all? Baseline flags are **3-10** across weeks 1-2 (week 1 3-8, week 2 0-2), and the ten-season replay says the baseline edge carries ~no ATS information at any size. Relates to P5 and the Stage-1 gate.
+
+**Small-sample leads, not conclusions.** |injury adj| >= 2 went **0-7**; games charging a starting QB (>= 2.5 pts) went **1-6** (n = 7 each, 2026). These reinforce **P9** (injury-term magnitude) and **P2** (unknown-snap QB charges). They are not findings on their own.
+
+**Recommendation on the table (a standing decision, no code change):** stop treating baseline-flagged edges as trustworthy. Re-run `calibration/p37_edge_diagnosis.py` weekly.
+- **The re-trust condition needs correcting before it's adopted.** As first worded ("until the 2026 slope test clears p < 0.05"), it points the wrong way. That test asks whether bigger edges do significantly *worse*, so reaching p < 0.05 would confirm the problem, not clear it. The condition for trusting flags again has to be evidence the edge **helps**: for example, a significantly *positive* edge-vs-cover relation, or flagged picks beating the 52.4% break-even over a pre-set sample. It has to be judged against the replay, where ten seasons showed no positive relation, so re-trust may never come from Layer 1 as it stands. **To be decided with the user; not yet set.**
+
 ## 2026-09-21 — P37 findings: the 2026 gradient is noise, but the baseline edge carries ~no ATS information at any size
 
 Script `calibration/p37_edge_diagnosis.py`, full output `calibration/2026-09-21_p37_edge_diagnosis.md`. Tests and rules as scoped in the entry below, fixed before running. **Diagnosis only; nothing changed in the model.**
