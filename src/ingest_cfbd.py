@@ -12,7 +12,7 @@ import argparse
 import re
 from datetime import date, datetime, timezone
 
-from . import config, db
+from . import config, db, market
 from .http import get_json
 
 FBS = "fbs"
@@ -284,8 +284,8 @@ def ingest_lines(store: db.Store, season: int, week: int, season_type: str) -> i
                     "book": "cfbd_consensus",
                     "spread": _median(spreads),
                     "total": _median(totals) if totals else None,
-                    "moneyline_home": int(_median(ml_home)) if ml_home else None,
-                    "moneyline_away": int(_median(ml_away)) if ml_away else None,
+                    "moneyline_home": market.median_price(ml_home),
+                    "moneyline_away": market.median_price(ml_away),
                     "source": "cfbd",
                 }
             )

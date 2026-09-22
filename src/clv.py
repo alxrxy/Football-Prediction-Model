@@ -189,8 +189,8 @@ def snapshot_close(store: db.Store, game: dict) -> dict | None:
                and r.get("spread_price_home") and r.get("spread_price_away")]
     return {
         "close_line": line,
-        "close_price_home": int(median(r["spread_price_home"] for r in at_line)) if at_line else None,
-        "close_price_away": int(median(r["spread_price_away"] for r in at_line)) if at_line else None,
+        "close_price_home": market.median_price(r["spread_price_home"] for r in at_line) if at_line else None,
+        "close_price_away": market.median_price(r["spread_price_away"] for r in at_line) if at_line else None,
         "close_source": "oddsapi_last_pregame",
         "close_at": max(r["pulled_at"] for r in latest.values()),
     }

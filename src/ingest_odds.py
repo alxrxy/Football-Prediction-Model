@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta, timezone
 
-from . import config, db
+from . import config, db, market
 from .http import get_json
 from .names import MATCH_THRESHOLD, norm, similarity
 
@@ -263,8 +263,8 @@ def run(sport: str = "ncaaf", cache_minutes: int | None = None) -> int:
                     "book": "oddsapi_consensus",
                     "spread": _median(spreads),
                     "total": _median(totals) if totals else None,
-                    "moneyline_home": int(_median(ml_h)) if ml_h else None,
-                    "moneyline_away": int(_median(ml_a)) if ml_a else None,
+                    "moneyline_home": market.median_price(ml_h),
+                    "moneyline_away": market.median_price(ml_a),
                     "source": "the_odds_api",
                 }
             )

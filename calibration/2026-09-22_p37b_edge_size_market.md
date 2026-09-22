@@ -63,12 +63,12 @@ Share of |edge| >= 4 picks in QB-change games, weeks 1-2:
 
 | statistic                                      |   value |   perm p (one-sided, < 0) |
 |------------------------------------------------|---------|---------------------------|
-| mean CLV on the lean (pp of cover probability) |  -0.2   |                     0.321 |
-| corr(|edge|, CLV)                              |   0.146 |                     0.779 |
+| mean CLV on the lean (pp of cover probability) |  -0.26  |                     0.076 |
+| corr(|edge|, CLV)                              |   0.023 |                     0.52  |
 
-n = 30; the line moved toward the lean in 8, away in 10, about unchanged in 12. Basis: consensus 30.
+n = 30; the line moved toward the lean in 7, away in 11, about unchanged in 12. Basis: consensus 30.
 
-Mean CLV at |edge| >= 4: +2.80 pp (n 15); below 4: -3.20 pp.
+Mean CLV at |edge| >= 4: -0.30 pp (n 15); below 4: -0.22 pp.
 
 Descriptive: graded at the logged close instead of the stored line, the same 30 leans go 9-20-1 (31%) (stored line: 9-20-1 (31%)).
 

@@ -30,6 +30,20 @@ def test_implied():
     check("-200", implied(-200), 2 / 3, 1e-12)
 
 
+def test_median_price_across_even_money():
+    """P34: books straddling even money must not median into the -100..+100 gap."""
+    straddle = [-108, -105, -102, 100, 100, 104]     # CIN@HOU away at -2.5, 2026-09-20
+    got = market.median_price(straddle)
+    check("straddling set gives a real price", got <= -100 or got >= 100, True)
+    # probabilities 0.519, 0.512, 0.505, 0.5, 0.5, 0.490 -> median 0.5025
+    check("near even money", implied(got), 0.5025, 0.002)
+    check("[-102, +100] is not -1", market.median_price([-102, 100]), -101)
+    check("odd count returns the middle book", market.median_price([-120, -110, 105]), -110)
+    check("even count, no straddle", market.median_price([-110, -105]), -107)
+    check("None skipped", market.median_price([None, -110]), -110)
+    check("nothing priced", market.median_price([]), None)
+
+
 def test_devig_sums_and_symmetry():
     for method in market.DEVIG_METHODS:
         p = devig([-110, -110], method)
@@ -103,6 +117,7 @@ def test_margin_table_push_and_move():
 if __name__ == "__main__":
     for fn in [
         test_implied,
+        test_median_price_across_even_money,
         test_devig_sums_and_symmetry,
         test_devig_favourite_longshot,
         test_blend,
