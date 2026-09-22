@@ -5,6 +5,7 @@ import { liveGame, useSimEntry } from './simData.js'
 import { spreadLabel } from './format.js'
 import { matchupColors, team } from './teams.js'
 import { StatusChip, TeamLogo, WinBar, n0, pct } from './ui.jsx'
+import { UNVALIDATED_TEXT, flagTrust, labelled, trustTitle } from './flagTrust.js'
 
 // One game, full page: the matchup, the simulation, how the baseline got its
 // number, and a Claude Q&A that answers from this game's data.
@@ -18,6 +19,7 @@ export default function GameView({ sport, gameId, feed, onBack, onPast }) {
   const lg = liveGame(feed, gameId)
   const home = game?.home || entry?.home
   const away = game?.away || entry?.away
+  const trust = flagTrust(sport.results)
 
   if (!home) {
     return (
@@ -35,7 +37,7 @@ export default function GameView({ sport, gameId, feed, onBack, onPast }) {
       ) : (
         <button className="back" onClick={onBack}>← All games</button>
       )}
-      <Hero game={heroGame} entry={entry} lg={lg} home={home} away={away} />
+      <Hero game={heroGame} entry={entry} lg={lg} home={home} away={away} trust={trust} />
       {week && !game ? (
         <p className="muted small">
           From the week {week.week} archive: model and market numbers are the last ones made before kickoff.
@@ -70,7 +72,7 @@ export default function GameView({ sport, gameId, feed, onBack, onPast }) {
   )
 }
 
-function Hero({ game, entry, lg, home, away }) {
+function Hero({ game, entry, lg, home, away, trust }) {
   const colors = matchupColors(away, home)
   const b = game?.baseline
   const pre = entry?.pregame
@@ -79,6 +81,7 @@ function Hero({ game, entry, lg, home, away }) {
   const score = live ? { home: lg.home_score, away: lg.away_score } : final ? entry.actual : null
   const kickoff = game?.kickoff || entry?.kickoff
   const pHome = live && lg.live_sim ? lg.live_sim.home_win_prob : pre?.home_win_prob ?? b?.win_prob_home
+  const unvalidated = b?.is_value && labelled(trust)
   return (
     <section className="hero" style={{ '--away': colors.away, '--home': colors.home }}>
       <div className="hero-teams">
@@ -100,7 +103,7 @@ function Hero({ game, entry, lg, home, away }) {
         <Stat label="Sim median" value={pre ? `${away} ${n0(pre.median?.away)} – ${n0(pre.median?.home)} ${home}` : '—'} sub={pre?.total?.p50 != null ? `total ${n0(pre.total.p50)}` : ''} />
         <Stat
           label="Stage 1 value test"
-          value={b?.market_edge ? (b.is_value ? 'Passes' : 'No edge') : b ? 'Not run' : '—'}
+          value={b?.market_edge ? (b.is_value ? (unvalidated ? 'Flagged · unvalidated' : 'Passes') : 'No edge') : b ? 'Not run' : '—'}
           // Predictions made before the test existed (2026-09-15) have no
           // market_edge; say so instead of looking like missing data.
           sub={
@@ -113,6 +116,11 @@ function Hero({ game, entry, lg, home, away }) {
         />
       </div>
       <WinBar away={away} home={home} pHome={pHome} label={live ? 'Live win chance' : 'Simulated win chance'} />
+      {unvalidated && (
+        <p className="trust-note">
+          <b>Flag {UNVALIDATED_TEXT}.</b> {trustTitle(trust)}
+        </p>
+      )}
     </section>
   )
 }

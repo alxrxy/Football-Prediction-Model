@@ -2,6 +2,7 @@ import { findGame, liveGame, useSims } from './simData.js'
 import { kickoffLabel, shortDate, spreadLabel } from './format.js'
 import { matchupColors, team } from './teams.js'
 import { PageHead, StatusChip, TeamLogo, WinBar, n0 } from './ui.jsx'
+import { UNVALIDATED_TEXT, flagTrust, labelled, trustTitle } from './flagTrust.js'
 
 // Every game of the week as a card, grouped by day. A card opens the game's
 // full page: prediction, simulation and the Claude Q&A.
@@ -17,12 +18,13 @@ export default function GamesPage({ sport, feed, onOpen }) {
     else days.push({ day, kickoff: g.kickoff, games: [g] })
   }
   const flagged = games.filter((g) => g.baseline?.is_value).length
+  const trust = flagTrust(sport.results)
 
   return (
     <div className="page">
       <PageHead
         title={sport.slate_label ? `${sport.slate_label}` : 'This week'}
-        sub={`${sport.slate_end ? `${shortDate(sport.slate_date)} – ${shortDate(sport.slate_end)} · ` : ''}${games.length} games · ${flagged ? `${flagged} flagged by the Stage 1 test` : 'none pass the Stage 1 value test'} · click a game for its simulation and Q&A`}
+        sub={`${sport.slate_end ? `${shortDate(sport.slate_date)} – ${shortDate(sport.slate_end)} · ` : ''}${games.length} games · ${flagged ? `${flagged} flagged by the Stage 1 test${labelled(trust) ? ` (${UNVALIDATED_TEXT})` : ''}` : 'none pass the Stage 1 value test'} · click a game for its simulation and Q&A`}
       />
       {!games.length && <p className="muted">No games loaded. Run the pipeline, then python -m src.export_dashboard.</p>}
       {days.map((d) => (
@@ -38,6 +40,7 @@ export default function GamesPage({ sport, feed, onOpen }) {
                 game={g}
                 sim={findGame(sims, g.game_id)}
                 lg={liveGame(feed, g.game_id)}
+                trust={trust}
                 onOpen={onOpen}
               />
             ))}
@@ -48,7 +51,7 @@ export default function GamesPage({ sport, feed, onOpen }) {
   )
 }
 
-function GameCard({ game, sim, lg, onOpen }) {
+function GameCard({ game, sim, lg, onOpen, trust }) {
   const { home, away } = game
   const b = game.baseline
   const pre = sim?.pregame
@@ -111,7 +114,11 @@ function GameCard({ game, sim, lg, onOpen }) {
         </div>
       </div>
       <WinBar away={away} home={home} pHome={pHome} label={live ? 'Live win chance' : 'Win chance'} />
-      {b?.is_value ? <span className="tag flag">passes Stage 1 · unvalidated</span> : null}
+      {b?.is_value ? (
+        labelled(trust)
+          ? <span className="tag unvalidated" title={trustTitle(trust)}>flag · {UNVALIDATED_TEXT}</span>
+          : <span className="tag flag">passes Stage 1 · unvalidated</span>
+      ) : null}
       {game.known_issue ? <span className="tag flag">known issue · treat with caution</span> : null}
     </article>
   )

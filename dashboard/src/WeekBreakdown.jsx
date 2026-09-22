@@ -1,5 +1,6 @@
 import { kickoffLabel, shortDate, spreadParts } from './format.js'
 import { TeamLogo } from './ui.jsx'
+import { flagTrust, labelled, trustTitle } from './flagTrust.js'
 
 // Every graded week, newest first, with that week's record and every game
 // under it. A weekly record is the unit a season gets read in, and keeping the
@@ -34,7 +35,7 @@ function Moneyline({ value }) {
   return <td className={`result ${value ? 'W' : 'L'}`}>{value ? '✓' : '✗'}</td>
 }
 
-function WeekTag({ version, stats }) {
+function WeekTag({ version, stats, trust }) {
   const su = stats.su || {}
   const ats = stats.ats || {}
   const suN = su.n || 0
@@ -54,9 +55,14 @@ function WeekTag({ version, stats }) {
         {ats.push ? `-${ats.push}` : ''}
       </span>
       {flagged && flaggedN > 0 && (
-        <span className={flagged.win / Math.max(flagged.win + flagged.loss, 1) > BREAK_EVEN ? 'good' : 'bad'}>
+        // An unvalidated flag record is tracking data, not a verdict: no good/bad colour.
+        <span
+          className={labelled(trust, version) ? 'muted' : flagged.win / Math.max(flagged.win + flagged.loss, 1) > BREAK_EVEN ? 'good' : 'bad'}
+          title={labelled(trust, version) ? trustTitle(trust) : undefined}
+        >
           Flags {flagged.win}-{flagged.loss}
           {flagged.push ? `-${flagged.push}` : ''}
+          {labelled(trust, version) ? ' · unvalidated' : ''}
         </span>
       )}
     </span>
@@ -68,8 +74,9 @@ function dateRange(start, end) {
   return start === end ? shortDate(start) : `${shortDate(start)} – ${shortDate(end)}`
 }
 
-export default function WeekBreakdown({ weeks }) {
+export default function WeekBreakdown({ weeks, results }) {
   if (!weeks?.length) return null
+  const trust = flagTrust(results)
 
   return (
     <section className="weeks">
@@ -87,7 +94,7 @@ export default function WeekBreakdown({ weeks }) {
             </span>
             <span className="week-tags">
               {Object.entries(week.models || {}).map(([version, stats]) => (
-                <WeekTag key={version} version={version} stats={stats} />
+                <WeekTag key={version} version={version} stats={stats} trust={trust} />
               ))}
             </span>
           </summary>
@@ -163,7 +170,9 @@ export default function WeekBreakdown({ weeks }) {
                       <SpreadCell spread={b?.model_spread} game={game} />
                       <td className="lean">
                         {b?.lean ? (b.lean === 'home' ? game.home : game.away) : '—'}
-                        {b?.is_value && <span className="tag flag">flag</span>}
+                        {b?.is_value && (labelled(trust)
+                          ? <span className="tag unvalidated" title={trustTitle(trust)}>flag · unvalidated</span>
+                          : <span className="tag flag">flag</span>)}
                       </td>
                       <Result value={b?.ats} />
                       <Moneyline value={b?.su} />

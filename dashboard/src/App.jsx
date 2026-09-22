@@ -132,7 +132,7 @@ export default function App() {
                   No games loaded for this slate. Run <code>python run_pipeline.py --sport {sport.sport}</code>.
                 </p>
               ) : (
-                <SlateTable games={sport.games} />
+                <SlateTable games={sport.games} results={sport.results} />
               )}
               <GradedSlate slate={sport.results?.last_slate} />
             </main>

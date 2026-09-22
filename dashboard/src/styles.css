@@ -175,6 +175,13 @@ tr.row.proxy .matchup strong { font-weight: 500; opacity: 0.8; }
 }
 .tag.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
 .tag.flag { color: var(--flag); border-color: color-mix(in srgb, var(--flag) 45%, transparent); }
+/* a baseline flag under the 2026-09-22 trust rule: tracked, not actionable */
+.tag.unvalidated { color: var(--text-dim); background: transparent; border-style: dashed; text-decoration: none; }
+.trust-note {
+  margin: 10px 0 0; padding: 8px 11px; border-radius: 7px; font-size: 12px;
+  color: var(--text-dim); background: var(--surface-2); border: 1px dashed var(--border);
+}
+.trust-note b { color: var(--text); font-weight: 600; }
 
 .conf { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
 .conf.high { color: var(--good); }
