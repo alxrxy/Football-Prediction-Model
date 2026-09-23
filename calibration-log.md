@@ -36,7 +36,7 @@ status only when its adoption test is met.
 | P6 | CFB home field 2.4 → ~2.8 | weight | 2026-09-12 | slate: model leaned away 30/47, -2.1 pts vs market; history: market-implied HFA 3.2 (2017-25) but 0.5 in 2025 | mean signed edge on non-neutral games < -1.0 across 4+ weeks | watch |
 | P7 | Do not use the CFB ML model's margins until its compression is explained | investigate | 2026-09-12 | mean \|ML margin\| 9.5 vs actual 24.7; MAE 20.6. *Correction 09-15: the "Georgia −27 vs market −69.5" example below used an in-play line (P15); DK closed −40.5* | n/a, diagnose first | investigate |
 | P8 | NFL: consider the ML margin (or a blend) as the headline number | model selection | 2026-09-14 | 9/13: ML SU 10/13 vs baseline 6/13, MAE 11.46 vs 13.10, Brier 0.214 vs 0.256; ATS both poor (4-8, 3-10) | ML MAE below baseline MAE over 4+ NFL weeks (~60 games), and not worse vs market | watch |
-| P9 | NFL injury term: check its magnitude | weight | 2026-09-14 | 9/13: \|injury adj\| ≥ 1 went 0-5 ATS, MAE 12.3 vs market 8.8; corr(injury term, cover residual) −0.00. 9/14 DEN@KC: term −0.95 toward DEN (−2.63 with real snap shares, P14), market already −2.5 with the same report; lost | fitted coefficient on the injury term (actual − market ~ injury) positive and significant over 100+ games. **Exclude 2026-09-17 DET@BUF**: its term (1.56) was set before P20, which understates DET's side (Pacheco on IR uncounted), and before P10/P21 — four players priced at the flat 0.55 with the official inactives already public. The fixed code would not produce that number, so the game cannot speak to this coefficient | watch; see the 2026-09-22 cross-reference "QB mismatch: one mechanism, three observations" (P2 / P9 / P37). **Re-check due after P41 (2026-09-22)**: that fix makes charges larger where it fires (PHI 2.07, PIT 1.80 pts on the week-2 report), so the coefficient must be refitted on the corrected numbers. |
+| P9 | NFL injury term: check its magnitude | weight | 2026-09-14 | 9/13: \|injury adj\| ≥ 1 went 0-5 ATS, MAE 12.3 vs market 8.8; corr(injury term, cover residual) −0.00. 9/14 DEN@KC: term −0.95 toward DEN (−2.63 with real snap shares, P14), market already −2.5 with the same report; lost | fitted coefficient on the injury term (actual − market ~ injury) positive and significant over 100+ games. **Exclude 2026-09-17 DET@BUF**: its term (1.56) was set before P20, which understates DET's side (Pacheco on IR uncounted), and before P10/P21 — four players priced at the flat 0.55 with the official inactives already public. The fixed code would not produce that number, so the game cannot speak to this coefficient | watch; see the 2026-09-22 cross-reference "QB mismatch: one mechanism, three observations" (P2 / P9 / P37). **Re-check due after P41 (2026-09-22)**: that fix makes charges larger where it fires (PHI 2.07, PIT 1.80 pts on the week-2 report), so the coefficient must be refitted on the corrected numbers. **Re-checked 2026-09-22** (entries "P9 scoped" / "P9 findings"): Q1 magnitude beta 0.546 (CI 0.36-0.73, excludes 1.0) but the walk-forward gain is -0.040 < 0.05 bar, 4/7 seasons, 2025 and Brier worse -> **no change**; the logged edge test **passes narrowly** (gamma +0.161, one-sided p 0.034) and rests on 2024 (post-hoc, without it p 0.25); P41 moves beta by -0.0008. Next step with the user. |
 | P10 | Props: apply game-day inactives before simulating | data | 2026-09-14 | DAL@NYG: 4 projected players recorded nothing (N. Harris 5.3 car, Beckham, Cambre, Abanikanda), none on the injury list; Singletary took 10 touches + TD unprojected. **Widened 2026-09-17 (DET@BUF):** this is not a sequencing problem. There is no inactives ingestion path anywhere in the pipeline, and the ESPN feed structurally cannot supply one — a full league pull at 22:50Z returned only `Active` (614), `Questionable` (134), `Injured Reserve` (40), `Out` (9), `Doubtful` (3), with no gameday inactive designation. `ingest_injuries._status` would discard one anyway (see P20, P21). Consequence at T-75 min, with the official list already public: DET@BUF still priced 4 players at the flat questionable/limited 0.55 (D.J. Reed 0.75 pts, Cole Bishop, T.J. Sanders, Ty Johnson) when each was by then resolved to 0 or 1 **Source found and confirmed 2026-09-19:** the ESPN core API per-competition roster flags inactives `didNotPlay` (DET@BUF: 8 BUF / 9 DET, incl. T.J. Sanders and Ty Johnson); 404 before posting. Week-1 payoff: 6 inactive projected players, 1.4% of projected touches (Kamara, N. Harris). See the 2026-09-19 P10 entry | acquire a real inactives source first (ESPN gameday roster endpoint or equivalent), then re-sim after it lands; track "projected, no stats" rate weekly | **built and validated on replay 2026-09-19; committed 2026-09-20 (`164fdd9`); not yet run live.** Criteria 1-5 pass; criterion 6 (posting time) needs a live Sunday. The Sunday windows run as one command, `python run_sunday.py --watch` (2026-09-20 entry). New `inactives` table: paste `db/PASTE_INTO_SUPABASE.sql` to create it upstream (the local mirror is used until then). See the 2026-09-19 P10 build entry |
 | P11 | Props: rushing volume bands too narrow (game script) | investigate | 2026-09-14 | DAL@NYG: rush att in the 50% band 2/8, rush yds 1/8; team rush att −8 (trailing DAL), +9 (leading NYG). DEN@KC: leading KC 38 rush att vs median 25 (p90 31), trailing DEN 15 | 50% band hit rate for rush att in 40-60% over 10+ simulated games | **engine change applied 2026-09-15** (game-script play-calling): calibration rush att by final margin 21.4 → 32.5 vs real 20.7 → 31.6, was flat 24.1 → 27.9; league totals within 3%. The band test itself still needs 10+ graded games |
 | P12 | Run pregame sims before the first kickoff | process | 2026-09-14 | 12/13 week-1 sims written 23:11Z, after kickoff, so only DAL@NYG props are gradeable | n/a | proposed |
@@ -110,6 +110,97 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-22 — P9 findings: the term is about 45% too large for outcomes, but correcting it doesn't pay out of sample; the logged edge test passes narrowly, on 2024 alone
+
+Script `calibration/p9_injury_coefficient.py`, full output `calibration/2026-09-22_p9_injury_coefficient.md`. The rules are in the entry below and were fixed before running. **Nothing built; no coefficient change proposed yet. Findings go to the user first.**
+
+**Gate 0: pass.** The regenerated post-P41 term matches the training file on 3,060/3,060 rows (max diff 1e-15). The pre-P41 regeneration differs on exactly 20 rows, max 0.588. Fit sample: 2,661 games; 16 of the 20 P41 rows fall inside it. 320 of 6,041 team-weeks hit the 8.0 cap.
+
+**Q1, magnitude: statistically off, immaterial. By the pre-set verdict, no change.**
+
+| | result | verdict |
+|---|---|---|
+| M1: full-sample beta, 2016-25 | **+0.546** (95% CI +0.359 to +0.734) | **pass**: 1.0 is outside |
+| M2: walk-forward beta (0.34-0.51) vs 1.0, pooled 2019-25 MAE | 10.541 -> 10.501, **-0.040** (bar 0.05) | fail |
+| M2: seasons improved | 4/7 | fail |
+| M2: 2025 | +0.068 (worse) | fail |
+| M2: Brier | 0.2259 -> 0.2268 (worse) | fail |
+
+Per-season beta swings from -0.04 (2023) to +1.56 (2024), and the two most recent seasons are the highest (2024 1.56, 2025 0.86). So a walk-forward beta fitted on older seasons (about 0.4) under-shoots exactly where it's applied last. In sample the term is too harsh by about half. Out of sample, shrinking it gains 0.04 pts and loses on Brier.
+
+**M3, the component split (diagnostic):** QB part beta **+0.704** (+0.435 to +0.973), non-QB **+0.418** (+0.170 to +0.666). Both exclude 1.0, so by the pre-set rule this is **not** a position-weight finding: both parts are too large, the non-QB part more so. Their CIs overlap.
+
+**M4, P41: no effect on the fit, as expected.** Beta pre +0.547, post +0.546, delta -0.0008. **This confirms, rather than resolves, the limit stated up front.** P41's live effect comes from 2026-only inactive rows, which history can't test.
+
+**Q2, P9's logged adoption test: passes, narrowly.** gamma **+0.161** (-0.012 to +0.335), one-sided p **0.034**, 2,655 games with a non-zero term. By the logged criterion P9's edge test is met.
+- **Read with care.** Signs by season split 5+/5-, and 2024 alone is +1.09 (p < 0.001).
+- **Post-hoc, not a criterion:** dropping 2024 gives gamma +0.062, p 0.25 (and beta 0.438).
+- The QB-part correlation with the cover residual is **+0.119 in 2024-25** (P28 measured +0.124 there) but **+0.022 over all ten seasons**. P28's revision of P9 was a 2024-25 property, not a stable one.
+- By the rule in the scoped entry, this pass changes no coefficient, and any flag use falls under the baseline flag trust rule.
+
+**Q3, market-implied size (descriptive):** beta_mkt **+0.385** (+0.323 to +0.448); QB part +0.549, non-QB +0.252.
+
+**How the three fit together (arithmetic, not a new test).** Q2's gamma is exactly Q1's beta minus Q3's beta_mkt (0.546 - 0.385 = 0.161), because the cover residual is the difference of the two dependent variables.
+- Outcomes support about 0.55 points per point of the term.
+- The line moves about 0.39.
+- The model applies 1.0.
+
+So on a game where the term is X, the model disagrees with the line by about **0.61 X**, and only about **0.16 X** of that is supported by outcomes. That is the mechanism behind the filing evidence (|adj| >= 1 went 0-5, >= 2 went 0-7): the baseline's injury-driven edges are about 4x larger than the information behind them. It is also why the M2 fix doesn't help much on MAE (the term is small next to game noise) while it could matter for **edges**. Edge effects weren't a pre-set criterion here, so that is a question for a new, pre-registered test, not a finding.
+
+**2026, descriptive:** 29 games (DET@BUF excluded), mean |term| 1.67, corr with the cover residual +0.040, in-sample beta +0.62 (CI -2.7 to +4.0). No information.
+
+**Status.** By the pre-set rules: Q1 gives no change, Q2 passes (fragile), and P41 is irrelevant to the historical fit. Next step is the user's call. The obvious candidate is a pre-registered test of the baseline's **edge** with the term scaled toward beta_mkt or beta. It would need its own criteria written here first.
+
+---
+
+## 2026-09-22 — P9 scoped: what the injury-term check actually asks, and the refit after P41 (diagnosis and criteria, written before running)
+
+**What P9 is about.** The Layer 2 injury term is `position weight x snap share x (1 - play prob) x 6.0` per player, summed per team (capped at 8.0), home minus away. `predict_baseline.predict_game` adds it to the margin with an implicit coefficient of **1.0**. P9 was opened on 2026-09-14 from `|injury adj| >= 1` going 0-5 ATS, corr(term, cover residual) = -0.00, and DEN@KC, where the line had already moved for the same report.
+
+**The logged test measures something other than the title.** The title asks whether the term is the right *size*. The adoption test (`actual - market ~ injury`, positive and significant) asks whether it knows something *the line doesn't*. Those are different questions and can give opposite answers:
+- a term of exactly the right size that the line already prices fully gives a coefficient of 0 and **fails the logged test forever**;
+- a term twice too large that the line only half-prices can **pass** it.
+
+The filing evidence (0-5, "market already priced it") is really about the second question, double counting against the line. Both questions are legitimate, so each gets its own test here. **The logged test is kept exactly as written** (Q2) and not replaced.
+- **Q1, magnitude:** `actual - baseline without injury = a + beta x term`. beta is the coefficient the model should be applying; the live model applies 1.0. beta < 1 means the term is too harsh.
+- **Q2, edge (P9's logged test):** `actual + market_spread = a + gamma x term`.
+- **Q3, market-implied size (descriptive):** `-market_spread - baseline without injury = a + beta_mkt x term`. This is how far the line moves per point of the term, and it's a low-noise cross-check on Q1.
+
+**Already on record, which this has to square with.** P28's re-test (2026-09-20) measured the flat QB charge at **+0.124 cover correlation over 512 games in 2024-25, +0.250 on the 132 where it fires**. That had already revised P9's -0.00 and is a Q2 result for the QB part only. P39 found a QB *identity* term market-redundant. Those two don't obviously agree, and the component split below is where that shows.
+
+**What the historical refit can and can't say about P41. Stated now so a null isn't over-read later.** P41 moved **20 of 3,060** training rows (max 0.588), so the historical coefficient can barely move. P41's large live charges (PHI -2.07, PIT -1.80) come from **posted-inactive rows entered at snap share 0.0**, and inactive lists exist only in 2026. **History can't validate P41's live magnitude.** 2026 has about 31 gradable games, under P9's 100. Also, those games were graded on terms computed before P20, P41 and P10, so they aren't the corrected numbers either. Two other known differences between history and live:
+- history is practice-aware (nflverse practice status), while live ESPN rows are a flat 0.55 for Questionable (P21);
+- a player already out for weeks is partly inside the EPA rating, which would pull beta below 1 for long absences. That's noted but not tested here.
+
+**Data and method.**
+- **Games:** `data/training_nfl.csv` (rebuilt 2026-09-22 after P41), 2016-2025, weeks <= 18, line present. 2026 is excluded from every fit.
+- **Baseline without injury:** P37's replay of live Layer 1 plus HFA / rest / travel, x wind (it matches live 30/30). **Term** = `injury_diff x wind factor`, since live applies wind to the sum.
+- **Components:** QB part = `6.0 x qb_loss_diff x wf`, and the non-QB part is the remainder. The count of team-weeks where the 8.0 cap binds is reported, since the split is approximate there.
+- **Pre-P41 variant:** `build_training._nfl_injury_features` is re-run with the old sort key `-(snap_share or DEFAULT_SNAP_SHARE)` patched in. That is scoring only; ratings and lines are unchanged.
+- **Fits:** OLS with intercept, HC1 robust standard errors. **Walk-forward:** for each season Y in 2019-2025, beta is fitted on 2016..Y-1 and applied to Y. The headline is pooled 2019-25, with 2025 reported alone.
+
+**Gate 0: the inputs are what they claim to be.** The regenerated post-P41 injury term matches the training file on every row (|diff| < 1e-9), and the pre-P41 regeneration differs from it on exactly the 20 logged rows (max 0.588). If either fails, stop and report; nothing below runs.
+
+**Q1, magnitude. Pass or fail each:**
+- **M1, is 1.0 wrong?** The full-sample (2016-25) beta's 95% CI excludes 1.0.
+- **M2, does it matter out of sample?** Replacing 1.0 with the walk-forward beta improves pooled 2019-25 baseline margin MAE by **>= 0.05 pts**, improves it in **>= 5 of 7** seasons, 2025 is not worse, and pooled win-probability Brier (sigma 13.0) is not worse.
+- **Verdict:**
+  - **M1 and M2 pass:** miscalibrated and material. A coefficient change is worth proposing to the user; nothing is built from this entry.
+  - **M1 passes, M2 fails:** statistically off, immaterial. No change.
+  - **M1 fails:** consistent with 1.0. No change.
+- **M3, component split (diagnostic, no pass/fail):** beta separately for the QB and non-QB parts, with CIs. If one excludes 1.0 and the other doesn't, it's recorded as a position-weight finding (the scale is one number shared by both), not a scale change.
+- **M4, P41 sensitivity:** full-sample beta pre vs post P41. Expected |delta beta| < 0.02. Anything larger is investigated before any other result is read.
+
+**Q2, edge, P9's logged adoption test, unchanged:** full-sample gamma > 0 at one-sided p < 0.05, over >= 100 games with a non-zero term. Reported per season, and for the QB and non-QB components. A pass is **not** a magnitude result: it says the line under-prices injury reports. It changes no coefficient by itself, and any flag use falls under the baseline flag trust rule (2026-09-22).
+
+**Q3, market-implied size:** beta_mkt with its CI, descriptive only.
+
+**2026, descriptive only:** weeks 1-2 graded NFL games with their stored term, excluding DET@BUF (P20 caveat), n about 31. Report corr(term, cover residual) and residual against term. No decision.
+
+**Stop.** Findings go to the user first. No coefficient change is proposed or built from this entry.
 
 ---
 
