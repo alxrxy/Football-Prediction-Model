@@ -36,7 +36,7 @@ status only when its adoption test is met.
 | P6 | CFB home field 2.4 → ~2.8 | weight | 2026-09-12 | slate: model leaned away 30/47, -2.1 pts vs market; history: market-implied HFA 3.2 (2017-25) but 0.5 in 2025 | mean signed edge on non-neutral games < -1.0 across 4+ weeks | watch |
 | P7 | Do not use the CFB ML model's margins until its compression is explained | investigate | 2026-09-12 | mean \|ML margin\| 9.5 vs actual 24.7; MAE 20.6. *Correction 09-15: the "Georgia −27 vs market −69.5" example below used an in-play line (P15); DK closed −40.5* | n/a, diagnose first | investigate |
 | P8 | NFL: consider the ML margin (or a blend) as the headline number | model selection | 2026-09-14 | 9/13: ML SU 10/13 vs baseline 6/13, MAE 11.46 vs 13.10, Brier 0.214 vs 0.256; ATS both poor (4-8, 3-10) | ML MAE below baseline MAE over 4+ NFL weeks (~60 games), and not worse vs market | watch |
-| P9 | NFL injury term: check its magnitude | weight | 2026-09-14 | 9/13: \|injury adj\| ≥ 1 went 0-5 ATS, MAE 12.3 vs market 8.8; corr(injury term, cover residual) −0.00. 9/14 DEN@KC: term −0.95 toward DEN (−2.63 with real snap shares, P14), market already −2.5 with the same report; lost | fitted coefficient on the injury term (actual − market ~ injury) positive and significant over 100+ games. **Exclude 2026-09-17 DET@BUF**: its term (1.56) was set before P20, which understates DET's side (Pacheco on IR uncounted), and before P10/P21 — four players priced at the flat 0.55 with the official inactives already public. The fixed code would not produce that number, so the game cannot speak to this coefficient | watch; see the 2026-09-22 cross-reference "QB mismatch: one mechanism, three observations" (P2 / P9 / P37). **Re-check due after P41 (2026-09-22)**: that fix makes charges larger where it fires (PHI 2.07, PIT 1.80 pts on the week-2 report), so the coefficient must be refitted on the corrected numbers. **Re-checked 2026-09-22** (entries "P9 scoped" / "P9 findings"): Q1 magnitude beta 0.546 (CI 0.36-0.73, excludes 1.0) but the walk-forward gain is -0.040 < 0.05 bar, 4/7 seasons, 2025 and Brier worse -> **no change**; the logged edge test **passes narrowly** (gamma +0.161, one-sided p 0.034) and rests on 2024 (post-hoc, without it p 0.25); P41 moves beta by -0.0008. Next step with the user. |
+| P9 | NFL injury term: check its magnitude | weight | 2026-09-14 | 9/13: \|injury adj\| ≥ 1 went 0-5 ATS, MAE 12.3 vs market 8.8; corr(injury term, cover residual) −0.00. 9/14 DEN@KC: term −0.95 toward DEN (−2.63 with real snap shares, P14), market already −2.5 with the same report; lost | fitted coefficient on the injury term (actual − market ~ injury) positive and significant over 100+ games. **Exclude 2026-09-17 DET@BUF**: its term (1.56) was set before P20, which understates DET's side (Pacheco on IR uncounted), and before P10/P21 — four players priced at the flat 0.55 with the official inactives already public. The fixed code would not produce that number, so the game cannot speak to this coefficient | **closed 2026-09-22: tested, no change (user confirmed).** Injury coefficient stays 1.0. Re-open only if injury-heavy games keep losing from 2026 week 3 onward, under criteria agreed with the user and written here before any test runs; same route as the 2026-09-22 cross-reference "QB mismatch: one mechanism, three observations" (P2 / P9 / P37). History: **Re-check due after P41 (2026-09-22)**: that fix makes charges larger where it fires (PHI 2.07, PIT 1.80 pts on the week-2 report), so the coefficient must be refitted on the corrected numbers. **Re-checked 2026-09-22** (entries "P9 scoped" / "P9 findings"): Q1 magnitude beta 0.546 (CI 0.36-0.73, excludes 1.0) but the walk-forward gain is -0.040 < 0.05 bar, 4/7 seasons, 2025 and Brier worse -> **no change**; the logged edge test **passes narrowly** (gamma +0.161, one-sided p 0.034) and rests on 2024 (post-hoc, without it p 0.25); P41 moves beta by -0.0008. **Part 2 (2026-09-22), edge test:** scaling to walk-forward beta or beta_mkt fails all four edge criteria (|edge| >= 3: 47.6% / 47.4% vs 50.5% at 1.0), and neither coefficient is stable (beta: heterogeneous and rising; beta_mkt: heterogeneous). **1.0 stays.** |
 | P10 | Props: apply game-day inactives before simulating | data | 2026-09-14 | DAL@NYG: 4 projected players recorded nothing (N. Harris 5.3 car, Beckham, Cambre, Abanikanda), none on the injury list; Singletary took 10 touches + TD unprojected. **Widened 2026-09-17 (DET@BUF):** this is not a sequencing problem. There is no inactives ingestion path anywhere in the pipeline, and the ESPN feed structurally cannot supply one — a full league pull at 22:50Z returned only `Active` (614), `Questionable` (134), `Injured Reserve` (40), `Out` (9), `Doubtful` (3), with no gameday inactive designation. `ingest_injuries._status` would discard one anyway (see P20, P21). Consequence at T-75 min, with the official list already public: DET@BUF still priced 4 players at the flat questionable/limited 0.55 (D.J. Reed 0.75 pts, Cole Bishop, T.J. Sanders, Ty Johnson) when each was by then resolved to 0 or 1 **Source found and confirmed 2026-09-19:** the ESPN core API per-competition roster flags inactives `didNotPlay` (DET@BUF: 8 BUF / 9 DET, incl. T.J. Sanders and Ty Johnson); 404 before posting. Week-1 payoff: 6 inactive projected players, 1.4% of projected touches (Kamara, N. Harris). See the 2026-09-19 P10 entry | acquire a real inactives source first (ESPN gameday roster endpoint or equivalent), then re-sim after it lands; track "projected, no stats" rate weekly | **built and validated on replay 2026-09-19; committed 2026-09-20 (`164fdd9`); not yet run live.** Criteria 1-5 pass; criterion 6 (posting time) needs a live Sunday. The Sunday windows run as one command, `python run_sunday.py --watch` (2026-09-20 entry). New `inactives` table: paste `db/PASTE_INTO_SUPABASE.sql` to create it upstream (the local mirror is used until then). See the 2026-09-19 P10 build entry |
 | P11 | Props: rushing volume bands too narrow (game script) | investigate | 2026-09-14 | DAL@NYG: rush att in the 50% band 2/8, rush yds 1/8; team rush att −8 (trailing DAL), +9 (leading NYG). DEN@KC: leading KC 38 rush att vs median 25 (p90 31), trailing DEN 15 | 50% band hit rate for rush att in 40-60% over 10+ simulated games | **engine change applied 2026-09-15** (game-script play-calling): calibration rush att by final margin 21.4 → 32.5 vs real 20.7 → 31.6, was flat 24.1 → 27.9; league totals within 3%. The band test itself still needs 10+ graded games |
 | P12 | Run pregame sims before the first kickoff | process | 2026-09-14 | 12/13 week-1 sims written 23:11Z, after kickoff, so only DAL@NYG props are gradeable | n/a | proposed |
@@ -110,6 +110,110 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-22 — P9 part 2 findings: scaling the injury term down makes edges worse, not better; neither candidate coefficient is stable. 1.0 stays
+
+Script `calibration/p9b_injury_edge.py`, full output `calibration/2026-09-22_p9b_injury_edge.md`. The rules are in the entry below and were fixed before running. **Nothing built; no coefficient change proposed.**
+
+**Walk-forward coefficients used:**
+- beta (arm B): 0.34-0.51.
+- beta_mkt (arm M): 0.30-0.39.
+
+**Edges, 2019-25, 1,881 games:**
+
+| arm | all leans | \|edge\| >= 3 | \|edge\| >= 4 | slope resid on edge |
+|---|---|---|---|---|
+| **L, c = 1.0 (live)** | 50.9% | **485-475 (50.5%)** | 49.7% | +0.060 |
+| B, walk-forward beta | 51.0% | 425-468 (47.6%) | 46.9% | +0.024 |
+| M, walk-forward beta_mkt | 51.2% | 427-473 (47.4%) | 47.1% | +0.021 |
+| 0, no term (reference) | 49.5% | 425-479 (47.0%) | 47.7% | -0.005 |
+
+**Both candidates fail all four edge criteria:**
+
+| | B | M |
+|---|---|---|
+| E1: on games where the lean flips | 87-86, p 0.50 | 105-100, p 0.39 |
+| E2: at \|edge\| >= 3 | 47.6% vs L's 50.5% | 47.4% vs 50.5% |
+| E3: injury-heavy games | 50.9% vs L's 51.9% | 51.3% vs 51.9% |
+| E4: 2025 | 49.1% vs L's 49.4% | 46.9% vs 49.4% |
+
+Arm 0 against L on flipped games went **148-174**: over ten seasons, the full-size term picks the right side slightly more often than no term. No arm clears 52.4% at |edge| >= 3 (the best is L, p 0.89 against it), which is consistent with P37.
+
+**What this says about the original P9 evidence.** The 2026 cells (|adj| >= 1 0-5, >= 2 0-7) are **not reproduced historically**. At full size, the injury term's big edges cover at 50.5%, the best of the four arms. The part 1 arithmetic ("edges about 4x the information behind them") holds on average, but shrinking the term mostly removes correct sides along with the wrong ones. It doesn't turn losing edges into winners. So 2026's losses in injury-heavy games look like the same small-sample noise as the QB-mismatch cells (cross-reference entry).
+
+**Stability. Neither candidate coefficient is a stable number:**
+
+| | S1 heterogeneity | S2 trend | S3 leave-one-out | S4 walk-forward path |
+|---|---|---|---|---|
+| beta (outcome) | **fail**: Q 25.8/9 df, p 0.002, I² 65% | **fail**: +0.080/season (CI +0.018 to +0.143) | pass: max 0.109 (drop 2024) | **fail**: 0.337-0.507 (already known, disclosed) |
+| beta_mkt (market) | **fail**: Q 24.5/9 df, p 0.004, I² 63% | pass: +0.015 (CI -0.006 to +0.036) | pass: max 0.027 | pass: 0.304-0.387 |
+
+- **The outcome-implied value varies by season and is rising.** Single seasons run -0.04 to +1.56, with 2024 (1.56) and 2025 (0.86) the two highest.
+- **Caveat on the trend:** its CI is the fixed-effect interval. With I² at 65% it is too narrow, so read the trend as "suggestive", not established.
+- **Either way, a fixed 0.5 would be tuned to 2016-23**, while the latest two seasons point closer to 1.0. That is exactly "wrong at 0.5, just less obviously".
+- **The market's own sizing is steadier** (no trend, a tight path, 0.30-0.39) but still varies between seasons beyond noise (0.14 in 2023 to 0.56 in 2022).
+
+**Verdict by the pre-set rules:**
+- **B** fails the edge test and three of four stability criteria.
+- **M** fails the edge test and S1.
+- **1.0 stays on this evidence.**
+- The part 1 in-sample beta of 0.55 is not a number to adopt: it doesn't improve edges, it isn't stable, and the recent seasons disagree with it.
+
+**P9 disposition: closed as tested, no change (user confirmed 2026-09-22).** Re-open only if 2026 week 3+ injury-heavy games keep losing, under criteria agreed with the user and written into this log before any test runs. That is the same route as the QB-mismatch cross-reference: new games only, never the 2026 weeks 1-2 cells that prompted P9.
+
+---
+
+## 2026-09-22 — P9 part 2 scoped: a scaled-down injury coefficient, judged on betting edges, with a stability test on the coefficient itself (design and criteria, written before running)
+
+**Question.** Does scaling the injury term below 1.0 make the baseline's edges against the line better, and is the scaled coefficient a stable number or just a different wrong one? This follows the findings entry below: outcomes support about 0.55 per point of the term, the line prices about 0.39, the model applies 1.0.
+
+**Which coefficient is right for edges, in principle.** The injury part of an edge is `(c - beta_mkt) x term`. Its true information about the cover is `(beta - beta_mkt) x term`.
+- `c = beta` makes that part calibrated.
+- `c = beta_mkt` removes it: defer to the line on injuries.
+- `c = 1.0` overshoots by `(1 - beta) x term`.
+
+Both candidates are tested. **Neither is chosen by the full-sample numbers** (0.546, 0.385), which were fitted on the games being judged.
+
+**Arms.** Each is walk-forward for seasons 2019-2025, with the coefficient fitted on 2016..Y-1 only. The edge is `baseline + c x term + market_spread`, with the same baseline, term and line as part 1.
+- **L:** c = 1.0 (live).
+- **B:** c = walk-forward beta (outcome-implied, part 1 Q1).
+- **M:** c = walk-forward beta_mkt (market-implied, part 1 Q3).
+- **0:** c = 0 (no term). Reference only, not a candidate: part 1 Q1 shows the term carries real information about the margin.
+
+**Why edge size, not the live flag.** At -110 the live flag needs about 11.3 points of disagreement with a 50/50 line (`market.points_to_flag(13.0)`, weight 0.15, buffer 0.03). The historical line has no prices, so the replay would flag almost nothing. The flag count is reported, but ATS is judged by edge size (P37's thresholds 0, 2, 3, 4, 6) and on the games where the arms disagree. Pushes are excluded, and a zero edge leans away, as in `grade.evaluate` / P37.
+
+**Edge criteria. B and M are each judged against L on pooled 2019-25, and a candidate needs all four to pass:**
+- **E1, the paired test:** on games where the candidate and L lean opposite ways, the candidate's side covers in more than half, one-sided binomial p < 0.05. These are exactly the games where the term's size decided the side.
+- **E2:** ATS at |edge| >= 3 is not below L's.
+- **E3:** on the injury-heavy games (|term| >= 2, raw, so the subset is the same for every arm), all-lean ATS is not below L's.
+- **E4:** 2025 alone, all-lean ATS is not below L's.
+
+**Stability criteria for the coefficient each candidate uses (beta for B, beta_mkt for M), a pass needs all four:**
+- **S1, heterogeneity:** Cochran's Q over the ten single-season estimates (2016-25, HC1 SEs), p >= 0.05. No evidence that the true value moves by season.
+- **S2, trend:** the inverse-variance-weighted slope of the single-season estimate on season has a 95% CI that includes 0. A drifting coefficient would be wrong going forward even if the average is right.
+- **S3, leave-one-season-out:** the full-sample estimate with any one season dropped stays within +/- 0.15 of the full-sample value.
+- **S4, walk-forward path:** the prior-seasons fit used for 2019 through 2025 stays within +/- 0.15 of the 2025 value.
+- **Tolerance:** +/- 0.15 is about 0.3 pts on the average |term| (2.14) and 0.75 pts on a 5-pt term. Past that, "0.5" would be as wrong as 1.0 on the games that matter.
+
+**Already seen, so not new evidence. Disclosed now.** For beta, part 1 already showed:
+- the single-season values (-0.04 to +1.56);
+- the walk-forward path (0.337 to 0.507, so **S4 is already known to fail for B**);
+- the fit without 2024 (0.438, inside S3's band for that one season).
+
+The thresholds above are set by what "stable" should mean, not tuned to these. Nothing about beta_mkt's per-season behaviour has been looked at.
+
+**Verdict:**
+- **Passes E1-E4 and S1-S4:** a coefficient change is worth proposing to the user. Nothing is built from this entry.
+- **Passes E, fails S:** better than 1.0 but not a stable number. Report which S failed and how. No proposal of a fixed value.
+- **Fails E:** 1.0 stays on this evidence.
+- **If both B and M pass:** prefer fewer S failures, then the stronger E1.
+- **If arm 0 beats both candidates on E1-E4:** that is recorded as a finding, not adopted.
+
+**Also reported (no pass/fail):** ATS by edge threshold for every arm, per season; the slope of cover residual on edge per arm (P37's statistic); whether any arm clears 52.4% at p < 0.05 at |edge| >= 3. That last one is the bar the baseline flag trust rule uses. **Beating L isn't the same as being profitable.** P37 found the rating-only edge about 50% at every size.
+
+**Stop.** Findings go to the user first.
 
 ---
 
