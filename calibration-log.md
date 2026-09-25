@@ -69,6 +69,7 @@ status only when its adoption test is met.
 | P39 | QB-vs-rating term: the unrestricted P28 part 2 term (margin MAE 11.557 -> 10.903 over 2024-25), tested for edge against the line and, separately, as the simulator's anchor | logic | 2026-09-22 | Set aside 2026-09-20 as out of P28's scope. The restricted form lost to the flat rule, and corr(term, market spread) = -0.324 says the market already prices QB changes. Never tested for value against the line. The sim pins its mean margin to the baseline anchor, so an accuracy gain could still pay there | see the 2026-09-22 "P39 scoped" entry, written before any run: gate 0 (the rebuild reproduces the logged term), then phase 1 (edge) and phase 2 (anchor), each with its own pass rules | **tested 2026-09-22: fails both phases by the pre-set rules; nothing built.** The 9/20 gain doesn't reproduce: against P37's verified baseline it is 10.709 -> 10.608 over 2024-25, not 11.557 -> 10.903. No edge on any arm (pooled corr with the cover residual -0.024 / -0.012 / -0.041). As the anchor, a real but small gain: identity arm pooled -0.075, 6/7 seasons; full term -0.090, 7/7; both short of the 0.10 bar. The gain is QB identity, not scale |
 | P40 | Injury feeds: nflverse precedence can mask an ESPN "Injured Reserve" designation | logic | 2026-09-22 | `ingest_injuries.run` treats nflverse as authoritative wherever both feeds cover a player, so an ESPN `ir` row is discarded when nflverse also lists him. NYG's Paulson Adebo on the cached 09-18 pull: ESPN says Injured Reserve, nflverse carries him with no game status, so he is charged at his practice-based probability instead of 0. IR is a roster fact, not a report status | a scoped pass of its own: feed precedence per field rather than per player, measured over the cached payloads; no live row may lose a status it has today | **logged 2026-09-22, not built.** One known case; touches precedence between feeds generally, so it needs its own scope rather than a patch inside P20 |
 | P41 | `score_injuries` ranks starter slots with `-(snap_share or DEFAULT)`, so a 0.0-share row sorts as 0.65 and can take a slot from a genuinely injured starter | bug fix | 2026-09-22 | `features.py:141` and `:191`. `0.0 or 0.65` is 0.65 in Python. Live today: 138 of 353 report rows sit at exactly 0.0 (the rows `apply_inactives` adds for posted inactives), and 5 teams' slots are mis-assigned, worth up to **2.07 pts** (PHI), PIT 1.80. PIT's single QB slot goes to Will Howard (0.0 snaps) instead of Mason Rudolph (0.30), so the team is charged 0 for its quarterbacks. Historically much rarer: 1,202 of 33,163 rows (3.6%), changing 16 of 5,446 team-weeks (0.3%), mean 0.23 and max 0.59 pts, and `qb_availability_loss` never changes | fix: `DEFAULT_SNAP_SHARE if share is None else share` in both sort keys; then per-team before/after on the live report, plus the historical count above; rebuild decision for training features recorded before building | **FIXED 2026-09-22** (see that day's P41 entry): `_share_or_default` in both sort keys, training rebuilt and the model retrained in the same change. Live: the 5 teams land exactly as scoped (PHI -2.07, PIT -1.80, CHI -0.40, KC -0.34, TB -0.22) and PIT's QB slot goes to Rudolph. Isolated A/B on the 2025 holdout: fundamentals MAE +0.029, with-market -0.002 -- noise from 20 changed training rows |
+| P42 | Inactives: an impossible gameday list (every QB on a team marked out) is accepted as posted and flows into predictions, sims and props | data validation | 2026-09-24 | TNF ATL @ GB. ESPN's core-API game roster for ATL, read at T-10 min, flags all four ATL quarterbacks `didNotPlay` (Penix, Tagovailoa, Cooper Rush, Jack Strand) and lists no other QB on the 54-man roster; still the same when re-read at 00:13Z. The list passed the P33 lead-time gate (a genuine T-10m read), so this is not the premature-list defect. `apply_inactives` set all four to play prob 0. The baseline charged Penix's slot at the generic 5.59 pts (ATL injury total -8.00). In the sim, `box_score.passer_weights` found zero total QB weight and its silent fallback (`box_score.py:56-57`) gave depth QB1 Penix 100% of the passing: 31.0 att, 197 yds median 195. The ATL player props (London, Robinson unders in the top 25) and anytime-TD picks were ranked on that box score. Nothing in ingest -> features -> sim -> props checks a list for plausibility, and `run_sunday` reports only lists posted (2/2). Caught by manual inspection after the refresh, at T-8 min. Distinct from P28 (the sim and the books disagreeing about which healthy QB starts): here the input data itself is impossible | reject, before storage, any team list that leaves the team with no active QB; replay over every stored week-1 to week-3 list fires on tonight's ATL list and on no genuine list; a unit test pins tonight's ATL payload as rejected; `passer_weights` never falls back silently (a test asserts the warning or refusal); `run_sunday` prints each validation failure by team | **logged 2026-09-24, not built.** ATL @ GB was not re-simulated (it has kicked off). The game carries a `KNOWN_GAME_ISSUES` label. See the 2026-09-24 P42 entry |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -110,6 +111,80 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-24 — P42 logged: ATL's TNF inactive list marked all four quarterbacks out, and nothing checked it
+
+**What happened.** The TNF window refresh (`run_sunday.py --date 2026-09-24 --fresh-odds --no-explain`) ran
+00:05-00:06Z for ATL @ GB (kickoff 00:15Z). Both inactive lists had posted: GB 10 players, ATL 9, read at
++0.2 h, well inside the P33 two-hour gate. ATL's list flags **every quarterback on its game roster**
+`didNotPlay`: Michael Penix Jr., Tua Tagovailoa, Cooper Rush and Jack Strand. The same 54-entry roster
+lists no other QB. A team cannot play without dressing a quarterback, so the list is wrong. Either ESPN
+mis-flagged at least one QB, or ATL's starter is missing from the roster. A direct re-read of the endpoint at 00:13Z returned
+the same four flags, so the fault is in the feed, not in our join or player matching.
+
+**What it did downstream.**
+
+| Layer | Effect |
+|---|---|
+| `features.apply_inactives` | all four ATL QBs at play prob 0, status "inactive" |
+| baseline (injury term) | Penix's slot charged the generic starter-out 5.59 pts; ATL injury total -8.00, term +4.82 to GB. Baseline GB -12.8 vs market -4.5 (no flag) |
+| ML | GB -8.4, built on the same injury report |
+| sim | anchored to the baseline margin (12.85). `box_score.passer_weights` saw zero total QB weight and fell back, silently, to depth QB1: Penix throws 100% (31.0 att, median 195 yds) |
+| props / TD | ATL receivers and backs were ranked on that box score (Drake London rec yds under #2, Bijan Robinson rush yds under #14 in the pre-kickoff top 25); ATL anytime-TD picks likewise |
+
+The team-level number may also be wrong, not only the player numbers. The charge is a generic starter-out
+value that ignores who replaces Penix. Last week's P28 check put the gap between ATL's possible starters at
+about 11 points (Tua about 0 to +4 against ATL's rating, Rush about -7). Who actually started is not known
+at the time of writing. Record it here once the box score is in, because it tells us which way the line
+was off.
+
+**Why it wasn't caught before kickoff.**
+
+1. No layer checks a list for plausibility. `ingest_inactives.fetch` accepts any 200 with `didNotPlay`
+   entries inside the lead-time gate. P33 gates on *when* a list was read, never on *what* it says.
+2. The sim's failure is silent. The `passer_weights` fallback exists so that a squad with no play
+   probabilities still has a passer. Here it turned "no QB can play" into "the injured starter plays", and
+   printed nothing.
+3. The refresh reports counts only ("2/2 team lists posted"), which reads as success.
+4. Timing. The lists were first readable at about T-10 min, so the refresh finished at T-9 with no review
+   window. It was found by manually reading the stored sim after the refresh, at T-8, too late to fix and
+   validate before kickoff. By rule, a game is never re-simulated after kickoff (no as-of cutoff), so ATL @ GB
+   stands as simulated.
+
+**Why this is not P28.** P28 is a disagreement between valid inputs: the depth chart and the market name
+different healthy starters. P42 is an impossible input, which should be rejected before it reaches any
+model. A P28 fix (starter identity) would not have caught this, and a P42 check would not fix P28.
+
+**What the fix would take** (not built; scope for approval):
+
+- **Where the rule lives.** In `ingest_inactives.fetch`, per (game, team), before rows are stored. The full
+  game roster is in hand there (`entries`, each with a position and `didNotPlay`). Nowhere downstream still
+  has the actives.
+- **Rule 1: at least one QB who is not `didNotPlay`.** This is an NFL roster requirement, so it cannot fire
+  on a genuine list, and the 2023 emergency-third-QB rule doesn't change that (the emergency QB is listed
+  inactive while two QBs are active). A failing team list is **not stored**. That team falls back to the
+  injury report's play probabilities, exactly as if its list had not posted, and the run prints a
+  `[reject]` line naming the team and the rule.
+- **Other rules worth considering, same shape:** a list covering an implausible share of the roster, or a
+  position group emptied. Only rule 1 is a hard league rule; the others would need thresholds from stored
+  lists. As P33 found, list size alone does not separate good lists from bad.
+- **Downstream guard.** `passer_weights` should warn, and record it on the simulation, when it falls back
+  with QBs present but every one of them has play prob 0. That is the "impossible input got through anyway"
+  case. Keep the fallback for the genuinely missing-data case (play prob absent).
+- **Reporting.** `run_sunday` prints each rejection. The dashboard labels any game whose list was rejected,
+  so the flat-probability fallback is visible.
+- **Adoption test.** (a) Replay over every stored week-1 to week-3 list: the rule fires on this ATL list and
+  on no other. The raw rosters are needed for that; check whether they are cached, and if not, apply the rule
+  to future lists only and say so. (b) A unit test pins tonight's ATL payload as rejected. (c) A test
+  asserts `passer_weights` warns rather than silently falling back when every QB is at 0. (d) The suite still
+  passes.
+
+**Actions tonight.** No fix, no re-simulation. ATL @ GB carries a `KNOWN_GAME_ISSUES` label (`2026_03_ATL_GB`)
+that marks its player-level numbers as unreliable and notes the team-level line may be affected. The stale
+`2026_02_CAR_ATL` (P28) label was removed; that game is graded. An earlier read in the same session said the
+sim "ignores inactives at QB". That was wrong: it applies them, then falls back.
 
 ---
 

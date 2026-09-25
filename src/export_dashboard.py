@@ -72,8 +72,8 @@ def _slate_for(store, sport: str) -> tuple[str, list[dict], dict]:
 # the page rather than hidden. Remove each entry once the item is fixed or the
 # game has kicked off.
 KNOWN_GAME_ISSUES = {
-    "2026_02_CAR_ATL": (
-        "Known issue, treat with caution (P28): ATL's quarterback is unsettled and the model prices neither option. The baseline charges Penix's absence at a generic 5.6 points without asking who replaces him. Against ATL's rating, Tua starting is worth about 0 to +4 points and Cooper Rush (who started week 1, and whom the books price) about -7. So this number is roughly right if Rush starts and 6-10 points too harsh on ATL if Tua does. The simulation is pinned to the same number and splits the passing 60/40 Tua/Rush."
+    "2026_03_ATL_GB": (
+        "Known issue, treat with caution (P42): ESPN's gameday inactive list marked all four ATL quarterbacks out (Penix, Tagovailoa, Rush, Strand), which cannot be right, and nothing checked it before the numbers were built. The baseline charges ATL a generic 5.6 points for Penix without knowing who actually starts, so the team-level line may be off too. The simulation, left with no available quarterback, fell back to Penix as the passer, so its box score, the ATL player props and the ATL anytime-TD picks all assume a quarterback who is not playing. Treat ATL's player-level numbers as unreliable for this game. Not re-simulated after kickoff."
     ),
 }
 
