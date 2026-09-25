@@ -44,7 +44,7 @@ status only when its adoption test is met.
 | P14 | Snap-share fallback is per dataset, not per player | bug fix | 2026-09-15 | `_snap_shares` stops at 2026 once it has > 500 rows, so teams that hadn't played and players who sat out week 1 get no share: 78/154 latest NFL injury rows; every DEN/KC row. DEN@KC injury term −0.95 → −2.63 with real shares | none needed; correctness bug | **applied 2026-09-15** (`ingest_injuries.merge_snap_shares`); NFL rows without a share 78/154 → 32/161 on the week-2 pull |
 | P15 | Never grade a prediction made after kickoff; never store in-play lines | bug fix | 2026-09-15 | 19 of 80 CFB predictions on 09-12 were generated at 18:37Z, after 16:00–17:00 kickoffs, against in-play Odds API lines (Georgia −69.5 vs DK close −40.5). The old rule flagged 8 of them, 6-2. Pregame-only flagged record is 15-25, not 21-27 | none needed | **applied**: predict-side guard since 2026-09-14 (`ba6d7f3`); `ingest_odds` skips in-play events and CLV marks late leans `after_kickoff`, 2026-09-15 |
 | P17 | Props: model each player's own efficiency and target share before trusting the prop ranking (research Stage 4) | logic | 2026-09-15 | Week 2, first pull (1-5 books, Tuesday): 46 props priced, top 10 gaps 17-25 pp, 15 more held out past 25 pp. One-sided pattern: star receivers under (J. Williams rec yds sim 37 vs 56.5, St. Brown rec 5 vs 7.5, Nabers rec 3 vs 5.5); QB pass yds off both ways (Goff 222 vs 265.5, Stafford 285 vs 242.5). The engine gives every player league-typical yards per play and splits targets by depth-chart share **Confirmed as a cause 2026-09-18 (week-1 actuals, n=174 receivers with 8+ games in 2025):** yards per target are drawn from league plays by situation, so efficiency is compressed toward average. Top tercile by own 2025 yds/target (9.12): sim 7.63 vs week-1 actual 8.56, yards 0.80x actual; bottom tercile (5.33): sim 6.60 vs 6.47, 1.24x. Zero-sum against calibrated team pass yards, so the priced starters lose what the low-efficiency receivers gain **Walk-forward 2026-09-19 (2025 weeks 3-18, criteria written down first):** outcome-aware crediting with shrunk per-player rates improves out-of-sample rec yds MSE −1.28% (7/8 weeks, CI touches 0) and receptions −2.91%, but narrowly fails the tercile criterion. More importantly, the current engine is already within ~3% per tercile given targets (0.97 / 1.01), so the 0.80 / 1.24 compression above does not reproduce: efficiency given targets is a 1-3% effect, not the source of the props under-bias. See the 2026-09-19 P17 entry | prop gaps centre near 0 across a week (mean \|gap\| < 8 pp), then prop CLV ≥ 0 over 65+ leans | **not building as scoped** (user, 2026-09-19): design walk-forward done, small and marginal gain, and the premise did not reproduce. The open question it raised is P30 |
-| P18 | Simulator: first-and-short (goal-to-go) conversion far below real | bug | 2026-09-16 | Engine diagnostic, `--calibrate` over 20k league-average sims: 1st & 0-2.5 converts .323 vs real .486 (y/p 0.34 vs 0.43); 1st & 2.5-5.5 .216 vs .329 (y/p 1.41 vs 2.64); 1st & 5.5-9.5 .119 vs .163. On 1st down a to-go under 10 means the ball is inside the 10, so these are almost all goal-to-go snaps. Consistent with sim TD share .196 vs real .220. At ~1% of all snaps it does **not** explain the 11% plays-per-drive shortfall, which was measured separately and traced to possession count | 1st-down conversion within 3 pp of real in each sub-10 distance bin, and sim TD share within 1 pp of real | proposed; **deliberately deferred 2026-09-16** so it does not pull focus from the punt / three-and-out investigation |
+| P18 | Simulator: first-and-short (goal-to-go) conversion far below real | bug | 2026-09-16 | Engine diagnostic, `--calibrate` over 20k league-average sims: 1st & 0-2.5 converts .323 vs real .486 (y/p 0.34 vs 0.43); 1st & 2.5-5.5 .216 vs .329 (y/p 1.41 vs 2.64); 1st & 5.5-9.5 .119 vs .163. On 1st down a to-go under 10 means the ball is inside the 10, so these are almost all goal-to-go snaps. Consistent with sim TD share .196 vs real .220. At ~1% of all snaps it does **not** explain the 11% plays-per-drive shortfall, which was measured separately and traced to possession count | 1st-down conversion within 3 pp of real in each sub-10 distance bin, and sim TD share within 1 pp of real | **re-diagnosed 2026-09-25: the logged under-conversion was a measurement artifact; the real defect runs the other way.** The engine *over*-converts sub-10 1st downs by 3-5 pp, from drawing a play at a different spot than it was run from. The TD-share half of the test already passes (.223 vs .220). Fix scoped (per-yard sampling inside the 10) with criteria; not built; an engine change, so it ships at a week boundary. See the 2026-09-25 P18 entry |
 | P16 | Baseline model weight to 0 if its NFL leans show no CLV | weight | 2026-09-15 | backfill: 75 pregame baseline leans −0.22 pp (t −1.22), but 61 are CFB and priced at an assumed −110 against DK's close; NFL n=14 | NFL lean CLV ≤ 0 at 65+ NFL leans (≈ week 5) → set `MODEL_MARKET_WEIGHT=0` for the baseline | watch |
 | P19 | A partial injury pull must not retire other teams' reports: `latest_injury_report` keeps the latest pull *per source*, not per team/week as P1 intended | bug fix | 2026-09-16 | The 19:46Z week-2 nflverse pull held only BUF/DET (8 rows, the Thursday game). Because it was the newest nflverse pull, the week-1 nflverse report (91 rows) was silently dropped for the other 30 teams, which fell back to ESPN only. This time it helped by accident: the week-1 statuses were stale, e.g. Penix OUT, and CAR@ATL moved 0.60 → 4.77 when that row fell away. The same mechanism can just as easily drop a current report for most of the league in a future week, with no warning | none needed; correctness bug. Test: a pull covering 2 teams leaves every other team's latest report in force | **applied 2026-09-16** (`features.latest_injury_report`). Kept apart from the engine-change sequence because it is a data-pipeline correctness fix. For nflverse the report is now the latest week only, and within that week each team's latest pull; ESPN is unchanged (latest whole pull). Last week's statuses are deliberately not carried forward, so the 9/16 outcome (30 teams on ESPN until they file week 2) was the right one. Validated before landing: identical 137 selected rows on the live table, and injury_adj unchanged on all 16 week-2 games. The old code fails the new partial-pull test. Residual: a team whose whole report clears mid-week writes no rows, so its earlier same-week rows stay in force |
 | P20 | ESPN "Injured Reserve" status is discarded, so IR'd starters vanish instead of counting as out | bug fix | 2026-09-16 | `ingest_injuries._status` keeps only out/doubtful/questionable/probable. HOU LB To'oTo'o (0.88 snaps) went to IR 09-16 and dropped out of the injury layer, instead of costing HOU ~1.06 pts. **Scope measured 2026-09-17:** the 22:50Z league-wide pull carried **40** players at `Injured Reserve`, every one of them silently dropped — this is league-wide, not a one-team case. Tonight's DET@BUF: Isiah Pacheco (DET, IR) contributed nothing to the injury layer, so DET's burden is understated and the true term favours BUF by more than the 1.56 served | none needed; correctness bug | **FIXED 2026-09-22** (see that day's P20 entry). ESPN "Injured Reserve" now maps to status `ir` at play probability 0; an IR row with no snap share for that team is not emitted; the ESPN/nflverse merge dedups on `player_key`. Validated on the cached 09-18 pull: 27 of 39 IR rows ingested, 12 teams' charges move, HOU To'oTo'o exactly the 1.06 logged. **Dormant until ESPN answers again** (site.api has 403'd since 09-20) |
@@ -113,6 +113,75 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-25 — P18 re-diagnosed: the goal-line "under-conversion" was a measuring error; the engine over-converts inside the 10. Fix scoped, not built
+
+**Starting point.** P18 (09-16, with PENALTY_REPLAY off): 1st & 0-2.5 converts .323 in the sim against .486
+real, plus the other two sub-10 bins, and sim TD share .196 against .220.
+
+**Step 1: re-measure on today's engine** (PENALTY_REPLAY on since 09-19), `--calibrate`, 20k sims:
+1st-down conversion .315 / .278 / .119 against real .486 / .329 / .163. **TD drive share .223 against .220,
+so the second half of P18's test already passes.** The penalty fix closed it.
+
+**Step 2: the diagnostic is at fault.** Both sides test conversion as yards ≥ to-go, but the sim side reads
+the library's `net_yards` (yard line minus the *next* play's spot). For 432 of 4,071 library offensive TD
+plays (10.6%) the next play is a try from a spot other than the goal line, so the stored yards fall short
+of it: median 2 short, worst 20. The engine scores these plays on their TD flag, so it is unaffected, but
+the diagnostic counted them as failed conversions. Real play-by-play records a TD as the full distance.
+Fixed in the tracking code only (`simulate._scrimmage`, `track_drives` block: a TD counts as the full
+distance). Every non-diagnostic calibration line is identical before and after.
+
+**Step 3: corrected numbers.** The sign flips:
+
+| 1st & | sim | real | gap |
+|---|---|---|---|
+| 0-2.5 | .532 | .486 | **+4.6** |
+| 2.5-5.5 | .379 | .329 | **+5.0** |
+| 5.5-9.5 | .194 | .163 | **+3.1** |
+
+2nd & 0-2.5 (+3.1) and 3rd-down short yardage are also a little high. This fits the drive outcomes: TD .223
+vs .220 and FG made .148 vs .158, meaning red-zone drives that should kick finish as TDs.
+
+**Step 4: the mechanism.** Every real snap inside the 10 was scored two ways: its own outcome, and the
+probability that a play drawn from its engine bucket converts at that spot.
+
+- **At the play's own spot the engine agrees with reality on 2,902 of 2,902 sub-10 1st downs.** Yardage,
+  penalties and TD logic are all consistent.
+- Drawing across spots inside a bucket gives .534 / .380 / .194, the calibration gap exactly, so the sim's
+  field-position mix is not the cause.
+- The cause is `otd = off_td | (new <= 0)` applied **away from the spot the play was run from**. A 1-yard
+  TD from the 1 drawn at the 2 still scores on its flag, and a 1-yard gain from the 2 drawn at the 1 scores
+  on yardage. "TD if it would have scored at either spot" is biased upward, and the goal-line zones are
+  wide (1-5 and 6-10).
+- **Scoring on yardage alone is not a fix.** Crediting a TD play with exactly its distance to the goal
+  under-converts by 6-8 pp (1st & 0-2.5: .416 vs .491), because a TD's yardage is capped at the goal line,
+  so what it would have gained from a deeper spot is unknowable. Reality sits between the two rules.
+- **Also noted, and inert today:** the 432 short-stored TD plays are a library data defect. The engine never
+  reads their yards because the flag decides, but any rule that scores on yardage would inherit it.
+
+**Proposed fix: exact-spot sampling inside the 10.** Give each yard line from 1 to 10 its own zone, so a
+drawn play always comes from the spot it is applied at, and each draw matches reality by construction.
+Library counts per (down, distance bin, yard line) over 2023-25: 62 cells populated, 50 with 30 or more
+plays, and the 12 thin cells hold 171 of 8,315 plays. Many cells fall below today's `MIN_BUCKET_PLAYS =
+150`, so the borrowing rule inside the 10 needs its own design: the nearest yard line at the same down and
+distance before any change of distance, and a lower minimum there. That is a build decision, recorded here.
+
+**Adoption test (pre-set):**
+
+1. At real states inside the 10, engine conversion within **1.5 pp** of real in every down × distance bin
+   with 100+ snaps.
+2. `--calibrate` on the corrected diagnostic: 1st-down conversion within **3 pp** of real in each sub-10
+   bin (P18's original test).
+3. TD drive share within 1 pp of real; FG-made share closer to real than .148; points per team within
+   0.3 of real.
+4. No regression over 1 pp in any other down × distance bin or drive outcome, and none over 1% in team
+   pass or rush volume.
+5. Suite passes; the stored-sim fingerprint and the props `BIAS_FIT` re-checked (an engine change moves
+   every simulation).
+6. **Ships only at a week boundary.** It is an engine change: re-sim, `export_sims` and a props re-rank
+   follow, so it goes after week 3 is graded (MNF 2026-09-28), never mid-week (standing rule).
 
 ---
 
