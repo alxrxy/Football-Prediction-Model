@@ -34,22 +34,35 @@ warnings.filterwarnings("ignore")
 
 POOL_SEASONS = (2023, 2024, 2025)
 KICKOFF_SEASONS = (2025,)
-TABLES_VERSION = 5
+TABLES_VERSION = 6
 
 # --- situation buckets -----------------------------------------------------
 # down: 1st, 2nd, 3rd/4th (a 4th-down attempt is drawn from the same pool as a
 # 3rd down: both are must-convert snaps and 4th downs alone are too sparse).
 # distance: 1-2, 3-5, 6-9, 10, 11+.
-# zone (yards from the end zone): 1-5 goal line, 6-10, 11-20 red zone, 21-50,
-# 51-80, 81-99 backed up.
-N_DOWN, N_DIST, N_ZONE = 3, 5, 6
-N_BUCKETS = N_DOWN * N_DIST * N_ZONE
+# zone (yards from the end zone): each yard line from 1 to 10 on its own, then
+# 11-20 red zone, 21-50, 51-80, 81-99 backed up.
+#
+# Inside the 10 a drawn play must come from the spot it is applied at (P18). The
+# engine scores a play on its touchdown flag or on yardage reaching the goal
+# line, so a play applied away from its own spot scores if either spot would
+# have: a 1-yard TD from the 1 drawn at the 2 still scores, and a 1-yard gain
+# from the 2 drawn at the 1 does too. With 5-yard goal-line zones that biased
+# sub-10 first-down conversion 3-5 pp high; at its own spot a drawn play matches
+# real play-by-play on every one of 2,902 sub-10 first downs (2023-25).
+N_DOWN, N_DIST = 3, 5
 DIST_EDGES = [2.5, 5.5, 9.5, 10.5]
-ZONE_EDGES = [5.5, 10.5, 20.5, 50.5, 80.5]
+ZONE_EDGES = [1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 20.5, 50.5, 80.5]
+N_ZONE = len(ZONE_EDGES) + 1
+N_BUCKETS = N_DOWN * N_DIST * N_ZONE
+GOAL_ZONES = 10           # zones 0-9 are yard lines 1-10
 
 # A bucket with fewer plays than this borrows from its nearest populated
 # neighbour instead of resampling the same handful of plays thousands of times.
+# Per-yard cells inside the 10 are necessarily thinner, and borrowing there
+# stays inside the 10 and changes distance before yard line (see _bucket_map).
 MIN_BUCKET_PLAYS = 150
+MIN_GOAL_LINE_PLAYS = 50
 
 N_PUNT_BINS = 20          # 5-yard bins of the line of scrimmage
 MIN_PUNT_BIN = 40
@@ -354,15 +367,25 @@ def _scrimmage(s: pd.DataFrame) -> pd.DataFrame:
     return p.sort_values("bucket", kind="stable").reset_index(drop=True)
 
 
+def _min_plays(zone: np.ndarray) -> np.ndarray:
+    return np.where(zone < GOAL_ZONES, MIN_GOAL_LINE_PLAYS, MIN_BUCKET_PLAYS)
+
+
 def _bucket_map(counts: np.ndarray) -> np.ndarray:
-    populated = np.flatnonzero(counts >= MIN_BUCKET_PLAYS)
     ids = np.arange(N_BUCKETS)
     d, t, z = ids // (N_DIST * N_ZONE), (ids // N_ZONE) % N_DIST, ids % N_ZONE
+    enough = counts >= _min_plays(z)
+    goal = z < GOAL_ZONES
     out = ids.copy()
     for b in ids:
-        if counts[b] >= MIN_BUCKET_PLAYS:
+        if enough[b]:
             continue
-        # Relax distance first, then field zone, then down.
+        # A spot inside the 10 borrows only from inside the 10, and the yard
+        # line is what must match there: whether a drawn play converts is
+        # tested against the real to-go, but its yardage and touchdown come
+        # from the spot it was run from (P18). So: relax distance first, then
+        # yard line or field zone, then down.
+        populated = np.flatnonzero(enough & (goal == goal[b]))
         cost = 3 * abs(d[populated] - d[b]) + abs(t[populated] - t[b]) + 2 * abs(z[populated] - z[b])
         out[b] = populated[np.argmin(cost)]
     return out
@@ -541,7 +564,7 @@ def build_tables(refresh: bool = False) -> SimTables:
             "pool_seasons": list(POOL_SEASONS),
             "kickoff_seasons": list(KICKOFF_SEASONS),
             "plays": int(len(p)),
-            "sparse_buckets": int((counts < MIN_BUCKET_PLAYS).sum()),
+            "sparse_buckets": int((counts < _min_plays(np.arange(N_BUCKETS) % N_ZONE)).sum()),
             "punts": int(len(punt_start)),
             "kickoffs": int(len(ko_start)),
             "built_at": datetime.now(timezone.utc).isoformat(),
