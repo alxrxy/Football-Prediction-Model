@@ -67,7 +67,7 @@ status only when its adoption test is met.
 | P37 | Baseline ATS gets worse as its edge grows (4+ pts: 4-10-1 season, week 1 1-4, week 2 3-6-1) - why? | investigate | 2026-09-21 | Two weeks of negative best-fit weight on the edge (w = -0.64 week 1, -0.68 week 2). Overlaps P5 (stale early-season ratings), P22 (defense-heavy, unadjusted rating), P9/P2 (injury charges) | diagnosis only; the questions, tests and decision rules are in the 2026-09-21 scoping entry and were written before any test ran | **diagnosed 2026-09-21: noise, by the pre-set rules.** The 2026 gradient is not significant (slope perm p 0.27, corr p 0.11). The live Layer 1 replayed over 2016-2025 (reproduces live exactly) shows no negative early-season relation (weeks 1-4 corr +0.05, CI -0.03 to +0.13). The bigger finding: across 2,582 games the baseline edge covers **~50% at every size** (b = -0.02, CI -0.13 to +0.08), so it carries essentially no ATS information at any edge size. No fix proposed. See the 2026-09-21 findings entry **Part 2 (2026-09-22): noise still stands.** 2026's edges are at the high end of the normal range, not above it (3rd of 11 seasons). The market did not move against the big edges (CLV -0.30 pp at >= 4 vs -0.22 below, no size effect; corrected after P34). 2026's lines were among the least accurate, not sharper. Lead: QB-change games 1-9-1 (post-hoc, n = 11); see the 2026-09-22 cross-reference "QB mismatch: one mechanism, three observations" (P2 / P9 / P37). |
 | P38 | Tests: every module's `check()` prints a failure but never raises, so pytest reports a failing check as passed | tooling | 2026-09-22 | Found building P34: a new `test_clv` check failed (0.5166 vs 0.5171), and `pytest -q` still printed 133 passed. `python -m tests.test_clv` printed 22 passed, 1 failed. All 14 modules in `tests/` define the same non-raising `check()`, and only their `__main__` runners count failures and exit 1 | until fixed, validation runs **each module's own runner** (`python -m tests.<module>`) as well as pytest, and reads the pass/fail count it prints; a pytest pass alone is not evidence | **FIXED 2026-09-22** by `tests/conftest.py` (see that day's P38 entry). No test module was edited. Under pytest a failed check now fails its test; the runners are unchanged |
 | P39 | QB-vs-rating term: the unrestricted P28 part 2 term (margin MAE 11.557 -> 10.903 over 2024-25), tested for edge against the line and, separately, as the simulator's anchor | logic | 2026-09-22 | Set aside 2026-09-20 as out of P28's scope. The restricted form lost to the flat rule, and corr(term, market spread) = -0.324 says the market already prices QB changes. Never tested for value against the line. The sim pins its mean margin to the baseline anchor, so an accuracy gain could still pay there | see the 2026-09-22 "P39 scoped" entry, written before any run: gate 0 (the rebuild reproduces the logged term), then phase 1 (edge) and phase 2 (anchor), each with its own pass rules | **tested 2026-09-22: fails both phases by the pre-set rules; nothing built.** The 9/20 gain doesn't reproduce: against P37's verified baseline it is 10.709 -> 10.608 over 2024-25, not 11.557 -> 10.903. No edge on any arm (pooled corr with the cover residual -0.024 / -0.012 / -0.041). As the anchor, a real but small gain: identity arm pooled -0.075, 6/7 seasons; full term -0.090, 7/7; both short of the 0.10 bar. The gain is QB identity, not scale |
-| P40 | Injury feeds: nflverse precedence can mask an ESPN "Injured Reserve" designation | logic | 2026-09-22 | `ingest_injuries.run` treats nflverse as authoritative wherever both feeds cover a player, so an ESPN `ir` row is discarded when nflverse also lists him. NYG's Paulson Adebo on the cached 09-18 pull: ESPN says Injured Reserve, nflverse carries him with no game status, so he is charged at his practice-based probability instead of 0. IR is a roster fact, not a report status | a scoped pass of its own: feed precedence per field rather than per player, measured over the cached payloads; no live row may lose a status it has today | **logged 2026-09-22, not built.** One known case; touches precedence between feeds generally, so it needs its own scope rather than a patch inside P20 |
+| P40 | Injury feeds: nflverse precedence can mask an ESPN "Injured Reserve" designation | logic | 2026-09-22 | `ingest_injuries.run` treats nflverse as authoritative wherever both feeds cover a player, so an ESPN `ir` row is discarded when nflverse also lists him. NYG's Paulson Adebo on the cached 09-18 pull: ESPN says Injured Reserve, nflverse carries him with no game status, so he is charged at his practice-based probability instead of 0. IR is a roster fact, not a report status | a scoped pass of its own: feed precedence per field rather than per player, measured over the cached payloads; no live row may lose a status it has today | **built and validated 2026-09-25, not yet shipped** (awaiting approval). ESPN recovered (HTTP 200). All 4 criteria pass; the live effect is 2 rows (Dart NYG, Terrell ATL), both real IR placements. See the 2026-09-25 P40 entries |
 | P41 | `score_injuries` ranks starter slots with `-(snap_share or DEFAULT)`, so a 0.0-share row sorts as 0.65 and can take a slot from a genuinely injured starter | bug fix | 2026-09-22 | `features.py:141` and `:191`. `0.0 or 0.65` is 0.65 in Python. Live today: 138 of 353 report rows sit at exactly 0.0 (the rows `apply_inactives` adds for posted inactives), and 5 teams' slots are mis-assigned, worth up to **2.07 pts** (PHI), PIT 1.80. PIT's single QB slot goes to Will Howard (0.0 snaps) instead of Mason Rudolph (0.30), so the team is charged 0 for its quarterbacks. Historically much rarer: 1,202 of 33,163 rows (3.6%), changing 16 of 5,446 team-weeks (0.3%), mean 0.23 and max 0.59 pts, and `qb_availability_loss` never changes | fix: `DEFAULT_SNAP_SHARE if share is None else share` in both sort keys; then per-team before/after on the live report, plus the historical count above; rebuild decision for training features recorded before building | **FIXED 2026-09-22** (see that day's P41 entry): `_share_or_default` in both sort keys, training rebuilt and the model retrained in the same change. Live: the 5 teams land exactly as scoped (PHI -2.07, PIT -1.80, CHI -0.40, KC -0.34, TB -0.22) and PIT's QB slot goes to Rudolph. Isolated A/B on the 2025 holdout: fundamentals MAE +0.029, with-market -0.002 -- noise from 20 changed training rows |
 | P42 | Inactives: an impossible gameday list (every QB on a team marked out) is accepted as posted and flows into predictions, sims and props | data validation | 2026-09-24 | TNF ATL @ GB. ESPN's core-API game roster for ATL, read at T-10 min, flags all four ATL quarterbacks `didNotPlay` (Penix, Tagovailoa, Cooper Rush, Jack Strand) and lists no other QB on the 54-man roster; still the same when re-read at 00:13Z. The list passed the P33 lead-time gate (a genuine T-10m read), so this is not the premature-list defect. `apply_inactives` set all four to play prob 0. The baseline charged Penix's slot at the generic 5.59 pts (ATL injury total -8.00). In the sim, `box_score.passer_weights` found zero total QB weight and its silent fallback (`box_score.py:56-57`) gave depth QB1 Penix 100% of the passing: 31.0 att, 197 yds median 195. The ATL player props (London, Robinson unders in the top 25) and anytime-TD picks were ranked on that box score. Nothing in ingest -> features -> sim -> props checks a list for plausibility, and `run_sunday` reports only lists posted (2/2). Caught by manual inspection after the refresh, at T-8 min. Distinct from P28 (the sim and the books disagreeing about which healthy QB starts): here the input data itself is impossible | reject, before storage, any team list that leaves the team with no active QB; replay over every stored week-1 to week-3 list fires on tonight's ATL list and on no genuine list; a unit test pins tonight's ATL payload as rejected; `passer_weights` never falls back silently (a test asserts the warning or refusal); `run_sunday` prints each validation failure by team | **built and validated 2026-09-25, not yet shipped** (awaiting approval; see the 2026-09-25 P42 build entry). Logged 2026-09-24; ATL @ GB was not re-simulated (it has kicked off). **Update 9/25: Penix started** (7/7 ATL dropbacks by 2Q 11:53) after full practice with no game status: the list was wrong about him, the 5.59 baseline charge was the error, and the sim's fallback passer happened to be right. The game carries a `KNOWN_GAME_ISSUES` label. See the 2026-09-24 P42 entry |
 | P43 | Injury feeds: an ESPN nickname defeats the nflverse/ESPN duplicate check, so one player is charged twice | bug fix | 2026-09-24 | Week-3 input audit. ESPN lists NYJ LB "Kiko Mauigoa"; nflverse lists "Francisco Mauigoa" (DNP Wednesday, snap share 0). The 2026 roster has one NYJ Mauigoa (Francisco, espn_id 4700136), so they are the same player. `ingest_injuries` matches the feeds on `player_key(team, name)`, the nickname misses, and both rows are kept. The ESPN copy is also stale (P44): questionable at 0.55, charged 0.19 pts on NYJ @ DET. The size of the class across all rows is unknown until measured | (1) match the feeds on a stable id first (ESPN athlete id to nflverse `espn_id` via the season roster), with the name key as fallback; (2) replay weeks 1-3: report how many ESPN rows the id join merges that the name join kept separate, and Mauigoa is among them; (3) a spot check of every newly merged pair finds no two distinct players merged; (4) suite passes | **logged 2026-09-24, not fixed** (user decision: no mid-week change; 0.19 pts). Friday's refresh clears this instance only if ESPN drops or updates Kiko's row; the name mismatch itself persists. Re-run the week-3 audit after Friday's refresh and record here whether it self-cleared. See the 2026-09-24 P43/P44 entry |
@@ -113,6 +113,60 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-25 — P40 built: ESPN IR now applies over an unlabelled nflverse row. Validated, not shipped
+
+`ingest_injuries.merge_feeds(nfl_rows, espn_rows)` now does the merge `run` used to do inline, with the
+IR exception scoped in the entry below. `run` prints how many IR designations were applied and each
+conflict it kept on nflverse.
+
+| Criterion | Result | |
+|---|---|---|
+| 1. every changed row is None to `ir` | Both payloads (00:05Z and 10:05Z) against the week-3 nflverse report: **2 rows changed, both None to `ir`**. **Jaxson Dart** (NYG QB): ESPN says "officially placed on injured reserve Thursday" (9/24 20:44Z); nflverse's Wednesday report has him DNP with no status, so today he is charged at 0.6. **A.J. Terrell Jr.** (ATL CB): placed on IR Tuesday (9/22 17:09Z); same situation | pass |
+| 2. no row with a status loses or changes it | 0 of 221 / 217 merged rows. 0 conflicts on either payload | pass |
+| 3. live effect per team | **NYG −2.91 to −4.93 injury points (2.02)**, which moves TEN @ NYG on its next re-predict. ATL −7.34 to −7.85; ATL @ GB is final and is **not** re-predicted | reported |
+| 4. Adebo pinned; conflict tested; suite passes | `test_espn_ir_overrides_an_unlabelled_nflverse_row`: Adebo applied with nflverse practice, position and snap share kept; an official status is kept over IR and reported; other ESPN statuses still defer; ESPN-only rows added as before; inputs not mutated. 139 passed | pass |
+
+**Notes.**
+
+- Training is unaffected. `build_training` scores history from nflverse alone, with no ESPN rows, so no
+  retrain is needed and the training/live rule is untouched.
+- Dart's 2.02 is the QB-slot charge: his snap share makes him NYG's charged QB even though Winston started
+  week 2. That is the generic starter-charge question (P2 / P28 part 2 / P39), not P40's. P40 only makes his
+  IR status count.
+- Tonight's ATL @ GB carried the same miss: Terrell at 0.6 rather than 0, about 0.5 pts, on top of P42.
+  The game is final and is recorded here, not re-run.
+
+---
+
+## 2026-09-25 — P40 scoped: an ESPN "Injured Reserve" designation overrides nflverse only where nflverse gives no game status (criteria written before running)
+
+**Why now.** ESPN's site.api injuries endpoint is answering again: HTTP 200 at 10:05Z today, 32 teams, 26 IR
+rows. It had been failing since 09-20, and tonight's 00:05Z pull also succeeded. That makes P20's IR
+handling live, so P40's masking now has effect.
+
+**The rule (precedence per field, not per player).** When both feeds cover a player
+(`player_key(team, name)`):
+
+- ESPN `ir` + nflverse **no game status** (`status` None, whatever the practice level): the merged row takes
+  `status = "ir"`, play prob 0, and keeps nflverse's `practice_trend`, `position` and snap share. IR is a
+  roster fact, and the official weekly report doesn't carry it.
+- ESPN `ir` + nflverse **with a game status** (out / doubtful / questionable): **nflverse kept, conflict
+  printed.** A current official designation is newer evidence than an ESPN IR flag, which can be stale
+  after an activation. This is the P44 staleness in another form.
+- Every other ESPN status where nflverse covers the player: nflverse kept, as today.
+
+**Adoption test** (all must pass):
+
+1. On both ESPN payloads available (00:05Z and 10:05Z on 2026-09-25) against the week-3 nflverse report,
+   every changed row is **None to `ir`**, and the count is reported.
+2. **No row that has a status today loses it or has it changed.** Zero tolerance.
+3. The live effect on the week-3 injury term is reported per team, in points.
+4. The 09-18 NYG Adebo case is pinned in a unit test. That payload has since been overwritten in the cache,
+   and Adebo is absent from both current payloads, so the case can no longer be replayed from real data.
+   The conflict case gets its own test. Suite passes.
 
 ---
 
