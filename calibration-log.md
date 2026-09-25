@@ -73,6 +73,7 @@ status only when its adoption test is met.
 | P43 | Injury feeds: an ESPN nickname defeats the nflverse/ESPN duplicate check, so one player is charged twice | bug fix | 2026-09-24 | Week-3 input audit. ESPN lists NYJ LB "Kiko Mauigoa"; nflverse lists "Francisco Mauigoa" (DNP Wednesday, snap share 0). The 2026 roster has one NYJ Mauigoa (Francisco, espn_id 4700136), so they are the same player. `ingest_injuries` matches the feeds on `player_key(team, name)`, the nickname misses, and both rows are kept. The ESPN copy is also stale (P44): questionable at 0.55, charged 0.19 pts on NYJ @ DET. The size of the class across all rows is unknown until measured | (1) match the feeds on a stable id first (ESPN athlete id to nflverse `espn_id` via the season roster), with the name key as fallback; (2) replay weeks 1-3: report how many ESPN rows the id join merges that the name join kept separate, and Mauigoa is among them; (3) a spot check of every newly merged pair finds no two distinct players merged; (4) suite passes | **logged 2026-09-24, not fixed** (user decision: no mid-week change; 0.19 pts). Friday's refresh clears this instance only if ESPN drops or updates Kiko's row; the name mismatch itself persists. Re-run the week-3 audit after Friday's refresh and record here whether it self-cleared. See the 2026-09-24 P43/P44 entry |
 | P44 | Injury feeds: an ESPN in-game status ("questionable to return", "ruled out for the rest of the game") carries into the next week as a game designation | bug fix | 2026-09-24 | Week-3 input audit. ESPN keeps a player's last status until it is updated, and `ingest_espn` reads it as a status for the current week with no date check. Three non-IR rows on Sunday/Monday teams have a latest ESPN note from week 2's game, and each note is about in-game availability: Tyrique Stevenson (CHI CB, 9/20, 0.55, **0.63 pts** on PHI @ CHI), Jack Jones (SF CB, 9/20, 0.55, below the detail cut on ARI @ SF), Kiko Mauigoa (NYJ LB, 9/20, 0.55, 0.19 pts, also P43). Long-term absences with old notes are correct and must be kept: DEN's Jonathon Cooper and Nick Gargiulo (8/31, out/PUP) and SF's Brandon Aiyuk (9/21, out). Related to P21 (ESPN questionables at a flat 0.55) but distinct: P21 is about how a current status is priced, P44 is about a status that is no longer current | (1) an ESPN questionable/doubtful row whose item date is before the team's previous game ended is not treated as a current-week designation; out/IR/PUP statuses are kept whatever the date; (2) replay of the 9/24 pull: Stevenson, Jones and Kiko Mauigoa are dropped, while Cooper, Gargiulo, Aiyuk and every row dated this week are kept; (3) repeat on the week-2 pulls with the same rule and list what it would have dropped; (4) suite passes | **logged 2026-09-24, not fixed** (user decision: no mid-week change; about 0.8 pts across two games with P43). Friday's refresh should clear most of this naturally, as teams file official statuses and ESPN updates its notes. CHI plays Monday, so its designations come later and Stevenson may persist longer. Re-run the audit after Friday's refresh and record which of the three rows self-cleared. That tells us whether this needs code or only week-start timing. See the 2026-09-24 P43/P44 entry |
 | P45 | Simulator: a 4th-down attempt is drawn from the 3rd-down pool, which under-converts 4th & short at the goal line | engine | 2026-09-25 | Found validating P18. Inside the 10, 4th & 1-2 converts **.633 real** (n=275, 2023-25) against .540 for 3rd & 1-2, and the engine (by design, `bucket_index` clips down to 3) draws both from the 3rd-down pool: **.584 before P18, .556 after**. P18 removed an upward bias that had been partly offsetting this. Likely selection: teams go for it on 4th when they like the matchup, and the play mix differs (sneaks). Volume is small, about 92 snaps a season league-wide, about 0.17 a game | (1) measure 4th & short conversion by field zone, real vs engine, over 2023-25; (2) decide between a 4th-down pool where it has the plays, or a conversion-level adjustment; (3) at real states, 4th & 1-2 inside the 10 within 3 pp of real; no other bin moves over 1 pp | **closed 2026-09-25 as not supported** (user decision). Spot-matched, 4th-minus-3rd inside the 10 is +0.6 pp [−2.3, +3.2] over 2016-25, with the sign flipping between 2016-22 (−2.2) and 2023-25 (+6.2); no effect outside the 10; a per-yard 4th-down pool is not supportable. **Reopen trigger:** 2026's spot-matched inside-10 gap (same method) comes in positive, the fourth straight season after 2023 +5.7, 2024 +9.8, 2025 +7.5. Check after the 2026 regular season. See the 2026-09-25 P45 entries |
+| P46 | Research layer: scheme / formation features (nflverse participation + FTN charting), kept separate from everything live | research | 2026-09-25 | Data diagnosis done 2026-09-25 (see the P46 scoped entry). Participation 2016-25 joins 100% to scrimmage snaps; personnel, formation and box ≥ 99%, pressure ~89% of dropbacks (2016-22), coverage from 2018. **No 2026 file, so it can't be used live.** Its formats change in 2023. FTN charting 2022-26 (2026 weeks 1-2, pulled 09-23, ~48 h lag); it is the only live-capable source | pre-set in the 2026-09-25 P46 scoped entry: margin S1-S3 + E1-E3 per feature set, totals T1-T3. Even a pass promotes nothing: the layer stays flagged unvalidated and non-live until it holds over several real weeks | **closed 2026-09-25: no out-of-sample value.** Both sets fail S1-S3, E1, T1 and T2. Pooled margin MAE is *worse* with the term (A −0.022, B −0.041), and edge corr is +0.009 (p 0.34) / +0.035 (p 0.16). Nothing promoted and nothing tracked weekly. Code stays in `research/scheme/`, which `src/` never imports (a test enforces it). See the 2026-09-25 P46 results entry |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -114,6 +115,172 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-25 — P46 results: neither scheme feature set adds out-of-sample value. Closed by the pre-set rules; nothing promoted
+
+Run: `python -m research.scheme.walkforward calibration/2026-09-25_p46_scheme_walkforward.md` (full tables
+and per-season coefficients are in that file). Criteria and outcome rules are from the "P46 scoped" entry
+below, written before this ran.
+
+**Gate.** The baseline was re-assembled from P37's own `ratings()` / `situational()` to keep game ids. It
+reproduces P37's `replay()` exactly on all 2,661 REG games 2016-2025: identical edges, max difference 0.0.
+
+**Feature sanity.** 32 teams every season; plausible ranges (pressure about 25-30%, play-action about 21%,
+box 6.5-7.0, motion rising league-wide from 0.38 in 2022 to 0.52 in 2025). A team's week-1 value
+correlates 0.76-0.95 with its prior-season value (0.42 for FTN box on runs). The null result below isn't a
+construction bug.
+
+| | Set A, participation, test 2019-25 (n=1,881) | Set B, FTN, test 2023-25 (n=816) |
+|---|---|---|
+| margin MAE, baseline → + term (pooled) | 10.577 → 10.599 (**−0.022, worse**) | 10.631 → 10.672 (**−0.041, worse**) |
+| 2025 MAE gain | +0.040 | −0.057 |
+| seasons improved | 4 of 7 | 1 of 3 |
+| Brier (pooled) | 0.2294 → 0.2302 (worse) | 0.2302 → 0.2310 (worse) |
+| ATS, baseline → + term | 910-928 → 914-924 | 383-414 → 388-409 |
+| corr(term, cover residual) | +0.009, p 0.34 | +0.035, p 0.16 |
+| corr(total term, total residual) | −0.001, p 0.52 | +0.026, p 0.23 |
+| total MAE, market → + term | 10.371 → 10.383 (worse) | 10.121 → 10.149 (worse) |
+
+**Criteria.** Both sets **fail S1, S2, S3, E1, T1 and T2.** Both "pass" only E2, E3 and T3, the sign-only
+checks, by margins a coin flip produces (ATS +4 and +5 wins on 1,838 and 797 decisions). By the outcome
+rule, fail-everything on the criteria that carry weight means: **P46 closes as "no out-of-sample value".**
+Set B does not become a tracking layer, and nothing is computed weekly.
+
+**Reading the coefficients** (in the results file). Set A's largest weight is defensive pressure, at a
+stable −0.9 to −1.3 points per SD. Its sign runs *against* the intuition (more home pressure, lower
+residual), which reads as overlap with the defensive EPA already in the baseline rather than new
+information. Set B's weights swing between seasons (motion +1.37 → −0.13). Both patterns fit "the EPA
+ratings already carry what these rates know."
+
+**What this doesn't rule out.** Coverage-shell features, route-level data and player-level scheme
+(receiver usage by personnel grouping for props) were out of scope by design. The one live-capable source
+(FTN) gives only three test seasons, so its test is weak: its CIs are wide, not tight around zero. A props
+angle (target share by personnel) is a different question from game margins. It would need its own scope,
+and would sit next to P31 / the receiving residual, not here.
+
+**Where things stand.** Code stays in `research/scheme/` for reference. `tests/test_research_isolation.py`
+keeps `src/` and the pipeline entry points from importing it. Raw pulls are cached in
+`data/cache/research/` (gitignored). Nothing live changed.
+
+---
+
+## 2026-09-25 — P46 scoped: a scheme / formation research layer. Data diagnosis, design and pass criteria (written before running)
+
+**Constraint set by the user.** A separate, **non-live** research layer from day one. It must not touch any
+live prediction, simulation or prop until it is walk-forward validated and shown to help, the same bar P39
+was held to. The architecture idea comes from a reference project (Alphakiller1/nfl-model, which has no
+licence; studied for ideas only, nothing copied). Its own scheme module is likewise unproven and kept out of
+its live model.
+
+### 1. Data diagnosis (real pulls, 2026-09-25)
+
+Read straight from the nflverse release files, the same files `nflreadpy.load_participation` /
+`load_ftn_charting` read. `nflreadpy` isn't installed and isn't needed; `nfl_data_py` 0.3.3 has
+`import_ftn_data` but no participation loader.
+
+**Participation (`pbp_participation_{season}`): published 2016-2025; 2026 returns 404.** The 2025 file
+appeared 2026-02-10, so it is post-season only. Joined to our play-by-play on (game_id, play_id): **100% of
+pass/run snaps join** in every season. Fill on scrimmage snaps:
+
+| field | 2016-17 | 2018-22 | 2023-25 |
+|---|---|---|---|
+| offense / defense personnel | 1.00 | 1.00 | 1.00 |
+| offense formation | 0.99 | 0.99-1.00 | 1.00 |
+| defenders in box | 0.999 | 0.999 | 1.00 |
+| pass rushers (dropbacks) | 0.96 | 0.99 | 1.00 |
+| was_pressure (dropbacks) | 0.90 | 0.89 | 1.00 |
+| route (dropbacks) | 0.89 | 0.85-0.87 | 0.85 |
+| man/zone, coverage type (dropbacks) | **0** | 0.89 | 1.00 |
+
+**Format changes in 2023** that any feature must normalise across:
+
+- Personnel strings change from "1 RB, 1 TE, 3 WR" to "1 C, 2 G, 1 QB, 1 RB, 2 T, 1 TE, 3 WR". Counts of
+  RB / TE / WR are stable; the strings are not.
+- Formation goes from 7 labels (SHOTGUN, SINGLEBACK, I_FORM, EMPTY, PISTOL, JUMBO, WILDCAT) to 3 (SHOTGUN,
+  UNDER CENTER, PISTOL). Only shotgun vs not is comparable.
+- Route names change vocabulary ("GO", "HITCH" becomes "HITCH/CURL", "QUICK OUT"), so they aren't
+  comparable across 2023 without a mapping.
+- `was_pressure` becomes filled (False) on runs from 2023.
+
+**FTN charting (`ftn_charting_{season}`): 2022-2026 only; 404 for 2016-2021.** Complete where present:
+play-action, motion, screen, RPO, no-huddle, box count, blitzers, pass rushers, QB out of pocket, QB sneak,
+drops. **2026: weeks 1-2, 32 games, pulled 2026-09-23 21:03Z**, consistent with the ~48 h lag. FTN has no
+personnel grouping, no pressure flag and no coverage.
+
+### 2. What can be live, and what cannot
+
+- **Participation can't feed live predictions.** At most, last season's values could act as a stale prior.
+- **FTN is the only live-capable scheme source.** It covers: box count (a substitute for
+  `defenders_in_box`), pass rushers and blitzers, play-action, motion, screens, RPO, no-huddle. It can't
+  substitute for personnel groupings, pressure or coverage.
+- Shotgun and no-huddle are already in live play-by-play (`shotgun`, `no_huddle`), so they need neither
+  source.
+- **Consequence for validation:** FTN starts in 2022, so FTN features can't be walk-forward tested on
+  2019-2025. Their test seasons are **2023-2025**: the 2022 features are built from the current season only,
+  since there is no prior FTN season. Participation features are tested on 2019-2025 as asked.
+
+### 3. Design: small, team-level, leak-free
+
+Every feature is a per-team rate built exactly as Layer 1 builds a rating as of week w: that season's
+REG-season snaps before week w, blended with the prior season regressed ×0.75, with current-season weight
+n/(n+900). A matchup feature is home minus away. Standardised on training seasons only.
+
+- **Set A, participation (historical only), test 2019-2025:**
+  - A1 offense heavy-personnel rate (≥ 2 TE or ≥ 2 RB)
+  - A2 offense pressure-allowed rate (dropbacks)
+  - A3 defense pressure rate (dropbacks)
+  - A4 average box faced on the offense's runs
+- **Set B, FTN (live-capable), test 2023-2025:**
+  - B1 offense play-action rate
+  - B2 offense motion rate
+  - B3 defense blitz rate (dropbacks with n_blitzers > 0)
+  - B4 defense average box on runs
+
+No coverage-shell classification (man/zone, Cover 0-6); that is out of scope to start.
+
+**Model.** For each test season, OLS on training seasons only (every earlier season with features) of the
+residual `actual margin − baseline margin` on that set's matchup features. The baseline is **P37's exact
+replay** of live Layer 1 plus HFA/rest/travel/wind (no injury term, as in P37 and P39). The line is nflverse's
+near-close `spread_line`. **Totals:** the live baseline has **no total model** (it passes the market total
+through), so there is no "baseline total MAE". The totals test is an edge test: OLS of `actual total − market
+total` on the sums (home + away) of each set's features.
+
+### 4. Pass criteria (each set judged separately; all must hold)
+
+**Margin, accuracy (as P39 phase 2):**
+
+- **S1:** walk-forward margin MAE improves by **≥ 0.10 pts** pooled over the test seasons **and** in 2025.
+- **S2:** it improves in **≥ 5 of 7** test seasons (set A) or **≥ 2 of 3** (set B).
+- **S3:** win-probability Brier (normal, the live NFL margin sigma) is not worse, pooled.
+
+**Margin, edge against the line (as P39 phase 1):**
+
+- **E1:** pooled corr(term, cover residual) > 0 at one-sided p < 0.05.
+- **E2:** pooled ATS of the lean with the term added is not below the baseline's.
+- **E3:** 2025 corr(term, cover residual) > 0 (sign only).
+
+**Totals (edge only):**
+
+- **T1:** pooled corr(total term, actual − market total) > 0 at one-sided p < 0.05.
+- **T2:** pooled MAE of (market total + term) beats the market total by ≥ 0.10.
+- **T3:** 2025 sign positive.
+
+**Multiple tests.** Two sets × two targets. A single marginal pass (p between 0.0125 and 0.05) is reported as
+such, not as evidence.
+
+**Outcome rules.**
+
+- Fail everything: P46 closes as "no out-of-sample value", and the code stays in `research/` for reference.
+- Pass on set A only: a historical finding with no live path (participation is post-season). Recorded, not
+  promoted.
+- Pass on set B: it becomes an **unpromoted research layer**, flagged unvalidated like the baseline flags.
+  It is computed weekly from FTN for tracking only and fed into nothing, until it holds over several real
+  weeks under criteria set in advance.
+
+**Isolation.** Code in `research/scheme/`. Nothing in `src/` imports it, and a test asserts that. Raw pulls
+go to `data/cache/research/` (gitignored with `data/`).
 
 ---
 
