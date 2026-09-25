@@ -544,12 +544,17 @@ class _Game:
             self.drive_plays[ix[run_]] += 1
             # Conversion is measured the way the engine itself decides a first
             # down below (net yards against the real to-go), so this reports
-            # actual behaviour rather than a second opinion on it.
+            # actual behaviour rather than a second opinion on it. A touchdown
+            # counts as the full distance, as real play-by-play records it: the
+            # engine scores a drawn TD play on its flag, but ~11% of library TD
+            # plays store net yards short of the goal line (P18), which used to
+            # read here as failed conversions.
+            yd = np.where(t.off_td[rows] | (yl - y <= 0), np.maximum(y, yl), y)[run_]
             dn = np.clip(self.down[ix][run_], 1, 4) - 1
             db = np.digitize(togo[run_], DIST_EDGES)
             np.add.at(self.down_plays, (dn, db), 1)
-            np.add.at(self.down_conv, (dn, db), (y[run_] >= togo[run_]).astype(np.int64))
-            np.add.at(self.down_yards, (dn, db), y[run_].astype(np.int64))
+            np.add.at(self.down_conv, (dn, db), (yd >= togo[run_]).astype(np.int64))
+            np.add.at(self.down_yards, (dn, db), yd.astype(np.int64))
             np.add.at(self.down_togo, (dn, db), togo[run_].astype(np.int64))
             self.drive_fd[ix[run_]] += (y[run_] >= togo[run_])
         # Half the distance to the goal caps any penalty.
