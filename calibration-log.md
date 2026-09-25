@@ -72,7 +72,7 @@ status only when its adoption test is met.
 | P42 | Inactives: an impossible gameday list (every QB on a team marked out) is accepted as posted and flows into predictions, sims and props | data validation | 2026-09-24 | TNF ATL @ GB. ESPN's core-API game roster for ATL, read at T-10 min, flags all four ATL quarterbacks `didNotPlay` (Penix, Tagovailoa, Cooper Rush, Jack Strand) and lists no other QB on the 54-man roster; still the same when re-read at 00:13Z. The list passed the P33 lead-time gate (a genuine T-10m read), so this is not the premature-list defect. `apply_inactives` set all four to play prob 0. The baseline charged Penix's slot at the generic 5.59 pts (ATL injury total -8.00). In the sim, `box_score.passer_weights` found zero total QB weight and its silent fallback (`box_score.py:56-57`) gave depth QB1 Penix 100% of the passing: 31.0 att, 197 yds median 195. The ATL player props (London, Robinson unders in the top 25) and anytime-TD picks were ranked on that box score. Nothing in ingest -> features -> sim -> props checks a list for plausibility, and `run_sunday` reports only lists posted (2/2). Caught by manual inspection after the refresh, at T-8 min. Distinct from P28 (the sim and the books disagreeing about which healthy QB starts): here the input data itself is impossible | reject, before storage, any team list that leaves the team with no active QB; replay over every stored week-1 to week-3 list fires on tonight's ATL list and on no genuine list; a unit test pins tonight's ATL payload as rejected; `passer_weights` never falls back silently (a test asserts the warning or refusal); `run_sunday` prints each validation failure by team | **built and validated 2026-09-25, not yet shipped** (awaiting approval; see the 2026-09-25 P42 build entry). Logged 2026-09-24; ATL @ GB was not re-simulated (it has kicked off). **Update 9/25: Penix started** (7/7 ATL dropbacks by 2Q 11:53) after full practice with no game status: the list was wrong about him, the 5.59 baseline charge was the error, and the sim's fallback passer happened to be right. The game carries a `KNOWN_GAME_ISSUES` label. See the 2026-09-24 P42 entry |
 | P43 | Injury feeds: an ESPN nickname defeats the nflverse/ESPN duplicate check, so one player is charged twice | bug fix | 2026-09-24 | Week-3 input audit. ESPN lists NYJ LB "Kiko Mauigoa"; nflverse lists "Francisco Mauigoa" (DNP Wednesday, snap share 0). The 2026 roster has one NYJ Mauigoa (Francisco, espn_id 4700136), so they are the same player. `ingest_injuries` matches the feeds on `player_key(team, name)`, the nickname misses, and both rows are kept. The ESPN copy is also stale (P44): questionable at 0.55, charged 0.19 pts on NYJ @ DET. The size of the class across all rows is unknown until measured | (1) match the feeds on a stable id first (ESPN athlete id to nflverse `espn_id` via the season roster), with the name key as fallback; (2) replay weeks 1-3: report how many ESPN rows the id join merges that the name join kept separate, and Mauigoa is among them; (3) a spot check of every newly merged pair finds no two distinct players merged; (4) suite passes | **logged 2026-09-24, not fixed** (user decision: no mid-week change; 0.19 pts). Friday's refresh clears this instance only if ESPN drops or updates Kiko's row; the name mismatch itself persists. Re-run the week-3 audit after Friday's refresh and record here whether it self-cleared. See the 2026-09-24 P43/P44 entry |
 | P44 | Injury feeds: an ESPN in-game status ("questionable to return", "ruled out for the rest of the game") carries into the next week as a game designation | bug fix | 2026-09-24 | Week-3 input audit. ESPN keeps a player's last status until it is updated, and `ingest_espn` reads it as a status for the current week with no date check. Three non-IR rows on Sunday/Monday teams have a latest ESPN note from week 2's game, and each note is about in-game availability: Tyrique Stevenson (CHI CB, 9/20, 0.55, **0.63 pts** on PHI @ CHI), Jack Jones (SF CB, 9/20, 0.55, below the detail cut on ARI @ SF), Kiko Mauigoa (NYJ LB, 9/20, 0.55, 0.19 pts, also P43). Long-term absences with old notes are correct and must be kept: DEN's Jonathon Cooper and Nick Gargiulo (8/31, out/PUP) and SF's Brandon Aiyuk (9/21, out). Related to P21 (ESPN questionables at a flat 0.55) but distinct: P21 is about how a current status is priced, P44 is about a status that is no longer current | (1) an ESPN questionable/doubtful row whose item date is before the team's previous game ended is not treated as a current-week designation; out/IR/PUP statuses are kept whatever the date; (2) replay of the 9/24 pull: Stevenson, Jones and Kiko Mauigoa are dropped, while Cooper, Gargiulo, Aiyuk and every row dated this week are kept; (3) repeat on the week-2 pulls with the same rule and list what it would have dropped; (4) suite passes | **logged 2026-09-24, not fixed** (user decision: no mid-week change; about 0.8 pts across two games with P43). Friday's refresh should clear most of this naturally, as teams file official statuses and ESPN updates its notes. CHI plays Monday, so its designations come later and Stevenson may persist longer. Re-run the audit after Friday's refresh and record which of the three rows self-cleared. That tells us whether this needs code or only week-start timing. See the 2026-09-24 P43/P44 entry |
-| P45 | Simulator: a 4th-down attempt is drawn from the 3rd-down pool, which under-converts 4th & short at the goal line | engine | 2026-09-25 | Found validating P18. Inside the 10, 4th & 1-2 converts **.633 real** (n=275, 2023-25) against .540 for 3rd & 1-2, and the engine (by design, `bucket_index` clips down to 3) draws both from the 3rd-down pool: **.584 before P18, .556 after**. P18 removed an upward bias that had been partly offsetting this. Likely selection: teams go for it on 4th when they like the matchup, and the play mix differs (sneaks). Volume is small, about 92 snaps a season league-wide, about 0.17 a game | (1) measure 4th & short conversion by field zone, real vs engine, over 2023-25; (2) decide between a 4th-down pool where it has the plays, or a conversion-level adjustment; (3) at real states, 4th & 1-2 inside the 10 within 3 pp of real; no other bin moves over 1 pp | **logged 2026-09-25, not scoped further.** Queue after P18 ships |
+| P45 | Simulator: a 4th-down attempt is drawn from the 3rd-down pool, which under-converts 4th & short at the goal line | engine | 2026-09-25 | Found validating P18. Inside the 10, 4th & 1-2 converts **.633 real** (n=275, 2023-25) against .540 for 3rd & 1-2, and the engine (by design, `bucket_index` clips down to 3) draws both from the 3rd-down pool: **.584 before P18, .556 after**. P18 removed an upward bias that had been partly offsetting this. Likely selection: teams go for it on 4th when they like the matchup, and the play mix differs (sneaks). Volume is small, about 92 snaps a season league-wide, about 0.17 a game | (1) measure 4th & short conversion by field zone, real vs engine, over 2023-25; (2) decide between a 4th-down pool where it has the plays, or a conversion-level adjustment; (3) at real states, 4th & 1-2 inside the 10 within 3 pp of real; no other bin moves over 1 pp | **closed 2026-09-25 as not supported** (user decision). Spot-matched, 4th-minus-3rd inside the 10 is +0.6 pp [−2.3, +3.2] over 2016-25, with the sign flipping between 2016-22 (−2.2) and 2023-25 (+6.2); no effect outside the 10; a per-yard 4th-down pool is not supportable. **Reopen trigger:** 2026's spot-matched inside-10 gap (same method) comes in positive, the fourth straight season after 2023 +5.7, 2024 +9.8, 2025 +7.5. Check after the 2026 regular season. See the 2026-09-25 P45 entries |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -114,6 +114,87 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-25 — P45 closed as not supported; reopen trigger set
+
+User decision: no change to the engine. Before the trigger was recorded, the matched inside-10 gap was split
+by season, since the +6.2 pp above is pooled over 2023-25 (same method: each 4th & 1-2 attempt against
+the 3rd-down rate at its exact yard line and to-go; bootstrap 90% CI):
+
+| season | n | gap | 90% CI |
+|---|---|---|---|
+| 2016 | 62 | −4.1 | [−15.3, +7.5] |
+| 2017 | 54 | −4.6 | [−15.2, +6.5] |
+| 2018 | 74 | +1.4 | [−8.2, +10.8] |
+| 2019 | 64 | +4.8 | [−6.4, +16.3] |
+| 2020 | 92 | −3.3 | [−12.0, +4.9] |
+| 2021 | 101 | +4.5 | [−4.2, +13.3] |
+| 2022 | 84 | −5.0 | [−14.5, +4.1] |
+| 2023 | 84 | +5.7 | [−3.5, +14.7] |
+| 2024 | 73 | +9.8 | [+0.1, +19.4] |
+| 2025 | 118 | +7.5 | [−0.5, +15.1] |
+
+2023-25 is the longest same-sign run in the ten seasons (before it: at most two in a row, 2018-19). A single
+season's CI is about ±9 pp, so the trigger reads the sign of the run, not any one season's size.
+
+**Reopen trigger:** 2026's gap, measured this way after the 2026 regular season, comes in **positive**,
+making four straight seasons (2023-26) in the same direction. If it does, P45 reopens with the walk-forward
+test described in the diagnosis entry as its first step.
+
+---
+
+## 2026-09-25 — P45 diagnosed: the 4th-down goal-line gap is not stable across seasons. Nothing built
+
+**Question.** Should 4th-and-short inside the 10 stop borrowing the 3rd-down pool? P45 was logged from the
+P18 validation: 4th & 1-2 inside the 10 converts .633 real (2023-25, n=275) against the engine's .556,
+which draws from the 3rd-down pool at the same spot.
+
+**Data available** (go attempts, no-play penalties excluded; conversion = to-go gained or TD):
+
+- 4th & 1-2 inside the 10: **275 attempts in 2023-25** (the engine's library seasons; 231 outside the
+  late-game rule), **807 in 2016-25**.
+- By yard line over all 10 seasons: the 1 has 329 and the 2 has 150; every other yard line has **31 to 49**.
+  A 4th-down pool on P18's per-yard cells (50-play minimum) would exist only at the 1 and the 2, and only by
+  reaching back to 2016. Older seasons carry a different go-for-it environment. **A direct 4th-down pool is
+  not supportable.**
+
+**Is there a 4th-down effect to model?** Each real 4th-down attempt was compared with the 3rd-down conversion
+rate at its exact yard line and to-go (inside the 10), or its field band and to-go (outside), with a
+bootstrap 90% CI:
+
+| window | inside the 10 | outside the 10 |
+|---|---|---|
+| 2016-22 | **−2.2 pp** [−5.9, +1.2], n=532 | −1.7 [−3.5, +0.2], n=1,830 |
+| 2023-25 | **+6.2 pp** [+1.3, +10.9], n=275 | −0.1 [−2.5, +2.2], n=1,125 |
+| 2016-25 | **+0.6 pp** [−2.3, +3.2], n=807 | −1.1 [−2.5, +0.3], n=2,955 |
+
+- **Outside the 10 there is no 4th-down effect** in any window: 4th and 3rd convert alike at the same spot.
+- **Inside the 10 the sign flips between windows.** The 2023-25 gap that P45 was logged on (+6.2, CI
+  excluding zero) follows seven seasons at −2.2. Pooled over ten it is +0.6 with a CI spanning zero. That is
+  either a recent regime change or a noisy three-season window; this data can't separate them.
+- Unmatched raw comparisons overstate it. The logged ".633 vs .540" compares 4th downs with a 3rd-down mix
+  at different spots; matched, the recent gap is +6.2, not +9.3.
+- Year by year, the 4th-minus-3rd gap for 4th & 1-2 anywhere on the field runs −4.4 to +5.7 pp (2016-25).
+  The last three seasons are +2.7, +3.7 and +2.0.
+- **Stakes.** About 92 goal-line 4th & 1-2 attempts a season league-wide, about 0.17 a game. Even taking
+  the 2023-25 gap at face value, the effect on scoring is about 0.07 points a game.
+
+**Candidate fixes, weighed:**
+
+1. **Own 4th-down pool:** rejected on sample size (above).
+2. **A conversion uplift for 4th & short inside the 10** (the 3rd-down pool, reweighted toward successful
+   plays until it matches an estimated gap): possible, but the gap to target is not stable. Used only if a
+   walk-forward shows that a trailing estimate predicts the next season better than no uplift.
+3. **No change:** the engine already matches real 4th-down conversion everywhere outside the 10, and inside
+   it the long-run gap is +0.6 pp.
+
+**Decision needed before anything is built.** Proposed walk-forward (criteria to be written here first if
+chosen): for each test season 2019-2025, estimate the matched inside-10 gap from the three prior seasons,
+apply it to the 3rd-down spot rates, and score that season's real 4th & 1-2 attempts inside the 10 (Brier)
+against no uplift. Adopt only if the uplift wins pooled **and** in at least 5 of the 7 seasons. On the
+windows above it would likely fail: a trailing estimate going into 2023 is negative.
 
 ---
 
