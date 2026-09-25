@@ -310,6 +310,43 @@ def _resolve_team(espn_name: str, known: dict[str, str]) -> str | None:
 
 # --- entrypoint ------------------------------------------------------------
 
+def merge_feeds(nfl_rows: list[dict], espn_rows: list[dict]) -> tuple[list[dict], dict]:
+    """nflverse and ESPN rows as one report, with what the merge did.
+
+    nflverse (the official report) is the authority where both cover a
+    player, and ESPN fills gaps. Matched on player_key, not the raw name: the
+    feeds disagree about generational suffixes, and an unmatched duplicate is
+    charged twice (P20).
+
+    One field is the exception (P40): Injured Reserve is a roster fact the
+    weekly report doesn't carry, so an ESPN `ir` replaces the status of an
+    nflverse row with no game status. The row keeps nflverse's practice,
+    position and snap share. Where the official report does give a status, it
+    is newer evidence than an ESPN IR flag, which can be stale after an
+    activation; that row is kept and returned as a conflict.
+    """
+    rows = [dict(r) for r in nfl_rows]
+    by_key = {player_key(r["team"], r["player"]): r for r in rows}
+    added, covered, ir_applied, ir_conflicts = [], 0, [], []
+    for e in espn_rows:
+        k = player_key(e["team"], e["player"])
+        n = by_key.get(k)
+        if n is None:
+            added.append(e)
+            continue
+        covered += 1
+        if e.get("status") != "ir":
+            continue
+        if n.get("status") is None:
+            n["status"] = "ir"
+            n["play_probability"] = play_probability("ir", n.get("practice_trend"))
+            ir_applied.append({"team": n["team"], "player": n["player"]})
+        elif n.get("status") != "ir":
+            ir_conflicts.append({"team": n["team"], "player": n["player"], "nflverse_status": n.get("status")})
+    return rows + added, {"added": len(added), "covered": covered,
+                          "ir_applied": ir_applied, "ir_conflicts": ir_conflicts}
+
+
 def run(sport: str = "nfl", season: int | None = None, week: int | None = None) -> int:
     from datetime import datetime, timezone
 
@@ -330,15 +367,13 @@ def run(sport: str = "nfl", season: int | None = None, week: int | None = None) 
             print(f"  [warn] nflverse injuries failed: {exc}")
 
     espn_rows = ingest_espn(store, sport, season, week, shares)
-
-    # nflverse is the authority where both cover a player; ESPN only fills gaps.
-    # Matched on player_key, not the raw name: the feeds disagree about
-    # generational suffixes, and an unmatched duplicate is charged twice (P20).
-    seen = {player_key(r["team"], r["player"]) for r in rows}
-    added = [r for r in espn_rows if player_key(r["team"], r["player"]) not in seen]
-    rows += added
+    rows, merge = merge_feeds(rows, espn_rows)
     if espn_rows:
-        print(f"  espn: {len(espn_rows)} rows ({len(added)} new, {len(espn_rows) - len(added)} already covered)")
+        print(f"  espn: {len(espn_rows)} rows ({merge['added']} new, {merge['covered']} already covered, "
+              f"{len(merge['ir_applied'])} IR applied over nflverse)")
+    for c in merge["ir_conflicts"]:
+        print(f"  [conflict] {c['team']} {c['player']}: ESPN says Injured Reserve, the official report says "
+              f"{c['nflverse_status']}; the official report is kept")
 
     store.upsert("injuries", db.stamp(rows))
 

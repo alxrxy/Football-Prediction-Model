@@ -367,6 +367,46 @@ def test_impossible_list_is_rejected():
         ii._get, ii._athlete = saved
 
 
+def test_espn_ir_overrides_an_unlabelled_nflverse_row():
+    """P40. nflverse wins where both feeds cover a player, except for Injured
+    Reserve, a roster fact the weekly report doesn't carry."""
+    from src.ingest_injuries import merge_feeds
+
+    def nv(player, status, practice, team="NYG"):
+        return {"player": player, "team": team, "status": status, "practice_trend": practice,
+                "play_probability": {"dnp": 0.6, "limited": 0.85}.get(practice, 0.55), "position": "CB",
+                "snap_share": 0.9, "source": "nflverse"}
+
+    def es(player, status, team="NYG"):
+        return {"player": player, "team": team, "status": status, "practice_trend": None,
+                "play_probability": 0.0 if status in ("ir", "out") else 0.55, "position": "CB",
+                "snap_share": None, "source": "espn"}
+
+    # The 09-18 case: ESPN IR, nflverse lists him with no game status.
+    rows, info = merge_feeds([nv("Paulson Adebo", None, "limited")], [es("Paulson Adebo", "ir")])
+    r = rows[0]
+    check("Adebo (09-18): ESPN IR applied over an unlabelled nflverse row",
+          (len(rows), r["status"], r["play_probability"]), (1, "ir", 0.0))
+    check("and nflverse's practice, position and snap share are kept",
+          (r["practice_trend"], r["snap_share"], r["source"]), ("limited", 0.9, "nflverse"))
+    check("reported as applied", info["ir_applied"], [{"team": "NYG", "player": "Paulson Adebo"}])
+
+    rows, info = merge_feeds([nv("Paulson Adebo", "questionable", "limited")], [es("Paulson Adebo", "ir")])
+    check("an official game status is kept over ESPN IR", rows[0]["status"], "questionable")
+    check("and returned as a conflict", info["ir_conflicts"],
+          [{"team": "NYG", "player": "Paulson Adebo", "nflverse_status": "questionable"}])
+
+    rows, _ = merge_feeds([nv("Kiko", None, "dnp", team="NYJ")], [es("Kiko", "questionable", team="NYJ")])
+    check("any other ESPN status still defers to nflverse", (rows[0]["status"], rows[0]["play_probability"]),
+          (None, 0.6))
+    rows, info = merge_feeds([nv("A", None, "dnp")], [es("B", "ir"), es("Michael Penix Jr.", "out")])
+    check("ESPN-only players are added, as before", sorted(r["player"] for r in rows), ["A", "B", "Michael Penix Jr."])
+    check("counts", (info["added"], info["covered"]), (2, 0))
+    base = [nv("A", None, "dnp")]
+    merge_feeds(base, [es("A", "ir")])
+    check("the caller's nflverse rows are not mutated", base[0]["status"], None)
+
+
 if __name__ == "__main__":
     for fn in [
         test_dropped_player_not_charged,
@@ -387,6 +427,7 @@ if __name__ == "__main__":
         test_inactives_fetch_not_posted_writes_nothing,
         test_inactives_ignore_rosters_read_early,
         test_impossible_list_is_rejected,
+        test_espn_ir_overrides_an_unlabelled_nflverse_row,
     ]:
         print(f"\n{fn.__name__}")
         fn()
