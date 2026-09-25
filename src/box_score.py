@@ -41,9 +41,25 @@ BOX_NOTE = (
 )
 
 
+def no_available_qb(squad: pd.DataFrame) -> bool:
+    """True when the squad has quarterbacks and every one is explicitly at
+    play probability 0 (P42). That is an impossible input, not missing data:
+    the passer_weights fallback then hands the game to depth QB1, a player the
+    inputs say is not playing, so the caller must say so rather than carry on."""
+    if "play_prob" not in squad:
+        return False
+    q = squad.loc[squad["position"] == "QB", "play_prob"]
+    return bool(len(q)) and bool(q.notna().all()) and bool((q.astype(float) == 0).all())
+
+
 def passer_weights(squad: pd.DataFrame) -> np.ndarray:
     """How likely each player is to be a simulated game's quarterback: the
-    starter at his play probability, the next man with what is left."""
+    starter at his play probability, the next man with what is left.
+
+    With no weight at all the depth-chart QB1 takes every game. That fallback
+    is for missing probabilities; when every QB is explicitly ruled out it is
+    masking bad inputs, which `no_available_qb` detects for the caller to
+    report (P42)."""
     squad = squad.reset_index(drop=True)
     weights = np.zeros(len(squad))
     remaining = 1.0

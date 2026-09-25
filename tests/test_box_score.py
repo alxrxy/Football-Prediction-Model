@@ -14,7 +14,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-from src.box_score import POOL_CATEGORIES, box_score, passer_weights
+from src.box_score import POOL_CATEGORIES, box_score, no_available_qb, passer_weights
 from src.export_sims import attach_actuals
 from src.sim_data import N_ZONE
 from src.simulate import STAT_NAMES, Offense, PlayerPool, simulate_game
@@ -113,6 +113,21 @@ def test_passer_weights():
     check("starter out: the backup plays every game", list(passer_weights(squad)), [0.0, 1.0, 0.0])
 
 
+def test_no_available_qb():
+    """P42: every QB explicitly at 0 is an impossible input that the fallback
+    would mask, so it must be detectable; missing probabilities are not."""
+    squad = pd.DataFrame({"player": ["Penix", "Tua", "Robinson"], "position": ["QB", "QB", "RB"],
+                          "rank": [1, 2, 1], "play_prob": [0.0, 0.0, 1.0]})
+    check("every QB at 0 is flagged", no_available_qb(squad), True)
+    check("and the fallback still gives the game to depth QB1", list(passer_weights(squad)), [1.0, 0.0, 0.0])
+    squad.loc[1, "play_prob"] = 0.55
+    check("one QB still possible: not flagged", no_available_qb(squad), False)
+    squad["play_prob"] = [np.nan, np.nan, 1.0]
+    check("missing probabilities are not an impossible input", no_available_qb(squad), False)
+    check("a squad without a play_prob column is not flagged", no_available_qb(squad.drop(columns="play_prob")), False)
+    check("a squad with no QB is not flagged", no_available_qb(squad[squad["position"] != "QB"]), False)
+
+
 def test_box_score_summary():
     n, rng = 1000, np.random.default_rng(0)
     stats = {k: np.zeros((n, 3), np.int32) for k in STAT_NAMES}
@@ -201,7 +216,8 @@ def test_finished_weeks_are_archived():
 
 
 if __name__ == "__main__":
-    for fn in [test_passing_game, test_throwaways_are_not_targets, test_running_game, test_passer_weights, test_box_score_summary,
+    for fn in [test_passing_game, test_throwaways_are_not_targets, test_running_game, test_passer_weights, test_no_available_qb,
+               test_box_score_summary,
                test_attach_actuals, test_export_keeps_the_weeks_earlier_slates,
                test_finished_weeks_are_archived]:
         print(f"\n{fn.__name__}")

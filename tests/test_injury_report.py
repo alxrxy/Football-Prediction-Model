@@ -315,6 +315,58 @@ def test_inactives_ignore_rosters_read_early():
         ii._get, ii._athlete = saved
 
 
+def test_impossible_list_is_rejected():
+    """P42. ATL's gameday roster as read at 00:05Z on 2026-09-24 flagged all
+    four quarterbacks didNotPlay; Penix started. The list must not be stored,
+    so ATL stays on its injury report, while GB's list in the same call is kept."""
+    import copy
+    import json
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from src import ingest_inactives as ii
+
+    atl = json.loads((Path(__file__).parent / "fixtures" / "atl_2026w3_roster_pregame.json").read_text(encoding="utf-8"))
+    check("the pinned ATL list is judged impossible",
+          ii.impossible_list(atl["entries"]), "no active QB (4 on the roster, all flagged inactive)")
+    corrected = copy.deepcopy(atl)
+    for e in corrected["entries"]:
+        if e["displayName"] == "Penix Jr.":
+            e["didNotPlay"] = False
+    check("ESPN's post-game correction (Penix active) passes", ii.impossible_list(corrected["entries"]), None)
+    check("a roster with no position refs cannot be judged, so it passes",
+          ii.impossible_list([{"playerId": 1, "didNotPlay": True}]), None)
+
+    qb = {"$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/8?lang=en&region=us"}
+    gb = {"entries": [{"playerId": 10, "displayName": "Love", "didNotPlay": False, "position": qb},
+                      {"playerId": 11, "displayName": "Taylor", "didNotPlay": True, "position": qb}]}
+
+    class Store:
+        def select(self, table, where=None):
+            if table == "games":
+                return [{"game_id": "2026_03_ATL_GB", "season": 2026, "week": 3, "home_team": "GB", "away_team": "ATL"}]
+            return [{"team": "GB", "full_name": "Green Bay Packers"}, {"team": "ATL", "full_name": "Atlanta Falcons"}]
+
+    board = {"events": [{"id": "401872948", "date": "2026-09-25T00:15Z", "competitions": [{
+        "status": {"type": {"state": "pre"}},
+        "competitors": [{"homeAway": "home", "team": {"id": "9", "displayName": "Green Bay Packers"}},
+                        {"homeAway": "away", "team": {"id": "1", "displayName": "Atlanta Falcons"}}]}]}]}
+    roster_for = lambda url: atl if "/competitors/1/" in url else gb  # noqa: E731
+    now = datetime(2026, 9, 25, 0, 5, tzinfo=timezone.utc)
+    saved = ii._get, ii._athlete
+    try:
+        ii._get = lambda url, params=None: (200, board) if "scoreboard" in url else (200, roster_for(url))
+        ii._athlete = lambda ref: ("Tyrod Taylor", "QB")
+        rows, log = ii.fetch(Store(), 2026, 3, now=now)
+        check("no ATL rows are stored", sorted({r["team"] for r in rows}), ["GB"])
+        results = {x["team"]: x["result"] for x in log}
+        check("ATL is logged as rejected, with the reason", results["ATL"],
+              "rejected: no active QB (4 on the roster, all flagged inactive)")
+        check("GB's valid list in the same call is kept", results["GB"], "posted: 1 inactive")
+    finally:
+        ii._get, ii._athlete = saved
+
+
 if __name__ == "__main__":
     for fn in [
         test_dropped_player_not_charged,
@@ -334,6 +386,7 @@ if __name__ == "__main__":
         test_inactives_latest_pull_wins,
         test_inactives_fetch_not_posted_writes_nothing,
         test_inactives_ignore_rosters_read_early,
+        test_impossible_list_is_rejected,
     ]:
         print(f"\n{fn.__name__}")
         fn()
