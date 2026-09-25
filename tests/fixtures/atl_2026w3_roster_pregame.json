@@ -1,0 +1,437 @@
+{
+ "_source": "ESPN core API competitors/1/roster, event 401872948 (ATL @ GB, 2026-09-24). Entries and positions from the post-game read; didNotPlay rebuilt from the 9 players stored at the 00:05Z pre-game read (P42).",
+ "entries": [
+  {
+   "playerId": 16713,
+   "displayName": "Matthews",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/46"
+   }
+  },
+  {
+   "playerId": 3672833,
+   "displayName": "Lindstrom",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/73"
+   }
+  },
+  {
+   "playerId": 3895841,
+   "displayName": "Hughes",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/29"
+   }
+  },
+  {
+   "playerId": 3919512,
+   "displayName": "Bates III",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/36"
+   }
+  },
+  {
+   "playerId": 4034961,
+   "displayName": "Taylor",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/46"
+   }
+  },
+  {
+   "playerId": 4036444,
+   "displayName": "Neuzil",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/45"
+   }
+  },
+  {
+   "playerId": 4037626,
+   "displayName": "Deablo",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/30"
+   }
+  },
+  {
+   "playerId": 4240596,
+   "displayName": "Henderson",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/29"
+   }
+  },
+  {
+   "playerId": 4360248,
+   "displayName": "Pitts Sr.",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/7"
+   }
+  },
+  {
+   "playerId": 4360423,
+   "displayName": "Penix Jr.",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/8"
+   }
+  },
+  {
+   "playerId": 4360807,
+   "displayName": "Abdullah",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/30"
+   }
+  },
+  {
+   "playerId": 4361409,
+   "displayName": "Dotson",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/1"
+   }
+  },
+  {
+   "playerId": 4361510,
+   "displayName": "Thomas",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/31"
+   }
+  },
+  {
+   "playerId": 4376288,
+   "displayName": "L. London",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/37"
+   }
+  },
+  {
+   "playerId": 4426502,
+   "displayName": "D. London",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/1"
+   }
+  },
+  {
+   "playerId": 4427090,
+   "displayName": "Dorlus",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/37"
+   }
+  },
+  {
+   "playerId": 4430807,
+   "displayName": "Bi. Robinson",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/9"
+   }
+  },
+  {
+   "playerId": 4431005,
+   "displayName": "Watts",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/36"
+   }
+  },
+  {
+   "playerId": 4431567,
+   "displayName": "M. Smith",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/37"
+   }
+  },
+  {
+   "playerId": 4568510,
+   "displayName": "Bergeron",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/45"
+   }
+  },
+  {
+   "playerId": 4595343,
+   "displayName": "Daniels",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/30"
+   }
+  },
+  {
+   "playerId": 4870612,
+   "displayName": "Branch",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/1"
+   }
+  },
+  {
+   "playerId": 10621,
+   "displayName": "Folk",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/22"
+   }
+  },
+  {
+   "playerId": 2972515,
+   "displayName": "Rush",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/8"
+   }
+  },
+  {
+   "playerId": 2973637,
+   "displayName": "Levin",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/73"
+   }
+  },
+  {
+   "playerId": 3043168,
+   "displayName": "Z. Smith",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/31"
+   }
+  },
+  {
+   "playerId": 3043275,
+   "displayName": "Hooper",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/7"
+   }
+  },
+  {
+   "playerId": 3045527,
+   "displayName": "Ebukam",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/31"
+   }
+  },
+  {
+   "playerId": 3050916,
+   "displayName": "Ford Jr.",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/29"
+   }
+  },
+  {
+   "playerId": 3128303,
+   "displayName": "Woods",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/30"
+   }
+  },
+  {
+   "playerId": 3915528,
+   "displayName": "McCullough",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/78"
+   }
+  },
+  {
+   "playerId": 3917914,
+   "displayName": "Zaccheaus",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/1"
+   }
+  },
+  {
+   "playerId": 3931395,
+   "displayName": "Bailey",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/23"
+   }
+  },
+  {
+   "playerId": 4035020,
+   "displayName": "Woerner",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/7"
+   }
+  },
+  {
+   "playerId": 4241474,
+   "displayName": "Br. Robinson Jr.",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/9"
+   }
+  },
+  {
+   "playerId": 4241479,
+   "displayName": "Tagovailoa",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/8"
+   }
+  },
+  {
+   "playerId": 4249624,
+   "displayName": "Muse",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/7"
+   }
+  },
+  {
+   "playerId": 4360386,
+   "displayName": "Brown",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/35"
+   }
+  },
+  {
+   "playerId": 4369886,
+   "displayName": "Blair",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/1"
+   }
+  },
+  {
+   "playerId": 4426412,
+   "displayName": "Harrison",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/37"
+   }
+  },
+  {
+   "playerId": 4428713,
+   "displayName": "Trice",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/31"
+   }
+  },
+  {
+   "playerId": 4429014,
+   "displayName": "Dexter Sr.",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/32"
+   }
+  },
+  {
+   "playerId": 4431194,
+   "displayName": "Bowman Jr.",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/29"
+   }
+  },
+  {
+   "playerId": 4567099,
+   "displayName": "Harris",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/30"
+   }
+  },
+  {
+   "playerId": 4567111,
+   "displayName": "Hellams",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/36"
+   }
+  },
+  {
+   "playerId": 4575860,
+   "displayName": "Longerbeam",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/29"
+   }
+  },
+  {
+   "playerId": 4605478,
+   "displayName": "Ivey",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/30"
+   }
+  },
+  {
+   "playerId": 4682831,
+   "displayName": "Hinton",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/45"
+   }
+  },
+  {
+   "playerId": 4683194,
+   "displayName": "Onianwa",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/46"
+   }
+  },
+  {
+   "playerId": 4685502,
+   "displayName": "Perkins Jr.",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/30"
+   }
+  },
+  {
+   "playerId": 4870988,
+   "displayName": "Av. Terrell",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/29"
+   }
+  },
+  {
+   "playerId": 5209093,
+   "displayName": "Jerrell",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/45"
+   }
+  },
+  {
+   "playerId": 5225251,
+   "displayName": "DeWalt IV",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/29"
+   }
+  },
+  {
+   "playerId": 5344782,
+   "displayName": "Strand",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/8"
+   }
+  }
+ ]
+}

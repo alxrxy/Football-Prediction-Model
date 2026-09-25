@@ -36,7 +36,7 @@ import numpy as np
 import pandas as pd
 
 from . import config, db
-from .box_score import BOX_CONFIDENCE, BOX_NOTE, POOL_CATEGORIES, box_score, player_pool, td_counts
+from .box_score import BOX_CONFIDENCE, BOX_NOTE, POOL_CATEGORIES, box_score, no_available_qb, player_pool, td_counts
 from .features import FeatureContext, latest_injury_report, parse_dt
 from .ingest_injuries import player_key
 from .ingest_nflverse import PLAYS_PER_GAME
@@ -329,6 +329,13 @@ def simulate_one(game: dict, ctx: FeatureContext, inputs: SimInputs, n: int = N_
     squads = {team: team_shares(inputs.roles, team, ctx.injuries,
                                 inputs.starters.get((week, team)))
               for team in (home, away)}
+    # P42: a team with every QB ruled out is an impossible input. The pool
+    # below still falls back to depth QB1 so the run completes, but the stored
+    # simulation records it and the run says so.
+    no_qb = [t for t in (home, away) if no_available_qb(squads[t][0])]
+    for t in no_qb:
+        print(f"  [warn] {game['game_id']}: every {t} QB is at play probability 0; "
+              "the passer falls back to depth QB1. Check the inputs (P42).")
     pools = tuple(player_pool(squads[t][0], squads[t][1]) for t in (home, away))
     scramble = tuple(scramble_factor(squads[t][0], pool.passer_weights, inputs.scramble_rates,
                                      inputs.scramble_league) for t, pool in zip((home, away), pools))
@@ -403,6 +410,7 @@ def simulate_one(game: dict, ctx: FeatureContext, inputs: SimInputs, n: int = N_
         "box_score": {"confidence": BOX_CONFIDENCE, "note": BOX_NOTE,
                       "home": boxes[home], "away": boxes[away]},
         "components": {
+            "input_warnings": [f"{t}: no available QB; passer fell back to depth QB1 (P42)" for t in no_qb],
             "anchor": {
                 "model": anchor_label or pred["model_version"],
                 "margin_home": anchor,

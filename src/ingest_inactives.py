@@ -54,6 +54,31 @@ SOURCE = "espn_inactives"
 LOOKAHEAD_HOURS = 2.0
 ATHLETE_CACHE_MINUTES = 60 * 24 * 30
 
+# ESPN's position id for quarterback, read off each roster entry's position
+# $ref (".../positions/8?lang=en"), so validating a list needs no extra calls.
+QB_POSITION_ID = "8"
+
+
+def _position_id(entry: dict) -> str | None:
+    ref = (entry.get("position") or {}).get("$ref") or ""
+    tail = ref.split("?")[0].rstrip("/").rsplit("/", 1)[-1]
+    return tail or None
+
+
+def impossible_list(entries: list[dict]) -> str | None:
+    """Why a posted list cannot be right, or None (P42).
+
+    A team must dress a quarterback, so a roster whose every QB is flagged
+    didNotPlay is a feed error, not a gameday decision: on 2026-09-24 ESPN
+    flagged all four ATL quarterbacks, Penix started, and the list charged
+    ATL 5.6 points for him. When no entry carries a QB position the list
+    cannot be judged and passes; this rule only rejects what it can see.
+    """
+    qbs = [x for x in entries if _position_id(x) == QB_POSITION_ID]
+    if qbs and all(x.get("didNotPlay") for x in qbs):
+        return f"no active QB ({len(qbs)} on the roster, all flagged inactive)"
+    return None
+
 
 def _get(url: str, params: dict | None = None) -> tuple[int | None, dict | None]:
     """(HTTP status, JSON). A 404 is an answer here (not posted yet), not a failure."""
@@ -119,6 +144,12 @@ def fetch(store: db.Store, season: int, week: int, now: datetime | None = None,
             if not flagged:
                 log.append({"game": label, "team": team, "result": f"not posted (HTTP {code}, {len(entries)} entries)"})
                 continue
+            reason = impossible_list(entries)
+            if reason:
+                # Not stored: the team keeps its injury-report probabilities,
+                # exactly as if its list had not posted.
+                log.append({"game": label, "team": team, "result": f"rejected: {reason}"})
+                continue
             for x in flagged:
                 name, pos = _athlete((x.get("athlete") or {}).get("$ref"))
                 name = name or x.get("displayName")
@@ -150,7 +181,10 @@ def run(season: int | None = None, week: int | None = None, replay: bool = False
     print(f"[inactives] nfl {season} week {week}: {len(rows)} inactive players, "
           f"{len(posted)} team lists posted" + (" (replay: nothing stored)" if replay else ""))
     for x in log:
-        if x["result"].startswith("posted") or x["result"].startswith("not posted"):
+        if x["result"].startswith("rejected"):
+            print(f"  [reject] {x['game']:<12} {x.get('team', ''):<4} {x['result'][len('rejected: '):]}; "
+                  "list not stored, the team stays on its injury report")
+        elif x["result"].startswith("posted") or x["result"].startswith("not posted"):
             lead = x.get("hours_before_kickoff")
             print(f"  {x['game']:<12} {x.get('team', ''):<4} {x['result']}"
                   + (f", {lead:+.1f} h to kickoff" if lead is not None and not replay else ""))
