@@ -151,7 +151,8 @@ def factors(game: dict, ratings: dict[str, dict] | None = None, prior: float | N
         rows = (game.get("injuries") or {}).get(side) or []
         out["injured"][team] = [
             {"player": i["player"], "position": i.get("position"), "points": round(i["points"], 1),
-             "status": i.get("status") or (f"{i['practice']} in practice" if i.get("practice") else None),
+             "status": i.get("status"),
+             "practice": f"{i['practice']} in practice" if i.get("practice") else "no practice report",
              "play_prob": i.get("play_prob")}
             for i in rows if (i.get("points") or 0) >= NAME_INJURY_PTS
         ][:3]
@@ -160,7 +161,10 @@ def factors(game: dict, ratings: dict[str, dict] | None = None, prior: float | N
                 out["caveats"].append(
                     f"The {i['points']:.1f}-point charge for {team} QB {i['player']} is a generic value "
                     "scaled by his snap share, not a comparison with the quarterback who replaces him.")
-        flat = [i["player"] for i in rows if i.get("status") == "questionable"
+        # Only a questionable tag with no practice report behind it is the flat
+        # default. Questionable + limited practice is also 0.55, but that value
+        # comes from the practice table (ingest_injuries.PLAY_PROBABILITY).
+        flat = [i["player"] for i in rows if i.get("status") == "questionable" and not i.get("practice")
                 and i.get("play_prob") == 0.55 and (i.get("points") or 0) >= NAME_INJURY_PTS]
         if flat:
             out["caveats"].append(
@@ -225,8 +229,7 @@ def describe(gid: str, f: dict) -> str:
     for team in (home, away):
         pts = f["injury_points"].get(team)
         names = "; ".join(f"{i['player']} {i['position']} {i['points']:.1f}"
-                          + (f" ({', '.join(x for x in (i.get('status'), _pct(i.get('play_prob'))) if x)})"
-                             if i.get("status") or i.get("play_prob") is not None else "")
+                          + f" ({', '.join(x for x in (i.get('status'), i['practice'], _pct(i.get('play_prob'))) if x)})"
                           for i in f["injured"][team])
         if pts:
             bits.append(f"{team} injuries cost {abs(pts):.1f}" + (f": {names}" if names else ""))
