@@ -64,7 +64,10 @@ def test_caveats():
     c = " ".join(ge.factors(game(injuries=inj), prior=0.88)["caveats"])
     check("P43 duplicate named", "Rob Beal Jr. / Robert Beal Jr." in c, True)
     check("QB generic charge names the player", "NYG QB Jaxson Dart" in c, True)
-    check("flat 55% names the player", "Micah Robinson (TEN, questionable)" in c, True)
+    check("flat 55% names the player with no practice report", "Micah Robinson (TEN, questionable)" in c, True)
+    inj["away"][0]["practice"] = "limited"
+    c = " ".join(ge.factors(game(injuries=inj), prior=0.88)["caveats"])
+    check("questionable + limited practice is not called the flat default", "flat 55%" in c, False)
     check("never says opponent-adjusted", "not adjusted for opponents" in c, True)
     check("prior share rounded to 10%", "about 90%" in c, True)
 
