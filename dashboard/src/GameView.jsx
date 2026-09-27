@@ -1,4 +1,4 @@
-import GameDetail from './GameDetail.jsx'
+import GameDetail, { WhyBox } from './GameDetail.jsx'
 import GameQA from './GameQA.jsx'
 import SimDetail from './SimDetail.jsx'
 import { liveGame, useSimEntry } from './simData.js'
@@ -46,6 +46,7 @@ export default function GameView({ sport, gameId, feed, onBack, onPast }) {
       <div className="split">
         <div className="split-main">
           {game?.known_issue ? <div className="caveat">{game.known_issue}</div> : null}
+          {game ? <WhyBox explanation={game.explanation} /> : null}
           <div className="card">
             <SimDetail gameId={gameId} />
           </div>
