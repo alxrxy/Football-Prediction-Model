@@ -2,6 +2,21 @@ import SimDetail from './SimDetail.jsx'
 import GameQA from './GameQA.jsx'
 import { signed, spreadLabel } from './format.js'
 
+// Plain-language note on why the model leans the way it does. Display only:
+// written from the served numbers by src/game_explain.py, it changes none.
+export function WhyBox({ explanation: why }) {
+  if (!why?.text) return null
+  return (
+    <section className="why">
+      <h4>{why.toss_up ? 'Why the model sees a near toss-up' : `Why the model leans ${why.favoured}`}</h4>
+      <p>{why.text}</p>
+      <p className="why-note">
+        Written by Claude from this game&rsquo;s breakdown. It explains the number; it doesn&rsquo;t change it.
+      </p>
+    </section>
+  )
+}
+
 // The per-game breakdown (architecture section 6): where the number came from,
 // layer by layer, plus the injury report that fed it.
 export default function GameDetail({ game, embedded = false }) {
@@ -11,6 +26,8 @@ export default function GameDetail({ game, embedded = false }) {
 
   return (
     <div className="detail">
+      {/* On the NFL game page, GameView shows this at the top instead. */}
+      {!embedded && <WhyBox explanation={game.explanation} />}
       <div className="detail-grid">
         <section>
           <h4>How the baseline got there</h4>

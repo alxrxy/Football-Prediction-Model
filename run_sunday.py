@@ -177,7 +177,7 @@ def refresh(window: Window, target: date, args) -> None:
         step("props: rank", lambda: props.run(with_explanations=not args.no_explain))
 
     step("export sims", lambda: export_sims.run(dates=[target.isoformat()], quiet=True))
-    step("export dashboard", lambda: export_dashboard.run())
+    step("export dashboard", lambda: export_dashboard.run(explain=not args.no_explain))
 
     print()
     print("=" * 78)

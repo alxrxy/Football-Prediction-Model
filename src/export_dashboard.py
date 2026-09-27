@@ -19,7 +19,7 @@ import statistics
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import config, db
+from . import config, db, game_explain
 from .features import apply_inactives, latest_injury_report, parse_dt
 from .predict_baseline import SLATE_START_UTC_HOUR, slate_window
 
@@ -78,7 +78,7 @@ KNOWN_GAME_ISSUES = {
 }
 
 
-def build(sport: str) -> dict:
+def build(sport: str, explain: bool = True) -> dict:
     store = db.get_store()
 
     slate_date, games, slate_extra = _slate_for(store, sport)
@@ -149,6 +149,10 @@ def build(sport: str) -> dict:
     results = _results(store, sport)
 
     store.close()
+    if sport == "nfl":
+        # Display only: a plain-language note on why the model leans the way
+        # it does, built from the components above. It changes no number.
+        game_explain.attach(out_games, call_claude=explain)
     meta = _model_meta(sport)
     return {
         "sport": sport,
@@ -553,13 +557,13 @@ def _calibration(games: list[dict]) -> dict:
     }
 
 
-def run(sports: list[str] | None = None) -> str:
+def run(sports: list[str] | None = None, explain: bool = True) -> str:
     sports = sports or ["ncaaf", "nfl"]
     payload = {
         "generated_at": db.utcnow(),
         "model_version_baseline": config.MODEL_VERSION,
         "storage_backend": config.STORAGE_BACKEND,
-        "sports": [build(s) for s in sports],
+        "sports": [build(s, explain=explain) for s in sports],
     }
 
     config.ensure_dirs()
@@ -580,5 +584,6 @@ def run(sports: list[str] | None = None) -> str:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Export dashboard JSON.")
     parser.add_argument("--sport", action="append", choices=["ncaaf", "nfl"])
+    parser.add_argument("--no-explain", action="store_true", help="skip the Claude game notes")
     args = parser.parse_args()
-    run(args.sport)
+    run(args.sport, explain=not args.no_explain)
