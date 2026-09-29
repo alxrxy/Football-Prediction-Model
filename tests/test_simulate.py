@@ -131,7 +131,14 @@ def test_segment_cdf_stays_in_bucket():
 
 
 def test_bucket_index():
-    check("1st & 10 at own 25", int(bucket_index(1, 10, 75)), (0 * 5 + 3) * 6 + 4)
+    from src.sim_data import N_DIST, N_ZONE, ZONE_EDGES
+    check("1st & 10 at own 25", int(bucket_index(1, 10, 75)), (0 * N_DIST + 3) * N_ZONE + len(ZONE_EDGES) - 1)
+    # P18: inside the 10 every yard line is its own bucket, so a drawn play is
+    # always applied at the spot it was run from.
+    check("each yard line 1-10 has its own goal-to-go bucket",
+          len({int(bucket_index(1, min(yl, 10), yl)) for yl in range(1, 11)}), 10)
+    check("the 11-20 red zone is still one zone",
+          len({int(bucket_index(1, 10, yl)) for yl in range(11, 21)}), 1)
     check("4th & 1 at the 3 shares 3rd-down pool", int(bucket_index(4, 1, 3)), int(bucket_index(3, 1, 3)))
 
 
