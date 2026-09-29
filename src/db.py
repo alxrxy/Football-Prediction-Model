@@ -185,19 +185,50 @@ class SupabaseStore(Store):
     # both exceed it, and a silently short read degrades features rather than
     # failing, which is far harder to notice.
     PAGE_SIZE = 1000
+    READ_ATTEMPTS = 3
 
-    def select(self, table: str, where: dict[str, Any] | None = None) -> list[dict]:
+    @staticmethod
+    def _filtered(query, where: dict[str, Any] | None):
+        for k, v in (where or {}).items():
+            query = query.in_(k, list(v)) if isinstance(v, (list, tuple)) else query.eq(k, v)
+        return query
+
+    def _pages(self, table: str, where: dict[str, Any] | None) -> list[dict]:
         rows: list[dict] = []
         offset = 0
         while True:
-            query = self.client.table(table).select("*")
-            for k, v in (where or {}).items():
-                query = query.in_(k, list(v)) if isinstance(v, (list, tuple)) else query.eq(k, v)
+            query = self._filtered(self.client.table(table).select("*"), where)
             page = query.range(offset, offset + self.PAGE_SIZE - 1).execute().data
             rows.extend(page)
             if len(page) < self.PAGE_SIZE:
                 return rows
             offset += self.PAGE_SIZE
+
+    def select(self, table: str, where: dict[str, Any] | None = None) -> list[dict]:
+        """Every matching row. A read that spans pages is checked against the
+        server's exact count (P53): the pages carry no ORDER BY, so after heavy
+        writes one can repeat a row another skips. On 9/29 that dropped Jayden
+        Daniels' `out` row and the sim started him. A short or overlapping read
+        is retried, then raised, never returned. Safety net only; ordering the
+        pages is the root-cause fix."""
+        keys = TABLE_KEYS.get(table)
+        for attempt in range(1, self.READ_ATTEMPTS + 1):
+            rows = self._pages(table, where)
+            if len(rows) < self.PAGE_SIZE:
+                return rows            # one page: a single consistent query
+            expected = self._filtered(
+                self.client.table(table).select("*", count="exact", head=True), where).execute().count
+            unique = len({tuple(str(r.get(k)) for k in keys) for r in rows}) if keys else len(rows)
+            if expected is None or unique == len(rows) == expected:
+                return rows
+            print(f"  [P53] incomplete read of {table}: {unique} unique of {len(rows)} rows, "
+                  f"server has {expected} (attempt {attempt}/{self.READ_ATTEMPTS})")
+        raise IncompleteRead(f"{table}: {unique} unique of {len(rows)} rows read, server has {expected}, "
+                             f"after {self.READ_ATTEMPTS} attempts; refusing to continue on partial data (P53)")
+
+
+class IncompleteRead(RuntimeError):
+    """A paged read that could not be made to match the server's count (P53)."""
 
 
 def get_store() -> Store:
@@ -243,6 +274,8 @@ def select_merged(store: Store, table: str, where: dict[str, Any] | None = None)
     if table not in _MIRRORED or store.backend == "sqlite":
         try:
             rows = store.select(table, where)
+        except IncompleteRead:
+            raise                 # the table exists; the read was partial (P53)
         except Exception:  # noqa: BLE001 - table not created upstream yet
             _MIRRORED.add(table)
     if store.backend == "sqlite":
