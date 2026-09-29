@@ -152,12 +152,28 @@ export default function WeekBreakdown({ weeks, results }) {
                   // Played before the pipeline's first run, so there is no pick
                   // to grade. Shown rather than dropped, and never back-filled:
                   // a pick made after the result is known is not a record.
-                  if (!game.predicted) {
+                  // Predicted but not graded yet (Monday night while Sunday is
+                  // graded): the pick exists, the result doesn't.
+                  if (game.pending) {
                     return (
                       <tr key={game.game_id} className="unpredicted">
                         {matchup}
                         <td colSpan={8} className="why muted">
-                          not predicted — kicked off before the first pipeline run
+                          predicted — pending, not graded yet
+                        </td>
+                      </tr>
+                    )
+                  }
+
+                  if (!game.predicted) {
+                    const kickedOff = game.kickoff && new Date(game.kickoff) <= new Date()
+                    return (
+                      <tr key={game.game_id} className="unpredicted">
+                        {matchup}
+                        <td colSpan={8} className="why muted">
+                          {kickedOff
+                            ? 'not predicted — kicked off before the first pipeline run'
+                            : 'not predicted yet'}
                         </td>
                       </tr>
                     )
