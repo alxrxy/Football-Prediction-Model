@@ -268,7 +268,9 @@ def _results(store, sport: str) -> dict:
     games = {g["game_id"]: g for g in store.select("games", {"sport": sport})}
 
     graded = []
+    predicted_ids = set()
     for row in store.select("predictions", {"sport": sport}):
+        predicted_ids.add(row["game_id"])
         if row.get("actual_home_points") is None or row.get("actual_away_points") is None:
             continue
         row = dict(row)
@@ -321,7 +323,7 @@ def _results(store, sport: str) -> dict:
         "total_graded": len(graded),
         "models": out,
         "last_slate": _last_slate(graded, games),
-        "weeks": _weeks(graded, games),
+        "weeks": _weeks(graded, games, predicted_ids),
     }
 
 
@@ -354,7 +356,7 @@ def _last_slate(graded: list[dict], games: dict[str, dict]) -> dict | None:
     return {"date": day, "games": out}
 
 
-def _game_row(game: dict, models: dict[str, dict]) -> dict:
+def _game_row(game: dict, models: dict[str, dict], predicted: bool | None = None) -> dict:
     """One game with both models' results, as the tables render it.
 
     `models` is empty for a game that was never predicted -- the pipeline only
@@ -374,13 +376,17 @@ def _game_row(game: dict, models: dict[str, dict]) -> dict:
         else None
     )
     market = any_row.get("market_spread") if any_row else None
+    # A stored prediction counts even before it is graded (P50): Monday night
+    # is still ahead while Sunday is graded, and it is pending, not unpredicted.
+    predicted = bool(models) if predicted is None else predicted or bool(models)
     return {
         "game_id": game["game_id"],
         "kickoff": game.get("kickoff_time"),
         "home": game["home_team"],
         "away": game["away_team"],
         "neutral": bool(game.get("is_neutral_site")),
-        "predicted": bool(models),
+        "predicted": predicted,
+        "pending": predicted and not models,
         "home_points": home_pts,
         "away_points": away_pts,
         "actual_margin": actual,
@@ -393,7 +399,8 @@ def _game_row(game: dict, models: dict[str, dict]) -> dict:
     }
 
 
-def _weeks(graded: list[dict], games: dict[str, dict]) -> list[dict]:
+def _weeks(graded: list[dict], games: dict[str, dict],
+           predicted_ids: set[str] | None = None) -> list[dict]:
     """Every graded week, newest first: each model's record plus every game.
 
     `by_slate` is one row per slate day, which splits a single NFL week across
@@ -439,7 +446,11 @@ def _weeks(graded: list[dict], games: dict[str, dict]) -> list[dict]:
             gid for gid, g in games.items()
             if g.get("season") == season and g.get("week") == week
         ]
-        rows = [_game_row(games[gid], by_game.get(gid, {})) for gid in all_ids]
+        rows = [
+            _game_row(games[gid], by_game.get(gid, {}),
+                      None if predicted_ids is None else gid in predicted_ids)
+            for gid in all_ids
+        ]
         rows.sort(key=lambda g: g["kickoff"] or "")
         days = sorted(d for gid in all_ids if (d := _slate_day(games[gid])))
         out.append({

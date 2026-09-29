@@ -8,18 +8,13 @@ while Sunday is graded) comes out `predicted: False` and the page labels it
 "not predicted - kicked off before the first pipeline run". Found 2026-09-28
 on PHI @ CHI.
 
-Marked xfail(strict=True) until the fix ships with the week-4 batch: it
-documents the bug without failing the suite, and fails as XPASS the moment
-the fix lands, as the reminder to remove the marker. The fix is expected to
-pass the week's predicted game ids into `_weeks` (`predicted_ids=`) and add
-a `pending` flag per row; `grade.py` is not involved.
+Fixed 2026-09-29: `_weeks` takes the stored prediction ids (`predicted_ids=`)
+and each row carries `pending`; `grade.py` is not involved.
 
 No network or database: hand-built rows.
 """
 
 from __future__ import annotations
-
-import pytest
 
 from src.export_dashboard import _weeks
 
@@ -45,8 +40,6 @@ GRADED = [{
 }]
 
 
-@pytest.mark.xfail(strict=True, raises=(AssertionError, TypeError),
-                   reason="P50 display bug; fix ships with the week-4 batch")
 def test_ungraded_game_with_prediction_and_future_kickoff_is_pending_not_unpredicted():
     week = _weeks(GRADED, GAMES, predicted_ids={"2026_03_KC_MIA", "2026_03_PHI_CHI"})[0]
     row = {g["game_id"]: g for g in week["games"]}["2026_03_PHI_CHI"]
