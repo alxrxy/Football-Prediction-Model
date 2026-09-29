@@ -2,6 +2,53 @@ import SimDetail from './SimDetail.jsx'
 import GameQA from './GameQA.jsx'
 import { signed, spreadLabel } from './format.js'
 
+// Line movement (P52). Display only: how the market's number has moved since
+// the week reopened and since we first tracked it. Not bet percentages.
+const movedOn = (iso) =>
+  iso ? new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' }) : ''
+
+function MoveRow({ title, at, block, home, away }) {
+  if (!block) return null
+  const { spread: sp, total: tot } = block
+  return (
+    <li>
+      <span className="muted">{title}{at ? ` (${movedOn(at)})` : ''}</span>
+      <span>
+        {sp && (
+          <>
+            {spreadLabel(sp.from, home, away)} → {spreadLabel(sp.to, home, away)}
+            {' · '}
+            {sp.toward ? `${Math.abs(sp.move).toFixed(1)} toward ${sp.toward}` : 'no meaningful move'}
+            {sp.key_numbers?.length ? ` · through ${[...new Set(sp.key_numbers.map(Math.abs))].join(', ')}` : ''}
+          </>
+        )}
+        {tot && (
+          <span className="muted">
+            {sp ? ' · ' : ''}O/U {tot.from} → {tot.to}
+            {tot.direction ? ` (${tot.direction} ${Math.abs(tot.move).toFixed(1)})` : ''}
+          </span>
+        )}
+      </span>
+      <span className="muted">{(sp || tot).books} books</span>
+    </li>
+  )
+}
+
+export function LineMovement({ movement: m, home, away }) {
+  if (!m) return null
+  return (
+    <>
+      <h4 className="spaced">Line movement</h4>
+      <ul className="books line-move">
+        <MoveRow title="Since reopen" at={m.reopen_at} block={m.since_reopen} home={home} away={away} />
+        <MoveRow title={m.reopen_is_first ? 'Since reopen (first tracked)' : 'Since first tracked'}
+                 at={m.first_at} block={m.since_first} home={home} away={away} />
+      </ul>
+      <p className="muted small">{m.label} Current as of {movedOn(m.current_at)}, {m.pulls} pulls.</p>
+    </>
+  )
+}
+
 // Plain-language note on why the model leans the way it does. Display only:
 // written from the served numbers by src/game_explain.py, it changes none.
 export function WhyBox({ explanation: why }) {
@@ -171,6 +218,7 @@ export default function GameDetail({ game, embedded = false }) {
               ))}
             </ul>
           )}
+          <LineMovement movement={game.line_movement} home={game.home} away={game.away} />
         </section>
       </div>
       {/* The NFL game page shows the simulation and Q&A itself; embedded, only

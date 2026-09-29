@@ -19,7 +19,7 @@ import statistics
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import config, db, game_explain
+from . import config, db, game_explain, line_movement
 from .features import apply_inactives, qb_context, latest_injury_report, parse_dt
 from .predict_baseline import SLATE_START_UTC_HOUR, slate_window
 
@@ -145,6 +145,11 @@ def build(sport: str, explain: bool = True) -> dict:
                 "known_issue": KNOWN_GAME_ISSUES.get(gid),
             }
         )
+
+    # Display only (P52): movement since first tracked and since the week
+    # reopened, from the append-only snapshots. A single pull gives None.
+    line_movement.attach(out_games, [r for r in db.select_merged(store, "odds_snapshots") if r["game_id"] in ids],
+                         store.select("games", {"sport": sport}))
 
     results = _results(store, sport)
 
