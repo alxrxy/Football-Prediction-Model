@@ -120,6 +120,23 @@ def lists_posted(store: db.Store, window: Window) -> tuple[int, int]:
     return len({(r["game_id"], r["team"]) for r in rows}), 2 * len(ids)
 
 
+def print_qb_holds(store: db.Store, window: Window) -> None:
+    """P49: the QB flags this window's lists raised that were held, or left
+    unresolved, instead of applied."""
+    from src.features import apply_inactives, latest_injury_report, qb_context
+
+    holds: list[dict] = []
+    apply_inactives(latest_injury_report(store.select("injuries", {"sport": "nfl"})),
+                    db.select_merged(store, "inactives"), qb=qb_context(store), holds=holds)
+    ids = {g["game_id"] for g in window.games}
+    mine = [h for h in holds if h["game_id"] in ids]
+    for h in mine:
+        tag = "UNRESOLVED (applied, review)" if h["decision"] == "unresolved" else "held"
+        print(f"  [qb] {h['team']:<4}{h['player']:<24}{tag}: {h['reason']}")
+    if not mine:
+        print("  [qb] no QB flag held or unresolved")
+
+
 def step(name: str, fn, critical: bool = False) -> bool:
     """Run one step. A non-critical failure degrades the refresh, not stops it."""
     print()
@@ -154,6 +171,7 @@ def refresh(window: Window, target: date, args) -> None:
             posted, expected = lists_posted(store, window)
             if posted:
                 print(f"\n  {posted}/{expected} team lists posted for this window")
+                print_qb_holds(store, window)
             else:
                 print("\n  [warn] no inactive list has posted for this window yet. The refresh "
                       "still runs, but questionable players keep the flat 0.55 play probability. "
