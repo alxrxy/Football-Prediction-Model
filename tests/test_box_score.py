@@ -16,7 +16,7 @@ import pandas as pd
 
 from src.box_score import POOL_CATEGORIES, box_score, no_available_qb, passer_weights
 from src.export_sims import attach_actuals
-from src.sim_data import N_ZONE
+from src.sim_data import N_ZONE, ZONE_EDGES
 from src.simulate import STAT_NAMES, Offense, PlayerPool, simulate_game
 from tests.test_simulate import tables
 
@@ -77,8 +77,9 @@ def test_throwaways_are_not_targets():
     game itself does not change at all."""
     t = stat_tables(True)
     n = len(t.yards)
-    # The fixture's drives live on 1st & 10; throw away every snap in one field zone.
-    throwaway = np.arange(n) % N_ZONE == 3
+    # The fixture's drives live on 1st & 10; throw away every snap in one field
+    # zone they pass through (21-50).
+    throwaway = np.arange(n) % N_ZONE == int(np.digitize(30, ZONE_EDGES))
     t.complete = ~throwaway            # throwaways are never completed
     base = simulate_game(t, Offense(0.0), Offense(0.0), n=300, seed=5, pools=(pool(), pool()))
     t.targeted = ~throwaway
