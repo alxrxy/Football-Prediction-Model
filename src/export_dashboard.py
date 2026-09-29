@@ -72,6 +72,9 @@ def _slate_for(store, sport: str) -> tuple[str, list[dict], dict]:
 # the page rather than hidden. Remove each entry once the item is fixed or the
 # game has kicked off.
 KNOWN_GAME_ISSUES = {
+    "2026_04_LA_PHI": (
+        "Known issue (P43): PHI's injury list counts WR Marquise Brown twice. The official week-3 report lists him as Marquise Brown (out, charged 0.29), and ESPN's week-4 feed lists him under his nickname, Hollywood Brown (questionable, charged 0.21). The two rows aren't matched, so both are charged: PHI's injury total is about 0.2-0.3 points too harsh, which leans the line that much toward LA. Nothing else in this game is affected. Left as a label rather than fixed mid-week."
+    ),
     "2026_03_ATL_GB": (
         "Known issue (P42): ESPN's gameday inactive list wrongly marked all four ATL quarterbacks out, including Penix, who practised in full, had no game status and started. The baseline charged ATL 5.6 points for his absence, so the team-level line is about 5.6 points too harsh on ATL (roughly GB -7 rather than the -12.8 shown). The ML line was built on the same injury data. The player-level numbers were not affected at quarterback: with no available QB, the simulation fell back to its depth-chart starter, Penix, who is the real starter. The simulation's score is still anchored to the over-harsh margin. Not re-simulated after kickoff."
     ),
