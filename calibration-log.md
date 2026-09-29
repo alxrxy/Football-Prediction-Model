@@ -122,6 +122,44 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-09-28 — MNF PHI @ CHI window (unattended run): a live P49 criterion-9 case on CHI's QB. Report only; nothing changed
+
+**Run.** The watch (`run_sunday.py --watch --date 2026-09-28 --fresh-odds`) was restarted at 22:37Z after the earlier
+session closed, and refreshed at 23:00-23:02Z: grade, injuries + inactives (2/2 lists posted at T-1.2 h), weather,
+odds (quota 382), predict (baseline PHI by 2.9, ML PHI by 3.7, market PHI by 3.5; stored home margins -2.9 / -3.7; no flag), simulate, props (33 priced,
+top 25), export. The ruled-out coverage check came to 11/14 = 78.6% (PASS). The TD lines were then re-pulled fresh for
+PHI_CHI (30 players, quota 377) and re-ranked by hand (16 priced), and the dashboard was re-exported at 00:03Z.
+Read-only re-checks every 5 min from 23:04Z to 00:03Z: **the ESPN lists never changed** (17 players, identical), so
+no second refresh ran. The served numbers are the 23:02Z refresh.
+
+**QB check (report only, P49 criterion 9 case, NEEDS A DECISION after grading):**
+- Books price **Case Keenum** (CHI) and Jalen Hurts (PHI). The sim's CHI passer is **Tyson Bagent** (31 att), and
+  PHI's is Hurts (30 att).
+- CHI's list flags three QBs: Caleb Williams (on the final report as **out**, DNP, so genuine), **Case Keenum** and
+  Miller Moss. Keenum and Moss are **not on the final injury report** and **were both on CHI's week-2 list**. Six of
+  CHI's 7 names equal its week-2 list, which is the P49 carry-over signature. A priced starter is listed inactive
+  (Keenum), so the sim starts Bagent, whom the books aren't pricing. CHI player props and CHI TD picks were ranked on
+  a Bagent-QB sim.
+- PHI: Andy Dalton (QB), Elijah Moore and Micah Morris are also listed but not on the final report, and all three were
+  on PHI's week-2 list (R2 contradictions: 5 of 17).
+- The served baseline charges Caleb Williams 5.58 (genuine) and **Cole Payton 2.10** (PHI QB, out on the ESPN report,
+  snap share 0.35; that looks like the P48 prior-season-share pattern for a backup QB; not verified).
+- Decision to record after grading: who actually started for CHI (Keenum or Bagent) scores this case for the
+  QB-only rule's criterion 9 and the late-scratch question (criterion 2).
+- **Early in-game read (00:22Z, 1st qtr 10:52):** live_tracker's live-resume box score has **Keenum as CHI's passer**
+  (32 att projected), and Bagent only rushing. So Keenum appears to have started: the ESPN flag was a false P49
+  carry-over, and the pregame CHI sim, props and TD picks used the wrong QB. Confirm from the final box score when
+  grading.
+- **Final (03:12Z): CHI 27, PHI 7.** Keenum played: a 41-yd TD pass to Kalif Raymond and a 1-yd TD run (live play log).
+  **The pregame Keenum flag was a false P49 carry-over.** Criterion 9 would have held it as unresolved (priced QB
+  flagged). Pregame favourite PHI by 2.9 (sim median PHI 23-20); CHI won by 20. **Graded 2026-09-29 03:19:57Z** (both models, 27-7 stored). Baseline leaned CHI +3.5: ATS W, SU
+  wrong. ML leaned PHI: ATS L, SU wrong. **Week 3 final, 16/16 predicted and graded:** baseline SU 9/16, ATS 10-6;
+  ML SU 8/16, ATS 6-10; no flagged edges. Only scoring plays are in the live play log: they show Keenum played, but
+  can't clear or confirm the other R2 names (Moss, Dalton, E. Moore, M. Morris). Check the nflverse box score next
+  refresh.
+
+---
+
 ## 2026-09-28 — P42 closure corrected; QB-only precision rule is the leading P49 candidate (adoption criteria CONFIRMED by the user, with criterion 9 added)
 
 **P42 correction.** P42 is **reopened** (see the tracker). Its 9/24 diagnosis concluded "the fault is in the feed, not
