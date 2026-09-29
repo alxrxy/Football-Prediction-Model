@@ -28,6 +28,7 @@ opposing offence. Situational points are shared equally between the sides.
 from __future__ import annotations
 
 import argparse
+import json
 import zlib
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -301,10 +302,70 @@ def scorer_table(result: SimResult, side: int, squad: pd.DataFrame,
     return out
 
 
+# --- starting-QB cross-check (P53) ----------------------------------------
+
+@dataclass
+class QbCheck:
+    """Independent evidence each sim's starting QB is tested against (P53).
+
+    On 9/29 a paged read dropped Jayden Daniels' `out` row, so he looked
+    healthy and the sim started him while the books priced Mariota. Nothing
+    in the sim itself could see that. This carries a second, separate
+    injury read and the QBs the books price, so a disagreement is shouted
+    rather than simulated silently. A safety net, not the root-cause fix."""
+    report: dict = field(default_factory=dict)   # {player_key: row}, second read
+    books: dict = field(default_factory=dict)    # {game_id: {season, week, pass, td}}
+
+
+def qb_check_inputs(store) -> QbCheck:
+    report = {player_key(r["team"], r["player"]): r
+              for r in latest_injury_report(store.select("injuries", {"sport": "nfl"}))}
+    books: dict = {}
+    for name, market in (("props_lines.json", "pass"), ("td_props_lines.json", "td")):
+        try:
+            data = json.loads((config.DATA_DIR / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for gid, g in (data.get("games") or {}).items():
+            players = g.get("players") or {}
+            entry = books.setdefault(gid, {"season": data.get("season"), "week": data.get("week"),
+                                           "pass": set(), "td": set()})
+            entry[market] |= {n for n, m in players.items() if market == "td" or "player_pass_yds" in m}
+    return QbCheck(report, books)
+
+
+def qb_warnings(game: dict, squads: dict, pools: tuple, check: QbCheck) -> list[str]:
+    """Each team whose sim QB1 is ruled out in the second read, or is not the
+    QB the books price for this game (pass-yds line first, else anytime TD)."""
+    out = []
+    book = check.books.get(game["game_id"])
+    same_week = bool(book) and str(book["season"]) == str(game.get("season"))         and str(book["week"]) == str(game.get("week"))
+    for team, pool in zip((game["home_team"], game["away_team"]), pools):
+        w = np.asarray(pool.passer_weights, dtype=float)
+        if not len(w) or w.max() <= 0:
+            continue
+        qb1 = pool.names[int(w.argmax())]
+        row = check.report.get(player_key(team, qb1))
+        if row is not None and row.get("play_probability") is not None and float(row["play_probability"]) == 0:
+            out.append(f"{team}: sim QB1 {qb1} is {row.get('status')} (play prob 0) in a second injury read; "
+                       "possible incomplete read (P53)")
+        if same_week:
+            squad = squads[team][0]
+            room = {player_key(team, n) for n in squad.loc[squad["position"] == "QB", "player"]}
+            for market in ("pass", "td"):
+                priced = sorted(n for n in book[market] if player_key(team, n) in room)
+                if priced:
+                    if player_key(team, qb1) not in {player_key(team, n) for n in priced}:
+                        out.append(f"{team}: sim QB1 {qb1}, but the books price {', '.join(priced)}")
+                    break
+    return out
+
+
 # --- one game --------------------------------------------------------------
 
 def simulate_one(game: dict, ctx: FeatureContext, inputs: SimInputs, n: int = N_SIMS,
-                 anchor: float | None = None, anchor_label: str | None = None) -> dict | None:
+                 anchor: float | None = None, anchor_label: str | None = None,
+                 qb_check: QbCheck | None = None) -> dict | None:
     """Simulate one game. `anchor` overrides the margin the simulations are
     pinned to; the live tracker passes the stored pregame prediction, so a
     simulation built after kickoff still centres on the pregame number."""
@@ -337,6 +398,9 @@ def simulate_one(game: dict, ctx: FeatureContext, inputs: SimInputs, n: int = N_
         print(f"  [warn] {game['game_id']}: every {t} QB is at play probability 0; "
               "the passer falls back to depth QB1. Check the inputs (P42).")
     pools = tuple(player_pool(squads[t][0], squads[t][1]) for t in (home, away))
+    qb_warns = qb_warnings(game, squads, pools, qb_check) if qb_check else []
+    for w in qb_warns:
+        print(f"  [warn] {game['game_id']}: {w}")
     scramble = tuple(scramble_factor(squads[t][0], pool.passer_weights, inputs.scramble_rates,
                                      inputs.scramble_league) for t, pool in zip((home, away), pools))
     for side, f in zip(("home", "away"), scramble):
@@ -410,7 +474,8 @@ def simulate_one(game: dict, ctx: FeatureContext, inputs: SimInputs, n: int = N_
         "box_score": {"confidence": BOX_CONFIDENCE, "note": BOX_NOTE,
                       "home": boxes[home], "away": boxes[away]},
         "components": {
-            "input_warnings": [f"{t}: no available QB; passer fell back to depth QB1 (P42)" for t in no_qb],
+            "input_warnings": [f"{t}: no available QB; passer fell back to depth QB1 (P42)" for t in no_qb]
+                              + qb_warns,
             "anchor": {
                 "model": anchor_label or pred["model_version"],
                 "margin_home": anchor,
@@ -963,11 +1028,12 @@ def run(game_id: str | None = None, dates: list[date] | None = None, n: int = N_
     print(f"[simulate] {len(games)} game(s), {n:,} sims each | loading tables, usage and depth charts")
     inputs = load_inputs(int(games[0]["season"]))
     anchors = _stored_anchors(store, games)
+    qb_check = qb_check_inputs(store)
 
     rows = []
     for game in games:
         margin, label = anchors.get(game["game_id"], (None, None))
-        row = simulate_one(game, ctx, inputs, n, anchor=margin, anchor_label=label)
+        row = simulate_one(game, ctx, inputs, n, anchor=margin, anchor_label=label, qb_check=qb_check)
         if row is None:
             continue
         if quiet:
