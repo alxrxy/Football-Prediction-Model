@@ -80,6 +80,7 @@ status only when its adoption test is met.
 | P50 | Record page: a predicted game that hasn't been played yet is labelled "not predicted - kicked off before the first pipeline run" | display bug | 2026-09-28 | Found checking the dashboard 9/28: PHI @ CHI (MNF, predicted, kickoff still ahead) shows the not-predicted label in the week-3 table, and the week header reads "15 predicted". Cause: `export_dashboard._weeks` builds each week's `models` from **graded** rows only and `_game_row` sets `predicted = bool(models)`, so any ungraded game counts as unpredicted; `WeekBreakdown.jsx` then shows the kicked-off-early reason for every `!predicted` row. Display only: grading, records and every served number are unaffected; `grade.py` is not involved. Confirmed on a hand-built fixture: the Monday game comes out `predicted: False`, `n_predicted` 1 of 2 | (1) `_weeks` receives the set of game ids with a stored prediction and sets `predicted` from it, not from grading; (2) each row carries `pending` (predicted, no final, kickoff in the future or game not completed), and the page shows it as pending, not unpredicted; (3) the not-predicted label is shown only for a game with no prediction that has kicked off; (4) `tests/test_record_pending.py` passes with its `xfail(strict=True)` marker removed (today it xfails, at the missing `predicted_ids` parameter; the assertions then check the behaviour), and the graded-row guard still passes; (5) suite passes | **FIXED 2026-09-29** (user: display-only, shipped ahead of the week-4 batch). `_results` passes every stored prediction id into `_weeks`; rows carry `pending`; `WeekBreakdown.jsx` shows 'predicted — pending, not graded yet', and the kicked-off-early label only for an unpredicted game whose kickoff has passed ('not predicted yet' otherwise). Criteria 1-5 met: xfail marker removed, both tests pass, suite 149 passed; dashboard builds. Logged 2026-09-28 |
 | P51 | Sim starting QB: a held (P49) QB can still be out-ranked on the depth chart by a QB the books don't price, so the sim starts the wrong QB | data / model | 2026-09-29 | Found in P49's replay (criterion 4). MNF PHI @ CHI wk3: Caleb Williams genuinely out; Case Keenum's false inactive flag is **held** by P49, but the nflverse depth chart ranks Tyson Bagent (QB2) above Keenum, so the sim still starts Bagent, whom the books don't price. Keenum started and threw 34 of CHI's passes (nflverse pbp); Bagent threw none. Distinct from P49: the flag is handled correctly; the problem is depth order when QB1 is out. Related to P28 part 1 (`QB_EXPECTED_STARTER`, OFF) and P35 | (to be set with the user before any build) | **logged 2026-09-29, not built** (user: don't build tonight) |
 | P52 | Dashboard: show each NFL game's line movement (spread and total) since first tracked and since the week reopened, labelled as line movement, not bet percentages | display | 2026-09-29 | `odds_snapshots` is append-only and already holds NFL history from 2026-09-15 (weeks 2-4, 48 games): median 9 pulls per game (6-17), 9 books, first pull ~11.5 days out for weeks 3-4, last ~1.2 h before kickoff; 38 of 48 spreads moved 0.5+ pt first to last. College has 1 pull per game, so no movement. Early pulls are look-ahead lines taken before the previous week's games: SEA @ WAS +2.5 on 9/16, reopened +7 on 9/23. The book set changes between pulls (SEA @ WAS first pull: 2 books) | the ten criteria in the 2026-09-29 P52 entry (same-book medians, reopen point, sign convention, null on a single pull, fixed label, no model / schema / quota change, hand check on SEA @ WAS plus two games before shipping) | **shipped 2026-09-29** (user); display only; NFL only until college odds are pulled more than once a week |
+| P53 | Storage: `SupabaseStore.select` pages with OFFSET and no ORDER BY, so a read spanning two pages can skip or repeat rows | bug fix | 2026-09-29 | Week-4 refresh, 9/29. The injuries table holds 1,070 NFL rows (two 1,000-row pages). Two reads shortly after the 19:47Z injury upsert saw no WAS QB row at all: the pipeline's `simulate_nfl` run (it started Jayden Daniels, who is out at play prob 0, while the books price Mariota) and a diagnostic `FeatureContext` built minutes later. Every later read (6 selects, 4 contexts) was complete (1,070 unique rows) and gave Mariota. No other writer touched the table after 19:47Z. Postgres guarantees no row order without ORDER BY, so OFFSET pages can overlap after heavy updates. **Leading explanation, not proven** (not reproduced after the fact). Re-running the sim step from stored data changed more than WAS: props priced 108 -> 110, held out 11 -> 17, unmatched names 1 -> 0. The stored baseline predictions match a fresh read on 16/16 games | (proposed, confirm with user) (1) `select` orders every paged read by the table's key (`TABLE_KEYS`); (2) a test pins the ORDER BY on a multi-page read; (3) after the change, 20 back-to-back reads of injuries, odds and depth_charts return identical key sets; (4) suite passes | **logged 2026-09-29, not built** (user: report before building). Workaround until then: after any refresh, re-run the QB sweep; re-simulate if it finds a mismatch |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -215,6 +216,44 @@ adoptable as specified.** The live full trim stays.
 - It pays for that in per-player MAE and carries, where the many small shares dominate and the full trim, which zeroes
   fringe players, is closer. The criteria pull in opposite directions. Which matters more for props is the user's
   call, and props themselves can only be measured prospectively.
+
+---
+
+## 2026-09-29 — Week-4 refresh; a flaky paged read (P53); misses review of four week-3 games. Nothing built
+
+**Refresh (user request).** `run_pipeline --sport nfl --model both --date 2026-10-01 2026-10-04 2026-10-05 --fresh-odds`
+(nflverse incl. depth charts, weather, odds, injuries, both models) -> `simulate_nfl --upcoming-only` -> `export_sims` ->
+`ingest_props --fresh` -> `props` -> `ingest_td_props --fresh` -> `td_props` -> `export_dashboard`. Odds quota 347 -> 306.
+- **Injuries: no week-4 report yet** (nflverse posts from Wednesday), so the week-3 designations still apply (219 rows,
+  87 ruled out). ESPN IR over nflverse applied once (P40). 11 ESPN-IR vs official-"out" conflicts were kept as official.
+  No inactive lists (normal on a Tuesday).
+- **Odds:** the 19:47Z pull is the first since MNF, so LA @ PHI and NYJ @ CHI now have a reopen point (P52). It is
+  also the latest pull, so their since-reopen row appears from the next pull.
+- **Predictions:** one flag, JAX @ CIN (baseline JAX by 11.6 vs CIN -2.5; layer 1, as noted in the first pass).
+  Large gaps with a known cause: KC @ LV (baseline LV +13.8 vs +4.25) carries **Aidan O'Connell 3.69 pts**
+  (questionable, 2025 snap share 0.82): a live P48 case on the report path, which P49 does not cover. IND @ WAS
+  charges Jayden Daniels out 4.65 from the week-3 report; the books price Mariota, so the charge agrees with the market.
+- **QB sweep failed on the first sim:** WAS's sim QB1 was Daniels, against the books' Mariota and his own out row.
+  Traced to a read that saw no WAS QB row at all; see **P53**. The sim step and everything after it were re-run from
+  stored data (no API calls): 32/32 team-sims now match the books-priced QB (or none is priced), and WAS starts
+  Mariota. The stored baseline predictions match a fresh in-memory read on 16/16 games.
+- Props 110 priced (7 games still unposted); TD 274 players across 15 games.
+
+**Misses review (user request): SEA @ WAS, PHI @ CHI, LA @ DEN, ATL @ GB (week 3).** Home margin = home minus away.
+The market is the last pregame consensus we pulled; the close is nflverse `spread_line` (ESPN/DraftKings in
+`clv_log` agrees).
+
+| game | final (home margin) | baseline | ML | market at our last pull | close | who missed |
+|---|---|---|---|---|---|---|
+| ATL @ GB | ATL 35-14 (GB -21) | GB +12.9 (err 33.9) | GB +8.4 (29.4) | GB -4.5 (25.5) | GB -4.5 (25.5) | **all three**, same wrong winner; market least wrong. Baseline carried the false Penix charge (~5.6, P42/P49); without it ~28, still worse than the market |
+| SEA @ WAS | WAS 33-31 (WAS +2) | SEA by 16.0 (18.0) | SEA by 12.2 (14.2) | SEA -8.5 (10.5) | SEA -8.5 (10.5) | **all three**, same wrong winner; model far worse. Mostly layer 1 (rating SEA by 15.5) |
+| PHI @ CHI | CHI 27-7 (CHI +20) | PHI by 2.9 (22.9) | PHI by 3.7 (23.7) | PHI -3.5 (23.5) | PHI -3.5 (23.5) | **all three, equally.** Keenum was flagged inactive pregame and played (P49 criterion-9 case), so the sim started Bagent |
+| LA @ DEN | DEN 30-26 (DEN +4) | LA by 4.05 (8.05) | DEN by 1.85 (**2.15**) | LA -1 (5.0) | **DEN -1.5** (2.5) | baseline and our pull missed the winner; ML right. The market flipped ~2.5 pts to DEN in the last 75 min after our last pull (23:05Z). The baseline carried Stidham 3.18 (P48) |
+
+Read: the market missed all four too: wrong winner in three, and at our last pull in the fourth. The models did not
+beat it in any of the three blowouts. ML beat both the baseline and the market only on LA @ DEN. Two of the baseline's
+four misses carry a known data defect in the model's own direction (Penix false charge, Stidham P48). Removing them leaves errors of ~28 (ATL @ GB, market 25.5) and ~4.9
+(LA @ DEN, market 5.0 at our pull), so neither defect explains the miss.
 
 ---
 
