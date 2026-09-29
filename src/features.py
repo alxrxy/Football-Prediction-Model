@@ -11,10 +11,11 @@ until backtesting replaces it.
 
 from __future__ import annotations
 
+import json
 import math
 from datetime import datetime, timedelta, timezone
 
-from . import db
+from . import config, db
 
 # --- tunable priors --------------------------------------------------------
 
@@ -272,7 +273,107 @@ def latest_injury_report(rows: list[dict]) -> list[dict]:
 GAME_STATUSES = ("questionable", "doubtful", "probable")
 
 
-def apply_inactives(report: list[dict], inactives: list[dict]) -> list[dict]:
+# P49. ESPN's pregame `didNotPlay` carries the prior week's inactives forward
+# until they are cleared, so a pregame list is this week's real inactives plus
+# stale extras, and nothing in the payload tells them apart. Week 3 of 2026
+# benched Darnold and Murray in the sim that way. A QB flagged inactive whose
+# final injury report gives him none of these statuses is held (keeps his
+# report-based play probability) instead of applied. Other positions are
+# unchanged until the cost of a wrong hold on a skill player is measured.
+QB_RULED_STATUSES = ("out", "ir", "doubtful", "questionable")
+
+
+_QB_DEPTH_CACHE: dict[int, dict | None] = {}
+
+
+def _nflverse_qb_depth(season: int) -> dict | None:
+    """Each team's QBs in the order the simulator starts them (nflverse's daily
+    depth chart, `sim_data.current_depth`). The `depth_charts` table can't stand
+    in: it ranks by snap share carried from last season (P48), which put Drew
+    Lock over Darnold and Wentz over Murray in week 3. None if unavailable."""
+    if season not in _QB_DEPTH_CACHE:
+        try:
+            from .sim_data import current_depth
+            depth, _ = current_depth(season)
+            qbs = depth[depth["position"] == "QB"].sort_values("rank")
+            _QB_DEPTH_CACHE[season] = {t: list(g["player"]) for t, g in qbs.groupby("team")}
+        except (Exception, SystemExit) as exc:  # noqa: BLE001
+            print(f"  [warn] P49: nflverse depth chart unavailable ({exc}); every flagged QB is cross-checked as a possible starter")
+            _QB_DEPTH_CACHE[season] = None
+    return _QB_DEPTH_CACHE[season]
+
+
+def qb_context(store, lines: dict | None = None, depth: dict | None = None,
+               season: int | None = None) -> dict:
+    """What the P49 hold needs beyond the report: each team's QBs in the
+    simulator's depth order, and the passers the books price per game."""
+    if depth is None:
+        if season is None:
+            seasons = [g.get("season") for g in store.select("games", {"sport": "nfl"})
+                       if g.get("season") is not None and (k := parse_dt(g.get("kickoff_time")))
+                       and k <= datetime.now(timezone.utc) + timedelta(days=7)]
+            season = max(seasons) if seasons else None
+        depth = _nflverse_qb_depth(season) if season is not None else None
+    if lines is None:
+        path = config.DATA_DIR / "props_lines.json"
+        try:
+            lines = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except (OSError, ValueError):
+            lines = {}
+    priced = {
+        gid: {name for name, markets in (g.get("players") or {}).items() if "player_pass_yds" in markets}
+        for gid, g in (lines.get("games") or {}).items()
+    }
+    # Snap-share leaders (the `depth_charts` table): not trusted to name the
+    # starter, but a flagged QB who leads his team in snaps is cross-checked
+    # like a starter rather than held as a backup (criterion 2: Cooper Rush,
+    # ATL's weeks 1-2 starter, was a genuine week-3 inactive).
+    leaders = {r["team"]: r["player"] for r in store.select("depth_charts", {"sport": "nfl"})
+               if r.get("position") == "QB" and int(r.get("depth_order") or 0) == 1}
+    return {"depth": depth, "priced": priced, "leaders": leaders}
+
+
+def _qb_hold(flag: dict, row: dict | None, report_by_key: dict, qb: dict) -> tuple[str, str]:
+    """('apply' | 'hold' | 'unresolved', reason) for one flagged QB.
+
+    The books decide first: a priced QB is expected to play, so he is held.
+    Otherwise the depth chart says whether he is the projected starter (the
+    top QB the report doesn't rule out) or his team's snap leader; either is
+    left applied and reported as unresolved (criterion 9), never held silently.
+    Anyone else is a backup and held."""
+    from .ingest_injuries import player_key
+
+    status = ((row or {}).get("status") or "").lower()
+    if status in QB_RULED_STATUSES:
+        return "apply", f"{status} on the final report"
+    team, game = flag["team"], flag.get("game_id")
+    key = player_key(team, flag["player"])
+    all_depth = qb.get("depth")
+    game_priced = {player_key(team, n): n for n in (qb.get("priced") or {}).get(game, set())}
+    if key in game_priced:
+        return "hold", "the books price him"
+    depth = [player_key(team, p) for p in (all_depth or {}).get(team, [])]
+    ruled = {k for k, r in report_by_key.items()
+             if k[0] == team and (r.get("status") or "").lower() in ("out", "ir", "doubtful")}
+    starter = next((k for k in depth if k not in ruled), None)
+    leader = (qb.get("leaders") or {}).get(team)
+    snap_leader = leader is not None and player_key(team, leader) == key
+    if all_depth is not None and starter is not None and key != starter and not snap_leader:
+        where = "backup" if key in depth else "not on the depth chart"
+        return "hold", f"{where}, {'not on the final report' if row is None else 'no game status'}"
+    # The projected starter (or no chart to tell): cross-check the books.
+    opponents = {player_key(team, p) for t, names in (all_depth or {}).items() if t != team for p in names}
+    others = sorted(n for k, n in game_priced.items() if k not in opponents)
+    if others:
+        return "unresolved", f"projected starter, but the books price {', '.join(others)}; flag applied, review"
+    # No price for his team: nothing confirms he plays. A starter on PUP or NFI
+    # is off the weekly report and correctly flagged (Penix, week 2), so the
+    # flag stands.
+    return "unresolved", "projected starter, no books price to confirm him; flag applied, review"
+
+
+def apply_inactives(report: list[dict], inactives: list[dict], qb: dict | None = None,
+                    holds: list | None = None) -> list[dict]:
     """The injury report with each team's posted gameday inactive list applied.
 
     Only the report's current week is touched, so a list can never gate a later
@@ -285,6 +386,10 @@ def apply_inactives(report: list[dict], inactives: list[dict]) -> list[dict]:
       - an inactive nobody reported is added, sized by his snap share (0 if
         he has none on record: a healthy scratch with no snaps costs nothing).
     Teams without a posted list are unchanged.
+
+    P49: a flagged QB with no ruling status on the report is held, not applied
+    (see `_qb_hold`; `qb` from `qb_context`). Each held or unresolved QB is
+    appended to `holds` when a list is given.
     """
     from .ingest_injuries import player_key
 
@@ -305,6 +410,20 @@ def apply_inactives(report: list[dict], inactives: list[dict]) -> list[dict]:
         return report
     posted = {r["team"] for r in rows}
     out = {player_key(r["team"], r["player"]): r for r in rows}
+    if config.INACTIVES_QB_HOLD:
+        current = {player_key(r["team"], r.get("player")): r for r in report
+                   if (r.get("season"), r.get("week")) == current_week}
+        for k, flag in list(out.items()):
+            if (flag.get("position") or "").upper() != "QB":
+                continue
+            decision, reason = _qb_hold(flag, current.get(k), current, qb or {})
+            if decision == "apply":
+                continue
+            if decision == "hold":
+                del out[k]
+            if holds is not None:
+                holds.append({"game_id": flag.get("game_id"), "team": flag["team"],
+                              "player": flag["player"], "decision": decision, "reason": reason})
 
     result, seen = [], set()
     for r in report:
@@ -344,7 +463,9 @@ class FeatureContext:
         self.weather = {w["game_id"]: w for w in store.select("weather")}
         self.injuries = latest_injury_report(store.select("injuries", {"sport": sport}))
         if sport == "nfl":
-            self.injuries = apply_inactives(self.injuries, db.select_merged(store, "inactives"))
+            self.qb_holds: list[dict] = []
+            self.injuries = apply_inactives(self.injuries, db.select_merged(store, "inactives"),
+                                            qb=qb_context(store), holds=self.qb_holds)
 
         ratings = store.select("team_ratings", {"sport": sport})
         # Keep the most recent week per team.

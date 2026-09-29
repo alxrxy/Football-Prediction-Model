@@ -131,6 +131,15 @@ USAGE_MIN_PARTICIPATION = float(os.getenv("USAGE_MIN_PARTICIPATION", "0.10"))
 # slate rather than swapped in mid-Sunday.
 QB_EXPECTED_STARTER = os.getenv("QB_EXPECTED_STARTER", "0").strip().lower() in ("1", "true", "yes")
 
+# P49. Hold, rather than apply, a pregame inactive flag on a QB whose final
+# injury report gives him no ruling status (out / IR / doubtful / questionable):
+# ESPN's pregame lists carry last week's inactives forward. A projected starter
+# (top of the nflverse depth chart, or his team's snap leader) is held only
+# when the books price him; otherwise the flag is applied and reported as
+# unresolved. Backups are held.
+# INACTIVES_QB_HOLD=0 for the old behaviour (every flag applied).
+INACTIVES_QB_HOLD = os.getenv("INACTIVES_QB_HOLD", "1").strip().lower() in ("1", "true", "yes")
+
 # Claude API: the one metered piece of the stack. Low effort suits short,
 # data-grounded answers; the daily cap stops a runaway page or loop from
 # running up a bill (src/claude_ai.py refuses calls past it).
