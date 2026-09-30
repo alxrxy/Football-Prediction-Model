@@ -194,10 +194,22 @@ class SupabaseStore(Store):
         return query
 
     def _pages(self, table: str, where: dict[str, Any] | None) -> list[dict]:
+        """Every page of a read, sorted by the table's primary key (P53).
+
+        Each OFFSET page is its own query, and without ORDER BY Postgres may
+        return rows in a different order each time, so one page can repeat
+        rows another skips (seen on injuries: a 66-row overlap, in bursts).
+        TABLE_KEYS equals each table's primary key, so the order is total and
+        comes off the PK index."""
+        keys = TABLE_KEYS.get(table)
+        if not keys:
+            print(f"  [warn] no key for {table}: paged read is unordered (P53)")
         rows: list[dict] = []
         offset = 0
         while True:
             query = self._filtered(self.client.table(table).select("*"), where)
+            for k in keys or ():
+                query = query.order(k)
             page = query.range(offset, offset + self.PAGE_SIZE - 1).execute().data
             rows.extend(page)
             if len(page) < self.PAGE_SIZE:
@@ -209,8 +221,9 @@ class SupabaseStore(Store):
         server's exact count (P53): the pages carry no ORDER BY, so after heavy
         writes one can repeat a row another skips. On 9/29 that dropped Jayden
         Daniels' `out` row and the sim started him. A short or overlapping read
-        is retried, then raised, never returned. Safety net only; ordering the
-        pages is the root-cause fix."""
+        is retried, then raised, never returned. `_pages` now orders by primary
+        key (the root-cause fix); the check stays because ordering cannot stop
+        rows being written between page requests."""
         keys = TABLE_KEYS.get(table)
         for attempt in range(1, self.READ_ATTEMPTS + 1):
             rows = self._pages(table, where)
