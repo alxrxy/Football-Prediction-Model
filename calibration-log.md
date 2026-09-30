@@ -228,7 +228,12 @@ was produced. The harness goes in `research/p22/`.
 **Baseline (R0).** P37's replay of the live Layer 1 (`compute_ratings`): per week, the season's earlier regular-season
 pass/run plays blended with the whole previous season (x0.75, 900-play weight), plus the live HFA / rest / travel /
 wind, graded against `training_nfl.csv` (`market_spread`, `target_margin`). **R0 must reproduce P37 before anything
-else is read:** 2,582 games, all-weeks ATS 1249-1270-63, corr(edge, cover residual) -0.008. No injury term, as in P37
+else is read:** 2,582 games, all-weeks ATS 1249-1270-63, corr(edge, cover residual) -0.008. **Corrected before any arm ran:** those
+are P37's 9/21 numbers from *before* its 9/22 fix (OAK/SD/STL games dropped). The harness stopped itself on them,
+because it gave 2,661 games. Checked two ways: without the mapping it gives n 2,582 and corr -0.008 (ATS off by one
+game, 1250-1269-63, most likely a revised EPA flipping one near-zero edge); and against P37's own `replay()`, run on
+the same pbp, every one of 2,693 games (2016-2026) matches to 7e-15. The check now targets the corrected replay the
+later work used (P9 and P46): n 2,661, ATS 1294-1302-65, corr -0.002. No arm, penalty or bar changed. No injury term, as in P37
 and P39.
 
 **Arms.** Each changes only the rating; everything else is identical to R0.
