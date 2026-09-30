@@ -224,7 +224,38 @@ def _promote_starter(squad: pd.DataFrame, starter_id: str) -> pd.DataFrame:
     return out.sort_values(["position", "rank"]).reset_index(drop=True)
 
 
-def team_shares(roles: pd.DataFrame, team: str, injuries: list[dict], starter_id: str | None = None):
+# P51: statuses that rule a depth-chart QB1 out of starting. "inactive" is an
+# applied (not held, P49) gameday flag.
+QB1_RULED_OUT = ("out", "doubtful", "ir", "inactive")
+
+
+def priced_starter(squad: pd.DataFrame, team: str, report: dict, priced: set[str] | None) -> str | None:
+    """player_id of the QB to promote over a ruled-out depth-chart QB1, or None (P51).
+
+    CHI week 3: Williams out, the depth chart had Bagent next and Keenum third;
+    the books priced Keenum, who started. Narrow by design: it acts only when
+    QB1 is ruled out and exactly one other QB in the room is priced for this
+    game and available (not ruled out, not flagged inactive). No price, or
+    more than one, leaves depth order alone and P53's cross-check still warns."""
+    if not priced:
+        return None
+    qbs = squad[squad["position"] == "QB"].sort_values("rank")
+    if not len(qbs):
+        return None
+
+    def status(name):
+        return ((report.get(player_key(team, name)) or {}).get("status") or "").lower()
+
+    if status(qbs.iloc[0]["player"]) not in QB1_RULED_OUT:
+        return None
+    keys = {player_key(team, n) for n in priced}
+    cands = [r for _, r in qbs.iloc[1:].iterrows()
+             if player_key(team, r["player"]) in keys and status(r["player"]) not in QB1_RULED_OUT]
+    return cands[0]["player_id"] if len(cands) == 1 else None
+
+
+def team_shares(roles: pd.DataFrame, team: str, injuries: list[dict], starter_id: str | None = None,
+                priced: set[str] | None = None):
     """Depth-chart skill players and each one's share of every opportunity
     type, with injuries applied.
 
@@ -238,6 +269,8 @@ def team_shares(roles: pd.DataFrame, team: str, injuries: list[dict], starter_id
     if starter_id:
         squad = _promote_starter(squad, starter_id)
     report = {player_key(team, r["player"]): r for r in injuries if r.get("team") == team}
+    if (promote := priced_starter(squad, team, report, priced)) is not None:
+        squad = _promote_starter(squad, promote)
     cats = list(USAGE_CATEGORIES)
     base = squad[cats].to_numpy(float)
     if config.USAGE_PARTICIPATION_TRIM and "participation" in squad:
@@ -334,6 +367,14 @@ def qb_check_inputs(store) -> QbCheck:
     return QbCheck(report, books)
 
 
+def priced_qbs(game: dict, check: QbCheck) -> set[str] | None:
+    """Names with a pass-yds line for this game, from this week's props lines only (P51)."""
+    book = check.books.get(game["game_id"])
+    if not book or str(book["season"]) != str(game.get("season")) or str(book["week"]) != str(game.get("week")):
+        return None
+    return set(book["pass"]) or None
+
+
 def qb_warnings(game: dict, squads: dict, pools: tuple, check: QbCheck) -> list[str]:
     """Each team whose sim QB1 is ruled out in the second read, or is not the
     QB the books price for this game (pass-yds line first, else anytime TD)."""
@@ -387,9 +428,19 @@ def simulate_one(game: dict, ctx: FeatureContext, inputs: SimInputs, n: int = N_
     anchor = pred["model_margin_home"] if anchor is None else float(anchor)
 
     week = int(game.get("week") or 0)
+    priced = priced_qbs(game, qb_check) if qb_check else None
     squads = {team: team_shares(inputs.roles, team, ctx.injuries,
-                                inputs.starters.get((week, team)))
+                                inputs.starters.get((week, team)), priced)
               for team in (home, away)}
+    promoted = []
+    for team in (home, away):
+        depth_qbs = inputs.roles[(inputs.roles["team"] == team) & (inputs.roles["position"] == "QB")].sort_values("rank")
+        sq = squads[team][0]
+        now_qb1 = sq.loc[sq["position"] == "QB"].sort_values("rank")["player"]
+        if len(depth_qbs) and len(now_qb1) and now_qb1.iloc[0] != depth_qbs["player"].iloc[0]                 and not inputs.starters.get((week, team)):
+            promoted.append(f"{team}: depth QB1 {depth_qbs['player'].iloc[0]} is ruled out; the books price "
+                            f"{now_qb1.iloc[0]}, promoted to QB1 (P51)")
+            print(f"  [P51] {game['game_id']}: {promoted[-1]}")
     # P42: a team with every QB ruled out is an impossible input. The pool
     # below still falls back to depth QB1 so the run completes, but the stored
     # simulation records it and the run says so.
@@ -475,7 +526,7 @@ def simulate_one(game: dict, ctx: FeatureContext, inputs: SimInputs, n: int = N_
                       "home": boxes[home], "away": boxes[away]},
         "components": {
             "input_warnings": [f"{t}: no available QB; passer fell back to depth QB1 (P42)" for t in no_qb]
-                              + qb_warns,
+                              + qb_warns + promoted,
             "anchor": {
                 "model": anchor_label or pred["model_version"],
                 "margin_home": anchor,
