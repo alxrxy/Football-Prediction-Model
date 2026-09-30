@@ -87,8 +87,9 @@ def _read_all(store, table: str) -> list[dict]:
     rows = []
     try:
         rows += store.select(table)
-    except Exception:  # noqa: BLE001 - table not created upstream yet
-        pass
+    except Exception as exc:  # noqa: BLE001
+        if not db.is_missing_table(exc):
+            raise                 # P54: a failed read is not an empty table
     if store.backend != "sqlite":
         local = None
         try:

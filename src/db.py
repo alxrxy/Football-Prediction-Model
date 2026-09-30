@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import time
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
@@ -157,8 +158,48 @@ class SqliteStore(Store):
         self.conn.close()
 
 
+# Why a Supabase call failed decides what happens next (P54). A missing table
+# (the schema not re-pasted yet) is the one case the local mirror exists for.
+# A dropped connection or a timeout says nothing about the table: it is
+# retried, and if it keeps failing the run stops loudly. It is never mirrored,
+# which would split the data across two stores behind a "table missing" message.
+MISSING_TABLE_CODES = {"PGRST205", "42P01"}   # PostgREST schema cache; Postgres undefined_table
+
+
+def is_missing_table(exc: BaseException) -> bool:
+    return getattr(exc, "code", None) in MISSING_TABLE_CODES
+
+
+def is_transient(exc: BaseException) -> bool:
+    import httpx
+
+    return isinstance(exc, httpx.TransportError)
+
+
+class StoreUnavailable(RuntimeError):
+    """A Supabase call that kept failing on the connection (P54)."""
+
+
 class SupabaseStore(Store):
     backend = "supabase"
+    ATTEMPTS = 3
+    RETRY_WAIT = (2.0, 5.0)     # seconds before the 2nd and 3rd attempts
+
+    def _execute(self, query, what: str):
+        """Run a request, retrying connection errors; anything else raises as is."""
+        for attempt in range(1, self.ATTEMPTS + 1):
+            try:
+                return query.execute()
+            except Exception as exc:  # noqa: BLE001 - classified below
+                if not is_transient(exc):
+                    raise
+                if attempt == self.ATTEMPTS:
+                    raise StoreUnavailable(
+                        f"{what}: {type(exc).__name__} on all {self.ATTEMPTS} attempts ({exc}). "
+                        "Not falling back to the local mirror: the table exists, the connection failed (P54)."
+                    ) from exc
+                print(f"  [retry] {what}: {type(exc).__name__} (attempt {attempt}/{self.ATTEMPTS})")
+                time.sleep(self.RETRY_WAIT[attempt - 1])
 
     def __init__(self):
         from supabase import create_client
@@ -175,7 +216,7 @@ class SupabaseStore(Store):
         # Chunked so a large slate doesn't blow the request size limit.
         for i in range(0, len(rows), 500):
             chunk = rows[i : i + 500]
-            self.client.table(table).upsert(chunk, on_conflict=on_conflict).execute()
+            self._execute(self.client.table(table).upsert(chunk, on_conflict=on_conflict), f"write {table}")
             written += len(chunk)
         return written
 
@@ -210,7 +251,7 @@ class SupabaseStore(Store):
             query = self._filtered(self.client.table(table).select("*"), where)
             for k in keys or ():
                 query = query.order(k)
-            page = query.range(offset, offset + self.PAGE_SIZE - 1).execute().data
+            page = self._execute(query.range(offset, offset + self.PAGE_SIZE - 1), f"read {table}").data
             rows.extend(page)
             if len(page) < self.PAGE_SIZE:
                 return rows
@@ -218,8 +259,8 @@ class SupabaseStore(Store):
 
     def select(self, table: str, where: dict[str, Any] | None = None) -> list[dict]:
         """Every matching row. A read that spans pages is checked against the
-        server's exact count (P53): the pages carry no ORDER BY, so after heavy
-        writes one can repeat a row another skips. On 9/29 that dropped Jayden
+        server's exact count (P53): unordered pages used to repeat rows other
+        pages skipped. On 9/29 that dropped Jayden
         Daniels' `out` row and the sim started him. A short or overlapping read
         is retried, then raised, never returned. `_pages` now orders by primary
         key (the root-cause fix); the check stays because ordering cannot stop
@@ -229,8 +270,8 @@ class SupabaseStore(Store):
             rows = self._pages(table, where)
             if len(rows) < self.PAGE_SIZE:
                 return rows            # one page: a single consistent query
-            expected = self._filtered(
-                self.client.table(table).select("*", count="exact", head=True), where).execute().count
+            expected = self._execute(self._filtered(
+                self.client.table(table).select("*", count="exact", head=True), where), f"count {table}").count
             unique = len({tuple(str(r.get(k)) for k in keys) for r in rows}) if keys else len(rows)
             if expected is None or unique == len(rows) == expected:
                 return rows
@@ -268,8 +309,10 @@ def upsert_or_mirror(store: Store, table: str, rows: list[dict[str, Any]]) -> st
             store.upsert(table, rows)
             return store.backend
         except Exception as exc:  # noqa: BLE001
+            if not is_missing_table(exc):
+                raise                 # P54: only a missing table is mirrored
             _MIRRORED.add(table)
-            print(f"  [warn] cannot write {table} to {store.backend} ({type(exc).__name__}); "
+            print(f"  [warn] {table} does not exist in {store.backend} ({exc.code}); "
                   "using the local SQLite mirror.")
             print("         Paste db/PASTE_INTO_SUPABASE.sql into the Supabase SQL Editor to create it.")
     local = SqliteStore()
@@ -287,9 +330,9 @@ def select_merged(store: Store, table: str, where: dict[str, Any] | None = None)
     if table not in _MIRRORED or store.backend == "sqlite":
         try:
             rows = store.select(table, where)
-        except IncompleteRead:
-            raise                 # the table exists; the read was partial (P53)
-        except Exception:  # noqa: BLE001 - table not created upstream yet
+        except Exception as exc:  # noqa: BLE001
+            if not is_missing_table(exc):
+                raise                 # partial read (P53) or connection failure (P54)
             _MIRRORED.add(table)
     if store.backend == "sqlite":
         return rows

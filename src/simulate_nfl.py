@@ -1045,20 +1045,10 @@ def run(game_id: str | None = None, dates: list[date] | None = None, n: int = N_
 
     if store_results and rows:
         clean = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
-        try:
-            store.upsert("game_simulations", clean)
-            print(f"\n[simulate] {len(clean)} row(s) written to game_simulations ({store.backend})")
-        except Exception as exc:  # noqa: BLE001
-            if store.backend == "sqlite":
-                print(f"\n[simulate] could not write game_simulations: {exc}")
-            else:
-                print(f"\n[simulate] game_simulations is missing from {store.backend} "
-                      f"({type(exc).__name__}); writing to the local SQLite mirror instead.")
-                print("  Paste db/PASTE_INTO_SUPABASE.sql into the Supabase SQL Editor to create it.")
-                local = db.SqliteStore()
-                local.upsert("game_simulations", clean)
-                local.close()
-                print(f"[simulate] {len(clean)} row(s) written to game_simulations (local sqlite)")
+        # P54: only a genuinely missing table goes to the local mirror; a
+        # connection failure is retried in the store, then stops the run.
+        where = db.upsert_or_mirror(store, "game_simulations", clean)
+        print(f"\n[simulate] {len(clean)} row(s) written to game_simulations ({where})")
     store.close()
     return rows
 
