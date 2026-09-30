@@ -120,7 +120,7 @@ def pregame_text(game: dict | None, sim: dict | None, props: list[dict], sport: 
             lines.append(
                 f"{label}: {_spread(p.get('model_spread'), home, away)} ({home} margin {_n(p.get('margin_home'), 1)}), "
                 f"{home} win {_pct(p.get('win_prob_home'))}, points off the market {_n(p.get('edge'), 1)} "
-                f"(+ favours {home}), confidence {p.get('confidence')}"
+                f"(+ favours {home})"
                 + ("; flagged as unvalidated value" if p.get("is_value") else "") + "."
             )
         b = game.get("baseline") or {}
