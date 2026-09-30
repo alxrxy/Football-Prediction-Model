@@ -209,30 +209,8 @@ export default function ResultsPanel({ results }) {
 
             <SlateHistory slates={s.by_slate} />
 
-            {Object.entries(s.by_conf || {}).length > 0 && (
-              <table className="micro">
-                <thead>
-                  <tr>
-                    <th>Confidence</th>
-                    <th className="num">ATS</th>
-                    <th className="num">Win%</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(s.by_conf).map(([tier, [w, n]]) => (
-                    <tr key={tier}>
-                      <td>
-                        <span className={`conf ${tier}`}>{tier}</span>
-                      </td>
-                      <td className="num">
-                        {w}/{n}
-                      </td>
-                      <td className="num">{((w / n) * 100).toFixed(1)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            {/* No ATS-by-confidence table (P4 retired 2026-09-30): the tier only records whether
+                every input was present, and every NFL game has them, so it never varies. */}
           </div>
         )
       })}

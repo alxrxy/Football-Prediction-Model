@@ -70,7 +70,6 @@ export default function SlateTable({ games, results }) {
               <th className="num">Edge</th>
               <th>Leans</th>
               <th className="num">Home WP</th>
-              <th>Conf</th>
             </tr>
           </thead>
           <tbody>
@@ -135,13 +134,10 @@ export default function SlateTable({ games, results }) {
                       )}
                     </td>
                     <td className="num">{pct(b?.win_prob_home)}</td>
-                    <td>
-                      <span className={`conf ${b?.confidence}`}>{b?.confidence ?? '—'}</span>
-                    </td>
                   </tr>
                   {isOpen && (
                     <tr className="detail-row">
-                      <td colSpan={9}>
+                      <td colSpan={8}>
                         <GameDetail game={game} />
                       </td>
                     </tr>
