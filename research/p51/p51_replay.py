@@ -38,10 +38,16 @@ from src.box_score import passer_weights  # noqa: E402
 from src.features import apply_inactives, latest_injury_report, parse_dt, qb_context  # noqa: E402
 
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else None
-# Sensitivity only (--mnf-lines): PHI @ CHI takes the MNF-day pull (9/28 23:01Z), as P49's replay did.
-MNF_LINES = "--mnf-lines" in sys.argv
-if MNF_LINES and OUT and OUT.name == "--mnf-lines":
+# --window-lines: the corrected run_sunday order (props pulled before each window's sim).
+# Each game takes the latest saved pull stamped before its kickoff, from any saved lines file.
+WINDOW_LINES = "--window-lines" in sys.argv
+if OUT and OUT.name.startswith("--"):
     OUT = None
+# --official-report: add each week's final official report (nflverse) for players the stored
+# pregame rows lack. Stored injury rows re-pulled after kickoff drop out of the "before
+# kickoff" filter, which left e.g. ATL and SEA week 2 with no QB statuses at all.
+OFFICIAL = "--official-report" in sys.argv
+LINE_FILES = sorted((ROOT / "data" / "snapshots").glob("*/props_lines.json")) + [ROOT / "data" / "props_lines.json"]
 SNAPS = {2: ROOT / "data/snapshots/pre-friday_2026-09-18/props_lines.json",
          3: ROOT / "data/snapshots/pre-sunday_2026-09-27/props_lines.json",
          4: ROOT / "data/props_lines.json"}
@@ -72,6 +78,27 @@ drops = pbp26[pbp26["qb_dropback"] == 1].dropna(subset=["passer_player_name"])
 truth = {(gid, team): g.groupby("passer_player_name").size().idxmax()
          for (gid, team), g in drops.groupby(["game_id", "posteam"])}
 
+from src.ingest_injuries import _practice, _status, play_probability, player_key  # noqa: E402
+
+NFLV = nfl.import_injuries([2026]) if OFFICIAL else None
+
+
+def with_official(report, week, teams):
+    if NFLV is None:
+        return report
+    have = {player_key(r["team"], r["player"]) for r in report}
+    add = []
+    for _, r in NFLV[(NFLV["week"] == week) & NFLV["team"].isin(teams)].iterrows():
+        k = player_key(r["team"], r["full_name"])
+        st, pr = _status(r.get("report_status")), _practice(r.get("practice_status"))
+        if k in have or (st is None and pr in (None, "full")):
+            continue
+        add.append({"player": r["full_name"], "team": r["team"], "position": str(r.get("position") or "").upper(),
+                    "status": st, "practice_trend": pr, "play_probability": play_probability(st, pr),
+                    "season": 2026, "week": week, "source": "nflverse-final"})
+    return report + add
+
+
 DC = nfl.import_depth_charts([2026])
 DC["dtp"] = pd.to_datetime(DC["dt"], utc=True)
 sim_pbp = sim_data.load_pbp((2025, 2026))
@@ -96,18 +123,28 @@ for week in sorted(SNAPS):
     roles, _ = sim_data.player_roles(2026, pbp_w)
     sim_data.current_depth = real_current_depth
     snap = json.loads(SNAPS[week].read_text(encoding="utf-8"))
-    if MNF_LINES and week == 3:
-        late = json.loads((ROOT / "data/snapshots/wk3-props_2026-09-28/props_lines.json").read_text(encoding="utf-8"))
-        snap["games"]["2026_03_PHI_CHI"] = late["games"]["2026_03_PHI_CHI"]
+    line_src = {}
+    if WINDOW_LINES:
+        for f in LINE_FILES:
+            d = json.loads(f.read_text(encoding="utf-8"))
+            if (d.get("season"), d.get("week")) != (2026, week):
+                continue
+            for gid, entry in (d.get("games") or {}).items():
+                t = parse_dt(entry.get("pulled_at"))
+                if gid in kick and t and t < kick[gid] and (gid not in line_src or t > line_src[gid][0]):
+                    line_src[gid] = (t, f.parent.name, entry)
+        for gid, (t, name, entry) in line_src.items():
+            snap["games"][gid] = entry
     assert (snap.get("season"), snap.get("week")) == (2026, week), SNAPS[week]
     qbdepth = {t: list(g.sort_values("rank")["player"]) for t, g in depth[depth["position"] == "QB"].groupby("team")}
     qb = qb_context(store, lines=snap, depth=qbdepth)
     notes.append(f"week {week}: depth chart as of {as_of} (before first kickoff {cutoff:%Y-%m-%d %H:%MZ}); "
-                 f"props snapshot {SNAPS[week].parent.name}")
+                 f"props snapshot {SNAPS[week].parent.name}" + (" (each game overridden by its latest pre-kickoff pull)" if WINDOW_LINES else ""))
     for gid in wk_games:
         g = games[gid]
         report = latest_injury_report([r for r in inj_all if r.get("week") == week
                                        and parse_dt(r.get("pulled_at")) < kick[gid]])
+        report = with_official(report, week, (g["home_team"], g["away_team"]))
         pre = [{**r, "pulled_at": g["kickoff_time"]} for r in lists_all
                if r["game_id"] == gid and parse_dt(r["first_seen_at"]) < kick[gid]]
         injuries = apply_inactives(report, pre, qb=qb, holds=[])
@@ -122,14 +159,17 @@ for week in sorted(SNAPS):
                     and off[2] == on[2] and np.array_equal(w_off, w_on))
             t = truth.get((gid, team))
             right = lambda q: None if t is None or q is None else abbr(q) == str(t).lower().replace("'", "")  # noqa: E731
+            src = line_src.get(gid) if WINDOW_LINES else None
             r = {"week": week, "game": gid, "team": team, "before": q_off, "after": q_on, "truth": t,
+                 "lines": f"{src[1]} {src[0]:%m-%d %H:%MZ}" if src else SNAPS[week].parent.name,
                  "right_before": right(q_off), "right_after": right(q_on), "identical": same,
                  "priced": sorted(n for n in (priced or ()) if n in set(on[0].loc[on[0]["position"] == "QB", "player"]))}
             rows.append(r)
             if not same:
                 fired.append(r)
 
-say("# P51 validation replay (research only)" + (" - SENSITIVITY: PHI @ CHI on the MNF-day lines" if MNF_LINES else ""))
+say("# P51 validation replay (research only)" + (" - corrected order: each game on its latest pre-kickoff saved pull" if WINDOW_LINES else "")
+    + (" - plus the official final report where stored pregame rows are missing" if OFFICIAL else ""))
 say()
 for n in notes:
     say(f"- {n}")
@@ -164,7 +204,7 @@ say()
 wrong = [r for r in rows if r["right_after"] is False]
 say(f"Reported, not a criterion: team-games where the sim's QB1 is still not the pbp starter after the rule: {len(wrong)}")
 for r in wrong:
-    say(f"- wk{r['week']} {r['game']} {r['team']}: sim {r['after']}, pbp {r['truth']}, priced {', '.join(r['priced']) or '-'}")
+    say(f"- wk{r['week']} {r['game']} {r['team']}: sim {r['after']}, pbp {r['truth']}, priced {', '.join(r['priced']) or '-'} (lines: {r['lines']})")
 
 store.close()
 if OUT:
