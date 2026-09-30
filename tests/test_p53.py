@@ -36,12 +36,18 @@ class FakeTable:
     def __init__(self, attempts, count):
         self.attempts, self.count, self.count_calls, self.page_calls = attempts, count, 0, 0
         self.attempt = 0
+        self.page_orders = []
 
     def table(self, _name):
         return self
 
     def select(self, _cols, count=None, head=False):
         self._is_count = count == "exact" and head
+        self._order = []
+        return self
+
+    def order(self, col):
+        self._order.append(col)
         return self
 
     def eq(self, *_a):
@@ -61,6 +67,7 @@ class FakeTable:
         pages = self.attempts[min(self.attempt, len(self.attempts) - 1)]
         i = self._lo // 2
         self.page_calls += 1
+        self.page_orders.append(list(self._order))
         return SimpleNamespace(data=pages[i] if i < len(pages) else [], count=None)
 
 
@@ -81,6 +88,15 @@ def test_complete_multipage_read():
     fake = FakeTable([[[A, B], [C]]], count=3)
     check("complete 2-page read returned", len(store(fake).select("injuries")), 3)
     check("one count call", fake.count_calls, 1)
+
+
+def test_every_page_ordered_by_primary_key():
+    """Root-cause fix (R1): each OFFSET page is sorted by the table's full key."""
+    fake = FakeTable([[[A, B], [C]]], count=3)
+    store(fake).select("injuries")
+    check("two page requests", len(fake.page_orders), 2)
+    check("every page sorted by the full primary key",
+          all(o == db.TABLE_KEYS["injuries"] for o in fake.page_orders), True)
 
 
 def test_single_page_makes_no_count_call():
