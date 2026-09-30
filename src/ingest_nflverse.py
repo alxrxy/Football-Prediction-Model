@@ -23,6 +23,8 @@ from __future__ import annotations
 import argparse
 import math
 import warnings
+
+import numpy as np
 from datetime import datetime, timedelta, timezone
 
 from . import config, db, nfl_venues, qb_prior
@@ -37,6 +39,16 @@ PLAYS_PER_GAME = 63.0        # offensive plays per team per game
 PRIOR_PLAYS_WEIGHT = 900.0   # how many current-season plays it takes to fully
                              # outweigh the prior season (~2/3 of a season)
 PRIOR_SEASON_REGRESSION = 0.75  # shrink prior-season EPA toward league average
+                                # (the rating before P22; kept for the flag-off path)
+
+# P22 (config.RATING_OPPONENT_ADJUST). Frozen from the 2026-09-30 phase-1
+# walk-forward, research/p22: tuned on 2016-2021 only, then tested on 2022-2025
+# (+0.38 margin MAE there, +0.21 over all ten seasons). Not to be re-tuned on
+# live results. Most of the gain is carrying less of last season overall
+# (0.75 -> ~0.42); the offense/defense difference is small.
+RIDGE_PENALTY = 300.0           # ridge penalty on the team coefficients, per play
+PRIOR_REGRESSION_OFF = 0.459    # last season's offense, kept this much
+PRIOR_REGRESSION_DEF = 0.394    # last season's defense, kept this much
 
 ELO_START = 1500.0
 ELO_K = 20.0
@@ -223,6 +235,47 @@ def _epa_by_team(pbp):
     return off, deff
 
 
+def _adjusted_by_team(pbp, neutral: set[str], penalty: float = RIDGE_PENALTY):
+    """`_epa_by_team`, with each mean adjusted for the opponents faced (P22).
+
+    A ridge fit of play EPA on offense + defense + home, solved exactly:
+    a big day against a bad defense is partly credited to that defense, so it
+    counts for less. Home is +1 / -1, and 0 at a neutral site; the intercept
+    is not penalised. Each team's mean becomes intercept + its coefficient,
+    i.e. its EPA against an average opponent at a neutral site. Play counts
+    stay raw: they only set how far this season outweighs the last."""
+    off, deff = _epa_by_team(pbp)
+    plays = pbp[pbp["play_type"].isin(["pass", "run"]) & pbp["posteam"].notna() & pbp["epa"].notna()]
+    if not len(plays):
+        return off, deff
+    teams = sorted(set(plays["posteam"]) | set(plays["defteam"]))
+    ix = {t: i for i, t in enumerate(teams)}
+    n, k = len(plays), len(teams)
+    X = np.zeros((n, 2 * k + 1))
+    rows = np.arange(n)
+    X[rows, plays["posteam"].map(ix).to_numpy()] = 1.0
+    X[rows, k + plays["defteam"].map(ix).to_numpy()] = 1.0
+    home = plays["game_id"].str.split("_").str[-1]
+    X[:, 2 * k] = np.where(plays["game_id"].isin(neutral), 0.0,
+                           np.where(plays["posteam"] == home, 1.0, -1.0))
+    y = plays["epa"].to_numpy(dtype=float)
+    x_mean, y_mean = X.mean(axis=0), y.mean()
+    Xc = X - x_mean
+    coef = np.linalg.solve(Xc.T @ Xc + penalty * np.eye(X.shape[1]), Xc.T @ (y - y_mean))
+    intercept = y_mean - x_mean @ coef
+    off = off.copy()
+    deff = deff.copy()
+    off["mean"] = [intercept + coef[ix[t]] if t in ix else m for t, m in zip(off.index, off["mean"])]
+    deff["mean"] = [intercept + coef[k + ix[t]] if t in ix else m for t, m in zip(deff.index, deff["mean"])]
+    return off, deff
+
+
+def _neutral_games(schedules_all) -> set[str]:
+    if schedules_all is None or "location" not in schedules_all:
+        return set()
+    return set(schedules_all.loc[schedules_all["location"] == "Neutral", "game_id"])
+
+
 def compute_ratings(season: int, week: int, schedules_all=None,
                     qb_conditional: bool | None = None) -> list[dict]:
     """EPA-based power rating in points, blended across seasons."""
@@ -236,8 +289,15 @@ def compute_ratings(season: int, week: int, schedules_all=None,
         print(f"  [warn] prior season pbp unavailable ({exc}); current season only")
         prior = current.iloc[0:0]
 
-    off_c, def_c = _epa_by_team(current)
-    off_p, def_p = _epa_by_team(prior)
+    if config.RATING_OPPONENT_ADJUST:
+        neutral = _neutral_games(schedules_all)
+        off_c, def_c = _adjusted_by_team(current, neutral)
+        off_p, def_p = _adjusted_by_team(prior, neutral)
+        r_off, r_def = PRIOR_REGRESSION_OFF, PRIOR_REGRESSION_DEF
+    else:
+        off_c, def_c = _epa_by_team(current)
+        off_p, def_p = _epa_by_team(prior)
+        r_off = r_def = PRIOR_SEASON_REGRESSION
 
     if qb_conditional is None:
         qb_conditional = config.QB_CONDITIONAL_PRIOR
@@ -251,8 +311,8 @@ def compute_ratings(season: int, week: int, schedules_all=None,
     teams = sorted(set(off_c.index) | set(off_p.index))
     rows = []
     for team in teams:
-        off = _blend(off_c, off_p, team)
-        dfn = _blend(def_c, def_p, team)
+        off = _blend(off_c, off_p, team, r_off)
+        dfn = _blend(def_c, def_p, team, r_def)
         if off is None or dfn is None:
             continue
         net_epa = off - dfn
@@ -285,14 +345,14 @@ def compute_ratings(season: int, week: int, schedules_all=None,
     return rows
 
 
-def _blend(current, prior, team):
+def _blend(current, prior, team, regression: float = PRIOR_SEASON_REGRESSION):
     """Shrink toward the prior season, weighted by current-season volume."""
     cur_mean = float(current.loc[team, "mean"]) if team in current.index else None
     cur_n = float(current.loc[team, "count"]) if team in current.index else 0.0
     pri_mean = float(prior.loc[team, "mean"]) if team in prior.index else None
 
     if pri_mean is not None:
-        pri_mean *= PRIOR_SEASON_REGRESSION
+        pri_mean *= regression
     if cur_mean is None:
         return pri_mean
     if pri_mean is None:
