@@ -47,3 +47,4 @@ dashboard/public/sims.json
 dashboard/public/props.json
 dashboard/public/sims_archive/
 dashboard/public/td_props.json
+research/**/*.pkl
