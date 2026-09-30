@@ -891,9 +891,11 @@ class Tracker:
             rows = self.store.select(table, where)
             if rows or self.store.backend == "sqlite":
                 return rows
-        except Exception:  # noqa: BLE001 - table not created yet
+        except Exception as exc:  # noqa: BLE001
             if self.store.backend == "sqlite":
                 return []
+            if not db.is_missing_table(exc):
+                raise             # P54: this cycle fails loudly; the next one retries
         try:
             if self.fallback is None:
                 self.fallback = db.SqliteStore()
@@ -1140,7 +1142,13 @@ class Tracker:
                 if self.store.backend == "sqlite":
                     print(f"  [warn] {table} write failed ({type(exc).__name__}); this cycle is in live.json only")
                     return
-                print(f"\n  [warn] cannot write {table} to {self.store.backend} ({type(exc).__name__}).")
+                if not db.is_missing_table(exc):
+                    # P54: a connection failure is not a missing table. Don't
+                    # divert the session to the mirror; the next cycle retries.
+                    print(f"\n  [ERROR] {table} write to {self.store.backend} failed ({type(exc).__name__}: {exc}).")
+                    print("          Not mirrored. This cycle is in live.json only; the next cycle retries.\n")
+                    return
+                print(f"\n  [warn] {table} does not exist in {self.store.backend} ({exc.code}).")
                 print("         It goes to the local SQLite mirror for the rest of this session.")
                 print("         Paste db/PASTE_INTO_SUPABASE.sql into the Supabase SQL Editor to create it.\n")
                 self.local_tables.add(table)
