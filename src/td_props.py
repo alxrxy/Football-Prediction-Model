@@ -79,6 +79,12 @@ TOP_N = 25
 # Gaps past this are held out as likely usage/depth-chart misses. Set from the
 # 2026-09-16 sample, not validated; independent of props.MAX_GAP.
 TD_MAX_GAP = 0.20
+# Single players held out by hand, (game_id, the books' name) -> reason; same
+# role as props.PROP_HOLDOUTS. Remove each once its cause is resolved.
+PLAYER_HOLDOUTS: dict[tuple[str, str], str] = {
+    ("2026_04_IND_WAS", "Marcus Mariota"): "WAS's starting QB is unresolved until the official week-4 report posts",
+    ("2026_04_IND_WAS", "Jayden Daniels"): "WAS's starting QB is unresolved until the official week-4 report posts",
+}
 
 CONFIDENCE = "exploratory"
 # Caveats re-checked against the live engine on 2026-09-20. The two defects
@@ -232,8 +238,11 @@ def rank(lines: dict, sims: dict[str, dict]) -> dict:
     started_ids = {r["game_id"] for r in started} - {r["game_id"] for r in rows}
     for gid, g in games.items():
         g["started"] = gid in started_ids
-    held = [r for r in rows if abs(r["gap"]) > TD_MAX_GAP]
-    ranked = sorted((r for r in rows if abs(r["gap"]) <= TD_MAX_GAP), key=lambda r: -abs(r["gap"]))
+    for r in rows:
+        if (note := PLAYER_HOLDOUTS.get((r["game_id"], r["odds_name"]))):
+            r["hold_note"] = note
+    held = [r for r in rows if abs(r["gap"]) > TD_MAX_GAP or r.get("hold_note")]
+    ranked = sorted((r for r in rows if abs(r["gap"]) <= TD_MAX_GAP and not r.get("hold_note")), key=lambda r: -abs(r["gap"]))
     for i, r in enumerate(ranked, 1):
         r["rank"] = i
     return {"ranked": ranked, "held_out": sorted(held, key=lambda r: -abs(r["gap"])),

@@ -231,6 +231,7 @@ STRUCTURAL_HOLDOUTS: dict[tuple[str, str], str] = {}
 # simulates 2 carries for 13 rushing yards, so there is nothing to hold out.
 PROP_HOLDOUTS: dict[tuple[str, str, str], str] = {}
 
+
 # A quarterback the books price as a starter whose simulation has him at a
 # median of zero is not a disagreement about the player, it is a disagreement
 # about who is playing (P28). Held out wherever it occurs, so this does not
@@ -238,6 +239,16 @@ PROP_HOLDOUTS: dict[tuple[str, str, str], str] = {}
 # QB_EXPECTED_STARTER with the rest of P28 part 1.
 QB_MARKETS = {"player_pass_yds", "player_pass_tds", "player_pass_attempts",
               "player_pass_completions", "player_pass_interceptions"}
+
+# 2026-09-30, IND @ WAS: who starts at QB is unresolved (the sim has Daniels at
+# ~55% from ESPN's "questionable"; the books price Mariota), so every WAS
+# quarterback prop measures that disagreement, not the player. Held until WAS's
+# official week-4 report posts; remove then (see KNOWN_GAME_ISSUES).
+_WAS_QB_NOTE = ("Held out: WAS's starting QB is unresolved until the official week-4 report posts "
+                "(the simulation starts Daniels in ~55% of games; the books price Mariota).")
+PROP_HOLDOUTS.update({("2026_04_IND_WAS", qb, m): _WAS_QB_NOTE
+                      for qb in ("Marcus Mariota", "Jayden Daniels")
+                      for m in ("player_pass_yds", "player_rush_yds")})
 
 
 def _starter_mismatch(market: str, position: str, line, q: dict) -> str | None:

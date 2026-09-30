@@ -72,6 +72,9 @@ def _slate_for(store, sport: str) -> tuple[str, list[dict], dict]:
 # the page rather than hidden. Remove each entry once the item is fixed or the
 # game has kicked off.
 KNOWN_GAME_ISSUES = {
+    "2026_04_IND_WAS": (
+        "Known issue (starting QB, P53 cross-check): WAS's official week-4 injury report hasn't posted yet. Last week's official statuses aren't carried over, so WAS runs on ESPN's feed, which lists Jayden Daniels as questionable, and the simulation starts him in about 55% of games. The books price Marcus Mariota, who started week 3 with Daniels out. Daniels is charged 2.09 points as questionable, against 4.65 as out in last night's numbers, which is most of why the baseline moved from IND by 12.2 to IND by 10.0. The baseline and ML lines, the simulation and WAS's passing numbers all rest on that 55%. WAS's quarterback props are held out until the official report posts (expected by Thursday morning), when this is re-checked."
+    ),
     "2026_04_LA_PHI": (
         "Known issue (P43): PHI's injury list counts WR Marquise Brown twice. The official week-3 report lists him as Marquise Brown (out, charged 0.29), and ESPN's week-4 feed lists him under his nickname, Hollywood Brown (questionable, charged 0.21). The two rows aren't matched, so both are charged: PHI's injury total is about 0.2-0.3 points too harsh, which leans the line that much toward LA. Nothing else in this game is affected. Left as a label rather than fixed mid-week."
     ),

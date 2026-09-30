@@ -132,6 +132,25 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-09-30 — Wednesday refresh; IND @ WAS labelled and WAS QB props held (starting QB unresolved)
+
+Refresh ~16:00Z on main (old rating; P22 / P51 untouched): fresh odds, injuries, depth, weather; both models re-predicted;
+week 4 re-simulated; fresh props (13/16 games) and TD lines (16/16); dashboard exported 16:03Z (P48 labels live: 13
+prior-season charges across 7 games). Odds quota 184 (resets 10/1).
+
+**The QB cross-check fired on IND @ WAS.** nflverse's week-4 file so far covers only CLE and PIT, and last week's
+official statuses are not carried over (P19), so WAS runs on ESPN's feed: Jayden Daniels questionable (0.55), charged
+2.09 (4.65 as out in last night's numbers, from the week-3 report). The sim starts him in ~55% of games; the books price
+Marcus Mariota. Baseline moved IND by 12.2 -> IND by 10.0 (market IND -3.5).
+
+**User decision:** label the game and hold WAS's QB props until the official report posts; re-check then (expected by
+Thursday morning); re-run nothing else. Done: `export_dashboard.KNOWN_GAME_ISSUES["2026_04_IND_WAS"]`;
+`props.PROP_HOLDOUTS` for Mariota and Daniels passing and rushing yards (Mariota's two priced props held); new
+`td_props.PLAYER_HOLDOUTS` holds Mariota's anytime-TD prop. Props and TD re-ranked on the same lines and the dashboard
+re-exported (16:09Z). **Remove all three once WAS's official report is in and the sim's QB matches the books.**
+
+---
+
 ## 2026-09-30 — P5 (NFL) run against its pre-set criteria: no cap; closed
 
 Criteria in P5's row, set with the user before this ran (and after the P22 replay's numbers were visible, as noted
