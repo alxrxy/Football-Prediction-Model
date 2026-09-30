@@ -31,7 +31,9 @@ from . import config, db
 from .features import parse_dt
 
 # ingest_nflverse: power_rating = (off EPA/play - def EPA/play) * PLAYS_PER_GAME,
-# and the prior season is weighted as PRIOR_PLAYS_WEIGHT plays.
+# and the prior season is weighted as PRIOR_PLAYS_WEIGHT plays. Since P22 the
+# EPA is adjusted for opponents faced and last season is kept at 0.459 (offense)
+# / 0.394 (defense) of its value, not 0.75 (config.RATING_OPPONENT_ADJUST).
 from .ingest_nflverse import PLAYS_PER_GAME, PRIOR_PLAYS_WEIGHT
 
 RECONCILE_TOL = 0.05
@@ -51,7 +53,7 @@ SYSTEM = (
     "probability as the percentage shown, never as 'coin-flip' or similar; describe a player's status only as "
     "it is given next to that player's name, and never move a caveat from one player to another; don't judge "
     "how reliable a factor is beyond what a caveat says; call the team rating "
-    "a 'team rating' or 'rating gap', never 'opponent-adjusted'; never recommend a bet, never say 'lock' or "
+    "a 'team rating' or 'rating gap', and describe how it is built only as a caveat does; never recommend a bet, never say 'lock' or "
     "'value'; no hype."
 )
 SCHEMA = {
@@ -175,10 +177,17 @@ def factors(game: dict, ratings: dict[str, dict] | None = None, prior: float | N
                 f"{team}'s injury list may count one player twice ({pair}); a known feed issue (P43).")
 
     if prior is not None:
-        out["caveats"].append(
-            # Rounded to 10%: this counts games, the rating itself counts plays.
-            f"Team ratings are still about {round(prior, 1):.0%} last season's play and are not "
-            "adjusted for opponents.")
+        # Rounded to 10%: this counts games, the rating itself counts plays.
+        if config.RATING_OPPONENT_ADJUST:
+            # P22. Most of its gain is carrying less of last season overall,
+            # not the offense/defense split, so the text says that.
+            out["caveats"].append(
+                f"Team ratings still lean about {round(prior, 1):.0%} on last season's play, but last season "
+                "is shrunk well toward average, and each team's numbers are adjusted for the opponents it has faced.")
+        else:
+            out["caveats"].append(
+                f"Team ratings are still about {round(prior, 1):.0%} last season's play and are not "
+                "adjusted for opponents.")
     if game.get("known_issue"):
         out["caveats"].append(game["known_issue"])
 
