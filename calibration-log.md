@@ -49,7 +49,7 @@ status only when its adoption test is met.
 | P19 | A partial injury pull must not retire other teams' reports: `latest_injury_report` keeps the latest pull *per source*, not per team/week as P1 intended | bug fix | 2026-09-16 | The 19:46Z week-2 nflverse pull held only BUF/DET (8 rows, the Thursday game). Because it was the newest nflverse pull, the week-1 nflverse report (91 rows) was silently dropped for the other 30 teams, which fell back to ESPN only. This time it helped by accident: the week-1 statuses were stale, e.g. Penix OUT, and CAR@ATL moved 0.60 → 4.77 when that row fell away. The same mechanism can just as easily drop a current report for most of the league in a future week, with no warning | none needed; correctness bug. Test: a pull covering 2 teams leaves every other team's latest report in force | **applied 2026-09-16** (`features.latest_injury_report`). Kept apart from the engine-change sequence because it is a data-pipeline correctness fix. For nflverse the report is now the latest week only, and within that week each team's latest pull; ESPN is unchanged (latest whole pull). Last week's statuses are deliberately not carried forward, so the 9/16 outcome (30 teams on ESPN until they file week 2) was the right one. Validated before landing: identical 137 selected rows on the live table, and injury_adj unchanged on all 16 week-2 games. The old code fails the new partial-pull test. Residual: a team whose whole report clears mid-week writes no rows, so its earlier same-week rows stay in force |
 | P20 | ESPN "Injured Reserve" status is discarded, so IR'd starters vanish instead of counting as out | bug fix | 2026-09-16 | `ingest_injuries._status` keeps only out/doubtful/questionable/probable. HOU LB To'oTo'o (0.88 snaps) went to IR 09-16 and dropped out of the injury layer, instead of costing HOU ~1.06 pts. **Scope measured 2026-09-17:** the 22:50Z league-wide pull carried **40** players at `Injured Reserve`, every one of them silently dropped — this is league-wide, not a one-team case. Tonight's DET@BUF: Isiah Pacheco (DET, IR) contributed nothing to the injury layer, so DET's burden is understated and the true term favours BUF by more than the 1.56 served | none needed; correctness bug | **FIXED 2026-09-22** (see that day's P20 entry). ESPN "Injured Reserve" now maps to status `ir` at play probability 0; an IR row with no snap share for that team is not emitted; the ESPN/nflverse merge dedups on `player_key`. Validated on the cached 09-18 pull: 27 of 39 IR rows ingested, 12 teams' charges move, HOU To'oTo'o exactly the 1.06 logged. **Dormant until ESPN answers again** (site.api has 403'd since 09-20) |
 | P21 | ESPN rows carry no practice participation, so every Questionable player plays at a flat 0.55 | logic | 2026-09-16 | Penix: full practice, charged 2.52 (0.80 → 1.12). Terrell: DNP, charged 0.70 (0.25 → 1.17). Burrow: "says he will play", charged 2.70. ESPN's `shortComment` states the practice level in plain text | practice-aware play probability does not worsen NFL injury-term fit (P9) | proposed (after P19) |
-| P22 | NFL power rating: no opponent adjustment; defense regressed the same as offense (×0.75); prior season carries ~94% in week 2 | logic | 2026-09-16 | CIN@HOU baseline −16.37 vs market −2.5. Of the +10.93 rating gap, +12.98 is the 2025 defensive EPA gap alone, −0.98 offense, −1.08 week 1. The only value flag on the week-2 slate comes from this. See also P5, P13 | rebuild with separate off/def regression (and opponent adjustment); weeks 1-4 and holdout MAE vs line must improve | proposed (after P19) |
+| P22 | NFL power rating: no opponent adjustment; defense regressed the same as offense (×0.75); prior season carries ~94% in week 2 | logic | 2026-09-16 | CIN@HOU baseline −16.37 vs market −2.5. Of the +10.93 rating gap, +12.98 is the 2025 defensive EPA gap alone, −0.98 offense, −1.08 week 1. The only value flag on the week-2 slate comes from this. See also P5, P13 | rebuild with separate off/def regression (and opponent adjustment); weeks 1-4 and holdout MAE vs line must improve. **Phase 1 bars, set with the user 2026-09-30 before running (research only):** on test seasons 2022-2025, settings frozen from 2016-2021: (1) pooled margin MAE improves >= 0.10 vs the P37 replay of the live rating, and is better in >= 3 of 4 test seasons; (2) weeks 1-4 MAE not worse; (3) no edge inflation: mean |edge| not above the replay's + 0.05, and ATS at |edge| >= 4 not more than 2 pp below the replay's; (4) implied totals MAE vs actual not worse; (5) attribution: A (opponent adjustment), B (separate off/def carry), C (garbage-time filter) each reported, and a part gaining < 0.03 is dropped; bars 1-4 judge the combination of the parts that clear it; (6) ML untouched; (7) reported, not a bar: P37's Test 2 ATS-information check on the new rating. Stop rule: bar 1 fails -> report and stop, no re-tuning. See the 2026-09-30 P22 phase-1 entry | proposed (after P19). **Phase 1 approved 2026-09-30 (research only, nothing live)** |
 | P23 | Usage shares: drop scrambles and kneels from carry shares (issue 2A) | bug fix | 2026-09-16 | `sim_data._usage_events` counts every `rush_attempt`, including 1,224 scrambles and 487 kneels (2025-26), while the engine separately credits every scramble to the QB. Read-only week-2 re-sim, 10k sims, 195 priced props: QB rush att 5.42 → 3.33 per team-game (real 2025 3.25), RB carries 20.54 → 22.61 (+10%), team rush att/yds and game totals/margins unchanged to 3 decimals. RB rush yds P(over) 0.329 → 0.393 vs market 0.500, about 40% of the RB gap. Receiving unchanged. See the 2026-09-16 entry | QB rush att ≈ 3.3 per team-game; RB carries up ≈ 10%; team rush totals, game totals and margins unchanged; rushing props correction re-fit with separate QB and RB offsets (P26) | **applied 2026-09-18** (moved ahead of the 9/22 plan at the user's call). Validated before landing, read-only week-2 re-sim: QB rush att 5.41 → 3.26 per team-game (real 3.25), RB carries 20.47 → 22.53 (+10.1%), team rush att/yds, game totals and margins identical to 4 decimals. See the 2026-09-18 entry |
 | P24 | Usage shares: QB-specific scramble rate (issue 2B) | logic | 2026-09-16 | The engine credits scrambles at the league rate (5.9% of dropbacks) whatever the QB (Goff 0.9%, Stafford 1.2%). With P23 applied, QB rush yds split both ways: runners well under (Lamar Jackson P(over) 0.146, Daniels 0.219), pocket QBs still over (D. Jones sim 19.4 vs 8.5 line, Purdy 21.6 vs 13.5) **Design walk-forward and read-only engine prototype 2026-09-19 (criteria written down first): all pass.** Scramble rate is a stable QB trait (r 0.87). A shrunk per-QB rate cuts scramble MSE 25.8% out of sample (8/8 weeks). The per-offense sampler factor leaves dropbacks, points and margins unchanged and moves QB rush att toward real for pocket QBs (err 1.22 → 0.26) and runners (1.51 → 0.64); QB rush-yds |gap| 0.163 → 0.116. See the 2026-09-19 P24 entry | QB rush att and rush-yds P(over) move toward real and market for both running and pocket QBs, with dropbacks, points and margins unchanged (**revised 2026-09-19** from "no change to team totals": running QBs' teams are meant to swap some pass attempts for scrambles). Full criteria in the 2026-09-19 P24 entry | **applied 2026-09-19** (user-approved build): per-offense scramble factor in the sampler, pregame and live. Re-validated with the same checks: production reproduces the prototype exactly, all criteria pass. Pass-yds offset refitted (−0.0212, provisional under P29). QB rushing props still held out, pending the user's decision. See the 2026-09-19 build entry |
 | P25 | Usage shares: use backups' own history beyond the playing slots; FB prior is zero (issue 1) | logic | 2026-09-16 | `blend_roles` gives players beyond QB1/RB2/WR3/TE1/FB1 only the slot average: 76 have their own red-zone share at least 2x that average (TE2s Njoku, Freiermuth, Mayer, Kmet all a flat 3.2%). D. Waller (CAR TE3, 14.1% of targets) is simulated at 2.3%, falls under `MIN_TOUCHES` and drops out of the box score. FBs are zeroed even with history (Heyward 14% of goal-line carries) | **revised 2026-09-18:** per-player target and carry shares closer to realised week-by-week shares (walk-forward, squared error). The original second clause, "starters not pushed further under their prop lines", assumed starters' shares were too low; the 2025 backtest shows they are already slightly too high (WR starters +5%, TE +3% against realised). A fix that corrects toward reality is the right direction even if it moves starters further under the market; that residual gap is the receiving investigation's to explain, not this item's | **applied 2026-09-19** as `k32+fb` (moved ahead of the 9/22 plan at the user's call): `sim_data.BACKUP_HISTORY_GAMES = 32`, and an FB with no slot prior keeps his own history. Re-validated before landing with the shipped `blend_roles`: identical shares to the 9/18 reference (max diff 0.0), and the 2025 walk-forward reproduces every locked number (tgt_all −4.5% 15/16 weeks, car_all −2.1% 8/16, tgt_rz −0.6% 15/16, car_gl −0.8% 10/16; weeks 11-18 −5.3 / −3.0 / −0.8 / −1.7). Live check: game totals, margins and team volume identical. Receiving offsets refitted (P26). See the 2026-09-19 entry |
@@ -217,6 +217,59 @@ adoptable as specified.** The live full trim stays.
 - It pays for that in per-player MAE and carries, where the many small shares dominate and the full trim, which zeroes
   fringe players, is closer. The criteria pull in opposite directions. Which matters more for props is the user's
   call, and props themselves can only be measured prospectively.
+
+---
+
+## 2026-09-30 — P22 phase 1 scoped: opponent-adjusted rating, walk-forward. Design and bars set before running
+
+User approval 2026-09-30: phase 1 only, research, nothing live touched. Everything below was fixed before any number
+was produced. The harness goes in `research/p22/`.
+
+**Baseline (R0).** P37's replay of the live Layer 1 (`compute_ratings`): per week, the season's earlier regular-season
+pass/run plays blended with the whole previous season (x0.75, 900-play weight), plus the live HFA / rest / travel /
+wind, graded against `training_nfl.csv` (`market_spread`, `target_margin`). **R0 must reproduce P37 before anything
+else is read:** 2,582 games, all-weeks ATS 1249-1270-63, corr(edge, cover residual) -0.008. No injury term, as in P37
+and P39.
+
+**Arms.** Each changes only the rating; everything else is identical to R0.
+- **A, opponent adjustment only.** Each season's team means come from a ridge fit on play-level EPA,
+  `epa ~ offense_team + defense_team + home` (home coded +1 / -1, 0 at a neutral site; intercept unpenalised).
+  Adjusted offense = intercept + offense coefficient, adjusted defense = intercept + defense coefficient (neutral-site).
+  They go into the live blend unchanged (x0.75, 900 plays, raw play counts). The current season is fit on its
+  earlier weeks; the prior season on all of it.
+- **B, separate offense/defense carry only.** Raw means as live. The prior-season factor is split into r_off and r_def,
+  each estimated on 2016-2021 as the through-origin slope of a team's regular-season mean EPA on its previous season's
+  (league-centred, pooled over the season pairs 2015->16 ... 2020->21). The 900-play weight is unchanged.
+- **C, garbage-time filter only.** As live, but plays in the 4th quarter with the offense's win probability below 0.10
+  or above 0.90 are dropped from both seasons. The threshold is fixed, not tuned; plays with no wp are kept.
+- **ABC** all three, with B's factors re-estimated on the same A+C means; plus **the candidate**, the combination of
+  the parts that clear bar 5.
+
+**Tuning, on 2016-2021 only.** Ridge penalty from {10, 30, 100, 300, 1000, 3000}. Pick the one with the lowest
+training margin MAE, then take the largest penalty whose MAE is within one standard error (sd(|error|)/sqrt(n)) of
+that minimum, leaning toward more shrinkage. B's factors are estimated, not tuned. Everything is frozen before the
+test seasons are read.
+
+**Test:** 2022-2025. **Reported, not gated:** training seasons, and 2026's rows in the training file.
+
+**Bars** (as in P22's row):
+1. The candidate's pooled test margin MAE improves >= 0.10 on R0, and it is better in >= 3 of the 4 test seasons.
+2. Test weeks 1-4 MAE not worse than R0.
+3. No edge inflation: test mean |edge| <= R0's + 0.05, and the ATS win % at |edge| >= 4 no more than 2 pp below R0's.
+4. Totals: implied total MAE vs actual not worse than R0's. The implied total is
+   `2 L + 63 x [(off_h - off_bar) + (off_a - off_bar) + (def_h - def_bar) + (def_a - def_bar)]`, with L the previous
+   season's league points per team-game and the bars the week's league means of that arm's ratings. This is a proxy
+   for the sim's totals, since finished weeks are never re-simulated.
+5. Attribution: A, B and C each vs R0 on test MAE. A part gaining < 0.03 is dropped. Bars 1-4 judge the candidate.
+   If no part clears 0.03, P22 fails.
+6. ML untouched: `build_training.py`, `RollingEpa`, `training_nfl.csv` and the model files are byte-identical before and
+   after, and no file outside `research/p22/` is written.
+7. **Reported, not a bar (user addition):** P37's Test 2 on the candidate and on R0: ATS by |edge| at 0/2/3/4/6,
+   corr(edge, cover residual) with 95% CI, and the through-origin slope b, for all weeks and weeks 1-4, on the test
+   seasons and on all ten. Plus P37's permutation test on the lean slope. Stated plainly whichever way it comes out.
+
+**Stop rule.** If bar 1 fails: report and stop. No second penalty grid, no threshold change, no re-tuning after the
+test seasons are seen.
 
 ---
 
