@@ -194,6 +194,14 @@ export default function GameDetail({ game, embedded = false }) {
                             {item.snap_share != null
                               ? `${Math.round(item.snap_share * 100)}% snaps`
                               : ''}
+                            {item.share_label ? (
+                              <span className={`share-src ${item.share_source}`}
+                                    title={item.share_source === 'prior'
+                                      ? "No snaps this season: this is last season's share, carried over (P48)"
+                                      : 'No snaps in either season: the default share is used'}>
+                                {item.share_label}
+                              </span>
+                            ) : null}
                           </span>
                         </li>
                       ))}
@@ -203,6 +211,13 @@ export default function GameDetail({ game, embedded = false }) {
               ))}
             </div>
           )}
+          {game.prior_season_shares?.length ? (
+            <p className="muted small">
+              {game.prior_season_shares.length === 1 ? 'One charge uses' : `${game.prior_season_shares.length} charges use`}{' '}
+              last season&rsquo;s snap share (marked above): the player has no snaps this season, so the
+              role may have changed. Labelled only; the numbers are unchanged (P48).
+            </p>
+          ) : null}
 
           <h4 className="spaced">Market</h4>
           {game.books.length === 0 ? (

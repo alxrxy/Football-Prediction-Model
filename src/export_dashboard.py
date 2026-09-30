@@ -149,6 +149,11 @@ def build(sport: str, explain: bool = True) -> dict:
             }
         )
 
+    if sport == "nfl" and out_games:
+        # Display only (P48 labels): where each charged player's snap share came from.
+        season = int(games[0].get("season") or datetime.now(timezone.utc).year)
+        label_share_sources(out_games, season)
+
     # Display only (P52): movement since first tracked and since the week
     # reopened, from the append-only snapshots. A single pull gives None.
     line_movement.attach(out_games, [r for r in db.select_merged(store, "odds_snapshots") if r["game_id"] in ids],
@@ -206,6 +211,35 @@ def _pred(row: dict | None) -> dict | None:
         "market_win_prob_home": components.get("market_win_prob_home"),
         "generated_at": row.get("generated_at"),
     }
+
+
+def label_share_sources(games: list[dict], season: int, sources: dict | None = None) -> None:
+    """Label each displayed injury row with where its snap share came from
+    (P48; display only, no number changes): 'current' season, 'prior' season
+    (a carry-over nothing else flags) or 'default' (no snaps in either).
+
+    A prediction made since P48 carries the tag in its breakdown. One made
+    before it doesn't, so its rows are looked up in the snap feed, fetched
+    only if some row needs it. A row that still can't be told is left
+    unlabelled rather than guessed."""
+    from .features import share_source
+
+    for g in games:
+        prior_rows = []
+        for side in ("home", "away"):
+            team = g[side]
+            for item in g["injuries"][side]:
+                src = item.get("share_source")
+                if src is None:
+                    if sources is None:
+                        from .ingest_injuries import snap_share_sources
+                        sources = snap_share_sources(season)
+                    src = share_source(team, item.get("player"), item.get("snap_share"), sources)
+                item["share_source"] = src
+                item["share_label"] = {"prior": f"{season - 1} share", "default": "default share"}.get(src)
+                if src == "prior":
+                    prior_rows.append({"team": team, "player": item.get("player"), "points": item.get("points")})
+        g["prior_season_shares"] = prior_rows
 
 
 def _injury_list(baseline: dict | None, key: str) -> list[dict]:

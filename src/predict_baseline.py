@@ -177,6 +177,11 @@ def run(target: date | None = None, sport: str = "ncaaf", all_upcoming: bool = F
 
     games.sort(key=lambda g: (parse_dt(g.get("kickoff_time")) or now))
     ctx.load_prices(g["game_id"] for g in games)
+    if sport == "nfl" and games:
+        # P48 labels: tag each stored injury row with where its snap share
+        # came from. Display only; no number reads it.
+        from .ingest_injuries import snap_share_sources
+        ctx.share_sources = snap_share_sources(max(int(g["season"]) for g in games))
 
     predictions, skipped = [], []
     for game in games:

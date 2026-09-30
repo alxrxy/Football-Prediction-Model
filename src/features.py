@@ -123,6 +123,33 @@ def _share_or_default(row: dict) -> float:
     return DEFAULT_SNAP_SHARE if share is None else float(share)
 
 
+# A breakdown rounds shares to 3 dp, so a stored share is matched to within
+# half a unit of that; the 1e-9 keeps a float half-way case (0.3725 -> 0.372) in.
+SHARE_MATCH_TOLERANCE = 5e-4 + 1e-9
+
+
+def share_source(team, player, share, sources: dict) -> str | None:
+    """Where a charged snap share came from (P48; display only, no number uses it).
+
+    'current' (this season's snaps), 'prior' (last season's, carried over
+    because the player has none this season) or 'default' (no snaps in either,
+    so DEFAULT_SNAP_SHARE). `sources` is `ingest_injuries.share_sources`. A
+    label is given only when the share matches that season's value, so a share
+    read at a different time than `sources`, or an empty map, is None (unknown)
+    rather than mislabelled."""
+    if share is None:
+        return "default"
+    from .ingest_injuries import player_key
+
+    hit = sources.get(player_key(team, player or ""))
+    if hit is None:
+        if sources and abs(float(share) - DEFAULT_SNAP_SHARE) <= SHARE_MATCH_TOLERANCE:
+            return "default"
+        return None
+    label, value = hit
+    return label if abs(float(share) - value) <= SHARE_MATCH_TOLERANCE else None
+
+
 def score_injuries(rows: list[dict], sport: str) -> tuple[float, list[dict]]:
     """Cost of one team's injury report, in points. Negative = weakened.
 
@@ -178,6 +205,7 @@ def score_injuries(rows: list[dict], sport: str) -> tuple[float, list[dict]]:
                 "snap_share": round(float(snap_share), 3),
                 "play_prob": round(float(play_prob), 2),
                 "points": round(cost, 2),
+                "share_source": row.get("share_source"),
             }
         )
 
@@ -462,6 +490,10 @@ class FeatureContext:
         self.venues = {v["venue_id"]: v for v in store.select("venues")}
         self.weather = {w["game_id"]: w for w in store.select("weather")}
         self.injuries = latest_injury_report(store.select("injuries", {"sport": sport}))
+        # Snap-share sources for the P48 labels (display only). Filled by the
+        # caller that stores a breakdown (predict_baseline), so the live
+        # tracker and the sim never fetch it; empty leaves rows unlabelled.
+        self.share_sources: dict = {}
         if sport == "nfl":
             self.qb_holds: list[dict] = []
             self.injuries = apply_inactives(self.injuries, db.select_merged(store, "inactives"),
@@ -619,7 +651,8 @@ class FeatureContext:
         has no rows at all, which the report surfaces rather than silently
         treating an unreported team as fully healthy.
         """
-        rows = [i for i in self.injuries if i.get("team") == team]
+        rows = [dict(i, share_source=share_source(team, i.get("player"), i.get("snap_share"), self.share_sources))
+                for i in self.injuries if i.get("team") == team]
         if not rows:
             return 0.0, False, []
         points, breakdown = score_injuries(rows, self.sport)
