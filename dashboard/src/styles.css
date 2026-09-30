@@ -215,6 +215,9 @@ ul.injuries li { display: grid; grid-template-columns: 42px 1fr auto; gap: 8px; 
 ul.injuries .pts { font-family: var(--mono); color: var(--bad); text-align: right; }
 ul.injuries .who em { display: block; font-style: normal; color: var(--text-dim); font-size: 11px; }
 ul.injuries .snap { font-family: var(--mono); color: var(--text-dim); font-size: 11px; }
+ul.injuries .share-src { display: block; font-size: 10px; letter-spacing: .02em; }
+ul.injuries .share-src.prior { color: var(--warn, #d9a441); }
+ul.injuries .share-src.default { color: var(--text-dim); }
 ul.books li { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; padding: 2px 0; }
 ul.line-move li { grid-template-columns: auto 1fr auto; }
 p.muted.small { font-size: 11px; margin: 4px 0 0; }

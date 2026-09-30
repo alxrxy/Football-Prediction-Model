@@ -144,6 +144,41 @@ def _snap_shares(season: int) -> dict[tuple[str, str], float]:
     return merge_snap_shares(frames)
 
 
+def share_sources(frames_by_year: dict[int, object], season: int) -> dict[tuple[str, str], tuple[str, float]]:
+    """(team, player) -> (source, share): which season `merge_snap_shares`
+    takes each player's share from, and that share (P48 label; display only).
+
+    Built from `merge_snap_shares` itself, one season at a time, so the share
+    here is exactly the one the injury layer charges: 'current' where the
+    player has current-season snaps, 'prior' where he only has last season's.
+    A player in neither has no share, and the injury layer uses its default."""
+    out: dict[tuple[str, str], tuple[str, float]] = {}
+    for year in (season, season - 1):
+        df = frames_by_year.get(year)
+        if df is None or not len(df):
+            continue
+        label = "current" if year == season else "prior"
+        for key, share in merge_snap_shares([df]).items():
+            out.setdefault(key, (label, share))
+    return out
+
+
+def snap_share_sources(season: int) -> dict[tuple[str, str], tuple[str, float]]:
+    """`share_sources` from nflverse snap counts. Empty if either season's
+    feed fails: with one season missing every label would be wrong, and an
+    empty map leaves rows untagged rather than mislabelled."""
+    import nfl_data_py as nfl
+
+    frames = {}
+    for year in (season, season - 1):
+        try:
+            frames[year] = nfl.import_snap_counts([year])
+        except Exception as exc:  # noqa: BLE001 - a label only; no data means no label
+            print(f"  [warn] snap counts {year} unavailable ({exc}); share sources not labelled (P48)")
+            return {}
+    return share_sources(frames, season)
+
+
 def merge_snap_shares(frames) -> dict[tuple[str, str], float]:
     """Mean snap share per (team, player), taking each player from the first
     (most recent) frame that has him."""
