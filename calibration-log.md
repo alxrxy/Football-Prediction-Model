@@ -32,7 +32,7 @@ status only when its adoption test is met.
 | P2 | Stop pricing unknown-snap QBs at 35% of a starter | logic | 2026-09-13 | 8/13 NFL games carry a ~2.1 pt charge for a backup/rookie QB. Graded 9/13: 5 games affected; removing the charges flips 2 leans (ATL@PIT, NO@DET), both to wins, 3-10 → 5-8 | rebuild NFL training with the change; holdout MAE vs line must not get worse | proposed; see the 2026-09-22 cross-reference "QB mismatch: one mechanism, three observations" (P2 / P9 / P37). |
 | P3 | Replace the flat FCS proxy (-28); grade proxy games separately | logic + reporting | 2026-09-12 | proxy games: model MAE 17.1 vs market 10.8, ATS 13-20 | proxy-game MAE within 2 pts of the market over 100+ games | proposed |
 | P4 | Make confidence tiers discriminate: SP+/Elo agreement, early-season demotion | logic | 2026-09-12 | 47/47 rated CFB games "high"; 9/13 NFL: 13/13 "high" in both models and 13/13 sims. Season: "high" = every rated game (26-34 ATS), "low" = only FCS proxies, "medium" never assigned. The agreement signal did *not* carry to NFL: baseline/ML agree 1-6, disagree 2-3 | "high" beats "medium" ATS over 200+ graded games | proposed; agreement signal now 18-20 agree / 8-13 disagree across both sports, i.e. unproven |
-| P5 | Upper edge cap for early-season edges (large edge = stale rating) | threshold | 2026-09-12 | CFB rated \|edge\| 6-10 went 2-7. NFL wk 1 \|edge\| ≥ 6 went 0-4, MAE 15.6 vs market 8.1; NFL ratings are ~94% prior season this week | \|edge\|>8 (CFB) / >6 (NFL) in weeks 1-4 loses ATS over 60+ games **Criteria set with the user 2026-09-30, one question at a time (supersede the line above; NFL only):** (Q1) **claim = size-reliability:** in weeks 1-4, is a large edge less reliable ATS than a moderate one? A cap moves no lean to the other side; it only shrinks large early edges (and can drop flags). The margin-error comparison (large early edges vs the line, in points) is reported alongside, not a gate. (Q2) **bar = P37's slope test:** cap only if the weeks 1-4 lean slope (ATS result on edge size) is negative with permutation p < 0.05. (Sample, user: the P22 phase-1 walk-forward replay already run, P22 rating (A+B), weeks 1-4 of 2016-25, 635 games; rating edges, before injuries and the market blend.) **Set after the replay's numbers were visible:** lean slope +0.044 (perm p 0.858); 6+ went 30-19 (61%) vs 3-6 at 93-83 (53%, derived from the table's >=3 and >=6 rows); every candidate bar read 'no cap'. (Q3) **College split off** as P56; P5 is NFL-only. (Q4) **If 'no cap': close P5 (NFL)** on the replay; after week 4 is graded, run the same slope test on the 62 live served 2026 weeks 1-4 edges and log it as information only; reopen only if a full season of served edges shows a negative slope at p < 0.05 | proposed; extended to NFL 2026-09-14; **criteria set 2026-09-30, not yet run** |
+| P5 | Upper edge cap for early-season edges (large edge = stale rating) | threshold | 2026-09-12 | CFB rated \|edge\| 6-10 went 2-7. NFL wk 1 \|edge\| ≥ 6 went 0-4, MAE 15.6 vs market 8.1; NFL ratings are ~94% prior season this week | \|edge\|>8 (CFB) / >6 (NFL) in weeks 1-4 loses ATS over 60+ games **Criteria set with the user 2026-09-30, one question at a time (supersede the line above; NFL only):** (Q1) **claim = size-reliability:** in weeks 1-4, is a large edge less reliable ATS than a moderate one? A cap moves no lean to the other side; it only shrinks large early edges (and can drop flags). The margin-error comparison (large early edges vs the line, in points) is reported alongside, not a gate. (Q2) **bar = P37's slope test:** cap only if the weeks 1-4 lean slope (ATS result on edge size) is negative with permutation p < 0.05. (Sample, user: the P22 phase-1 walk-forward replay already run, P22 rating (A+B), weeks 1-4 of 2016-25, 635 games; rating edges, before injuries and the market blend.) **Set after the replay's numbers were visible:** lean slope +0.044 (perm p 0.858); 6+ went 30-19 (61%) vs 3-6 at 93-83 (53%, derived from the table's >=3 and >=6 rows); every candidate bar read 'no cap'. (Q3) **College split off** as P56; P5 is NFL-only. (Q4) **If 'no cap': close P5 (NFL)** on the replay; after week 4 is graded, run the same slope test on the 62 live served 2026 weeks 1-4 edges and log it as information only; reopen only if a full season of served edges shows a negative slope at p < 0.05 | **CLOSED 2026-09-30 (NFL): no cap.** P37 lean slope on the P22 replay, weeks 1-4 2016-25 (635 games): **+0.044, permutation p 0.859**; 6+ edges 30-19 (61%) vs 3-6 93-83-5 (53%). Reported, not a gate: on 6+ edges the rating's margin MAE is 11.22 vs the line's 10.03 (+1.19; 3-6 +0.57; under 3 +0.00), so large early edges are further off in points even though they won ATS. `research/p5/p5_replay.py`, results in `research/p5/p5_results.md`. **Follow-up queued (information only):** after week 4 is graded (after MNF 10/5), the same slope test on the 62 live served 2026 weeks 1-4 edges. Reopen only if a full season of served edges shows a negative slope at p < 0.05. College: see P56 |
 | P6 | CFB home field 2.4 → ~2.8 | weight | 2026-09-12 | slate: model leaned away 30/47, -2.1 pts vs market; history: market-implied HFA 3.2 (2017-25) but 0.5 in 2025 | mean signed edge on non-neutral games < -1.0 across 4+ weeks | watch |
 | P7 | Do not use the CFB ML model's margins until its compression is explained | investigate | 2026-09-12 | mean \|ML margin\| 9.5 vs actual 24.7; MAE 20.6. *Correction 09-15: the "Georgia −27 vs market −69.5" example below used an in-play line (P15); DK closed −40.5* | n/a, diagnose first | investigate |
 | P8 | NFL: consider the ML margin (or a blend) as the headline number | model selection | 2026-09-14 | 9/13: ML SU 10/13 vs baseline 6/13, MAE 11.46 vs 13.10, Brier 0.214 vs 0.256; ATS both poor (4-8, 3-10) | ML MAE below baseline MAE over 4+ NFL weeks (~60 games), and not worse vs market | watch |
@@ -125,6 +125,33 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-30 — P5 (NFL) run against its pre-set criteria: no cap; closed
+
+Criteria in P5's row, set with the user before this ran (and after the P22 replay's numbers were visible, as noted
+there). `research/p5/p5_replay.py` rebuilds the frozen P22 candidate (A+B: ridge penalty 300, carry off 0.459 /
+def 0.394, recomputed with the harness's own `carry_factors`, no tuning) and first reproduced the published weeks 1-4
+row exactly: n 635, >= 3 at 123-102-5, >= 6 at 30-19, lean slope +0.044.
+
+- **Gate (P37 lean slope, weeks 1-4):** +0.044, permutation p 0.859 (10,000 permutations; the published 0.858 used
+  the harness's shared random stream). Not negative, so **no cap. P5 (NFL) closed.**
+- **Reported, not a gate:**
+
+| abs edge, weeks 1-4 | n | ATS | model MAE | line MAE | model - line |
+|---|---|---|---|---|---|
+| < 3 | 405 | 212-186-7 (53%) | 9.49 | 9.49 | +0.00 |
+| 3 to < 6 | 181 | 93-83-5 (53%) | 11.14 | 10.57 | +0.57 |
+| >= 6 | 49 | 30-19 (61%) | 11.22 | 10.03 | +1.19 |
+| all | 635 | 335-288-12 (54%) | 10.10 | 9.84 | +0.25 |
+
+  The points story and the ATS story disagree: large early edges are further from the result than the line (the
+  stale-rating mechanism P5 was built on), yet they won ATS. A cap would shrink exactly the leans that won. 49 games
+  is a small bucket, so the 61% is not a finding either; it only rules out the loss P5 needed.
+- **Queued (information only):** the same slope test on the 62 live served 2026 weeks 1-4 edges once week 4 is
+  graded (after MNF 10/5). It does not reopen P5; a full season of served edges with a negative slope at p < 0.05 does.
+- College is P56, open.
 
 ---
 
