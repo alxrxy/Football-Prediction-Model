@@ -49,3 +49,4 @@ dashboard/public/sims_archive/
 dashboard/public/td_props.json
 dashboard/public/scenarios.json
 research/**/*.pkl
+dashboard/public/p62_compare.json

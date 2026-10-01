@@ -658,6 +658,15 @@ def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = Fa
             print(f"  [P62 shadow] ranking sims kept in {folder.parent.name}/{folder.name}")
     except Exception as exc:  # noqa: BLE001
         print(f"  [warn] P62 shadow: ranking sims not kept ({exc}); nothing served changed")
+    # P62 S8(c): refresh the props-page comparison from the saved shadow files.
+    # Its own file only; a failure leaves the last one (or none) in place.
+    try:
+        from .p62_compare import PUBLIC_P62_JSON, export
+
+        verdict = export()["verdict"]
+        print(f"  [P62 shadow] comparison -> {PUBLIC_P62_JSON.name}: " + ", ".join(f"{k} {v}" for k, v in verdict.items()))
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [warn] P62 comparison not refreshed ({exc}); nothing served changed")
     return payload
 
 
