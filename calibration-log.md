@@ -93,7 +93,7 @@ status only when its adoption test is met.
 | P63 | Game side: real bet-% / money-% splits (Sportradar Betting Splits) as a cross-check on value flags | investigate | 2026-09-30 | **No access.** All five Sportradar keys return 401 on the documented endpoint (`api.radar360.sportradar.com/insights/v2/bettingsplits/nfl/en/game/{sr:match id}`, both header styles); the docs say the splits token is separate from the sports-API key and that trial access is arranged through a sales rep; v2 is retired 9/30 for v3, whose path is not public. So nothing could be compared with P52. Prior against it: P37 found the baseline edge carries no ATS information at any size, and closing-line CLV runs slightly negative, so a signal that must beat the close is starting from a weak model side. **Also a design limit:** splits appear to be current values only, so there is no history to walk forward; any test needs forward capture | (if access is obtained; set before any capture) hypothesis: flagged games where money % exceeds bet % on the flagged side by >= 15 pp (sharper money) cover more than flagged games against it. Capture splits at each odds pull, forward only; test on >= 65 flagged games (most of a season at the current flag rate), bar = the P37 / baseline trust rule (52.4%, p < 0.05). Display-only until then | **blocked 2026-09-30: no key.** Get a splits token (sales) first, and its terms, before scoping further |
 | P64 | Injuries: a hand-transcribed injury/practice file (read from report screenshots) merged into the live injury layer before a refresh | data | 2026-09-30 | No scraped source is allowed or affordable for the official team reports (P47: team pages banned by terms; FantasyPros free tier 10 rows/request), and nflverse/ESPN can lag a team's report on game day. The user can read reports from screenshots. The live layer uses only (game status, one practice level) through `ingest_injuries.PLAY_PROBABILITY`; no per-day logic exists (P47 not built) | see the 2026-09-30 P64 entry: C1-C8, set before the build | **BUILT 2026-09-30, C1-C8 pass; not yet used live** (first use: whenever a `data/manual_injuries/<season>-wk<NN>.csv` is present at a refresh; none exists, so nothing has changed). `src/manual_injuries.py`; merge in `ingest_injuries.run`; read side in `features.latest_injury_report`; `run_sunday` stops the refresh on an invalid file. See the 2026-09-30 P64 entry's results. Days 1-2 are kept in the file but unused (user: not folded into P47's trend-table decision; revisit when P47 is scoped) |
 | P65 | Sportradar: P61's live capture runs through the rotating key manager, whose multi-key use has not been checked against Sportradar's trial terms | terms / data | 2026-09-30 | Raised during P62's S7 review (user, 9/30): P62's shadow is restricted to KEY1 with no rotation until the multi-key terms are known, because five trial keys used to extend quota may breach a one-trial-per-person term. P61 (`capture_prop_closes`, live since 9/30) calls through `sportradar.KeyManager`, which moves to the next of `SPORTRADAR_API_KEY1..5` when a key reaches `MONTHLY_QUOTA - QUOTA_MARGIN` (1000 - 50) calls for a product in a UTC month. **Checked 2026-09-30 (`data/sportradar/usage.jsonl`, 28 calls):** no `switch` event yet; all P61 calls on KEY1; KEY2-5 have 2 calls each, all from the 9/30 diagnosis (every key tested on Betting Splits and the NFL / props APIs), not rotation. P61's ~610 calls/month plus P62's ~215 stay under 950 on KEY1, so rotation is not expected in October, but nothing stops it | (proposed, confirm with user) (1) Sportradar's terms on holding and using multiple trial keys are found and cited (account page, terms, or a written answer); (2) until then, P61 and P62 use KEY1 only and stop with a log line at the margin instead of rotating; (3) any past rotation is listed from `usage.jsonl` (none as of 9/30) | **logged 2026-09-30, nothing changed** (user: check separately whether P61 has been operating within confirmed terms). Belongs with P62 S7(d), which needs the same terms |
-| P66 | Scenarios: for a game whose starting QB is genuinely unresolved, show the prediction under each realistic starter, on demand | display / tooling | 2026-10-01 | IND @ WAS (Daniels questionable, books price Mariota) and NYJ @ CHI (sim Keenum, books Bagent) are served on one assumed starter; the 10/1 manual Bagent-vs-Keenum scratch run showed what the alternative looks like. Nothing repeatable exists | (proposed, confirm with user before building) see the 2026-10-01 'P66 scoped' entry | **scoped 2026-10-01, not built** (user: scope first) |
+| P66 | Scenarios: for a game whose starting QB is genuinely unresolved, show the prediction under each realistic starter, on demand | display / tooling | 2026-10-01 | IND @ WAS (Daniels questionable, books price Mariota) and NYJ @ CHI (sim Keenum, books Bagent) are served on one assumed starter; the 10/1 manual Bagent-vs-Keenum scratch run showed what the alternative looks like. Nothing repeatable exists | (proposed, confirm with user before building) see the 2026-10-01 'P66 scoped' entry | **BUILT 2026-10-01, all criteria pass; panel shown to the user, NOT final until they approve it.** On demand only (`python -m src.scenarios --publish`), not wired into `run_sunday`. See the 2026-10-01 'P66 built' entry. Criteria confirmed 2026-10-01 as proposed (user) |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -135,6 +135,53 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-10-01 — P66 built: QB scenarios; all criteria pass; panel awaiting the user's review
+
+`src/scenarios.py` (on demand: `python -m src.scenarios [--game ID] [--publish]`), `dashboard/src/ScenarioPanel.jsx`
+(on the game page under the known-issue box), `data/scenarios.json` + `dashboard/public/scenarios.json`,
+`tests/test_scenarios.py` (14 checks). The store is wrapped read-only (writes raise). Scenarios run at the served sim's
+count (10,000), so the control can reproduce it and differences from it aren't sampling noise.
+
+**Week 4 candidates (found from existing signals, nothing hand-picked):** IND @ WAS (Daniels questionable; books price
+Mariota), NYJ @ CHI (Williams doubtful; sim Keenum; books Bagent), TEN @ BAL (Lamar Jackson questionable, from the
+report; no known-issue label on this game).
+
+| Game | Scenario | Baseline | Home win | Sim QB (att, yds) |
+|---|---|---|---|---|
+| IND @ WAS | as served | IND by 11.3 | 17% | Daniels/Mariota mix 23, 137 |
+| | Daniels plays | IND by 9.2 | 23% | Daniels 30, 207 |
+| | Daniels out (Mariota, the books' QB) | IND by 12.3 (cap binds) | 15% | Mariota 32, 214 (props unreliable) |
+| NYJ @ CHI | as served | CHI by 11.6 | 83% | Keenum 30, 234 |
+| | Williams plays | CHI by 15.9 | 90% | Williams 29, 245 |
+| | Williams out (Keenum) | CHI by 11.6 (cap binds) | 82% | Keenum 31, 243 |
+| | Bagent starts (the books' QB) | CHI by 11.6 (cap binds) | 83% | Bagent 30, 235 (props unreliable) |
+| TEN @ BAL | as served | BAL by 10.5 | 81% | Jackson 21, 140 |
+| | Jackson plays | BAL by 13.2 | 86% | Jackson 28, 217 |
+| | Jackson out (Huntley) | BAL by 9.5 (cap binds) | 78% | Huntley 28, 208 |
+
+"Cap binds": the team's injury charge is already at the 8-point cap (`INJURY_MAX_POINTS`), so ruling the QB out moves
+the margin little or not at all (CHI: Williams 5.02 -> 5.58 pts, total 8.78 -> 9.34, both capped at 8.0). Not a bug;
+the panel tags it so a flat row doesn't read as an error.
+
+**Criteria (confirmed 2026-10-01), all pass:**
+- **C1 control reproduces the served sim:** IND @ WAS, NYJ @ CHI, TEN @ BAL all True at 10,000 sims. The first
+  validation run reported False for all three; the field-by-field diff showed only stamps (`generated_at`, the anchor's
+  label, `td_scorers.depth_chart_as_of`, a file timestamp) and number formatting (the store returns 20 where a fresh run
+  has 20.0). The comparison now normalises those and compares every produced value; a test pins that a produced value
+  differing still fails.
+- **C2 margin == baseline re-run by hand** (served components with only that team's charge recomputed through
+  `score_injuries`): 7/7 scenarios within 0.01.
+- **C3 served outputs unchanged:** the served data and dashboard files byte-identical; `predictions`,
+  `game_simulations`, `injuries` rows unchanged (counts and hashes).
+- **C4** caveat on every game; backup-QB props (Mariota, Bagent) marked unreliable.
+- **C5** suite 247 passed.
+
+**Not done, by design:** not wired into `run_sunday` (on demand until the user approves the panel); scenarios are
+published only by `--publish`. The published week-4 file was generated 07:50Z and retires per game when its inactive
+list posts or at kickoff.
 
 ---
 

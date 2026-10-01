@@ -305,3 +305,11 @@ td.final .won { color: var(--text); font-weight: 700; }
 .graded tr.proxy .matchup strong { font-weight: 500; opacity: 0.8; }
 
 footer { margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--border); }
+
+/* --- P66 starting-QB scenarios (comparison only) --- */
+.card.scenarios { margin-top: 12px; }
+.scenarios-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.scenarios-head h3 { margin: 0; font-size: 14px; }
+.scenarios .tag { margin-left: 6px; }
+.scenario-props { margin-top: 8px; font-size: 12.5px; }
+.scenario-props summary { cursor: pointer; color: var(--text-dim); }
