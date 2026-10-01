@@ -96,6 +96,20 @@ def test_kicked_off_games_get_no_note():
     check("played game keeps no explanation", g.get("explanation"), None)
 
 
+def test_close_game_marked_from_served_win_probability():
+    """A game whose baseline win probability shows as 45-55% (rounded) is marked
+    close, so its note explains why it is close; outside that range it isn't."""
+    for wp, want in ((0.5185, True), (0.4499, True), (0.446, True), (0.444, False), (0.553, True),
+                     (0.556, False), (None, False)):
+        g = game()
+        g["baseline"]["win_prob_home"] = wp
+        f = ge.factors(g)
+        check(f"win prob {wp} -> close {want}", f["close"], want)
+        check(f"win prob {wp}: prompt line marks it only when close",
+              "close game:" in ge.describe(g["game_id"], f), want)
+    check("prompt asks close games why they are close", "explain why it is close" in ge.SYSTEM, True)
+
+
 if __name__ == "__main__":
     for t in [v for k, v in dict(globals()).items() if k.startswith("test_")]:
         t()

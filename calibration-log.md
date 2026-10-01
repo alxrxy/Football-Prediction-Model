@@ -93,6 +93,7 @@ status only when its adoption test is met.
 | P63 | Game side: real bet-% / money-% splits (Sportradar Betting Splits) as a cross-check on value flags | investigate | 2026-09-30 | **No access.** All five Sportradar keys return 401 on the documented endpoint (`api.radar360.sportradar.com/insights/v2/bettingsplits/nfl/en/game/{sr:match id}`, both header styles); the docs say the splits token is separate from the sports-API key and that trial access is arranged through a sales rep; v2 is retired 9/30 for v3, whose path is not public. So nothing could be compared with P52. Prior against it: P37 found the baseline edge carries no ATS information at any size, and closing-line CLV runs slightly negative, so a signal that must beat the close is starting from a weak model side. **Also a design limit:** splits appear to be current values only, so there is no history to walk forward; any test needs forward capture | (if access is obtained; set before any capture) hypothesis: flagged games where money % exceeds bet % on the flagged side by >= 15 pp (sharper money) cover more than flagged games against it. Capture splits at each odds pull, forward only; test on >= 65 flagged games (most of a season at the current flag rate), bar = the P37 / baseline trust rule (52.4%, p < 0.05). Display-only until then | **blocked 2026-09-30: no key.** Get a splits token (sales) first, and its terms, before scoping further |
 | P64 | Injuries: a hand-transcribed injury/practice file (read from report screenshots) merged into the live injury layer before a refresh | data | 2026-09-30 | No scraped source is allowed or affordable for the official team reports (P47: team pages banned by terms; FantasyPros free tier 10 rows/request), and nflverse/ESPN can lag a team's report on game day. The user can read reports from screenshots. The live layer uses only (game status, one practice level) through `ingest_injuries.PLAY_PROBABILITY`; no per-day logic exists (P47 not built) | see the 2026-09-30 P64 entry: C1-C8, set before the build | **BUILT 2026-09-30, C1-C8 pass; not yet used live** (first use: whenever a `data/manual_injuries/<season>-wk<NN>.csv` is present at a refresh; none exists, so nothing has changed). `src/manual_injuries.py`; merge in `ingest_injuries.run`; read side in `features.latest_injury_report`; `run_sunday` stops the refresh on an invalid file. See the 2026-09-30 P64 entry's results. Days 1-2 are kept in the file but unused (user: not folded into P47's trend-table decision; revisit when P47 is scoped) |
 | P65 | Sportradar: P61's live capture runs through the rotating key manager, whose multi-key use has not been checked against Sportradar's trial terms | terms / data | 2026-09-30 | Raised during P62's S7 review (user, 9/30): P62's shadow is restricted to KEY1 with no rotation until the multi-key terms are known, because five trial keys used to extend quota may breach a one-trial-per-person term. P61 (`capture_prop_closes`, live since 9/30) calls through `sportradar.KeyManager`, which moves to the next of `SPORTRADAR_API_KEY1..5` when a key reaches `MONTHLY_QUOTA - QUOTA_MARGIN` (1000 - 50) calls for a product in a UTC month. **Checked 2026-09-30 (`data/sportradar/usage.jsonl`, 28 calls):** no `switch` event yet; all P61 calls on KEY1; KEY2-5 have 2 calls each, all from the 9/30 diagnosis (every key tested on Betting Splits and the NFL / props APIs), not rotation. P61's ~610 calls/month plus P62's ~215 stay under 950 on KEY1, so rotation is not expected in October, but nothing stops it | (proposed, confirm with user) (1) Sportradar's terms on holding and using multiple trial keys are found and cited (account page, terms, or a written answer); (2) until then, P61 and P62 use KEY1 only and stop with a log line at the margin instead of rotating; (3) any past rotation is listed from `usage.jsonl` (none as of 9/30) | **logged 2026-09-30, nothing changed** (user: check separately whether P61 has been operating within confirmed terms). Belongs with P62 S7(d), which needs the same terms |
+| P66 | Scenarios: for a game whose starting QB is genuinely unresolved, show the prediction under each realistic starter, on demand | display / tooling | 2026-10-01 | IND @ WAS (Daniels questionable, books price Mariota) and NYJ @ CHI (sim Keenum, books Bagent) are served on one assumed starter; the 10/1 manual Bagent-vs-Keenum scratch run showed what the alternative looks like. Nothing repeatable exists | (proposed, confirm with user before building) see the 2026-10-01 'P66 scoped' entry | **scoped 2026-10-01, not built** (user: scope first) |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -134,6 +135,65 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-10-01 — P66 scoped: QB scenarios for games with an unresolved starter (nothing built)
+
+**What it is.** A read-only, repeatable version of the 10/1 NYJ @ CHI scratch run: for a game flagged with an unresolved
+starting QB, compute the prediction under each realistic starter and show them beside the served number, labelled as
+comparison data. Never written to `predictions` / `game_simulations`, never read by the ranking, props, TD or grading.
+
+**What a scenario can and cannot change (the honest limit, set by P39 and the 10/1 run).** Two layers move:
+1. **Team margin:** through the injury charge only. A scenario sets the QB's play probability (1 = plays, 0 = out)
+   and re-runs the baseline (`FeatureContext.build` + `predict_game`, both pure) on a copy of the injury list. For
+   IND @ WAS that is the difference between Daniels charged 2.09 (questionable) and 4.65 (out). The sim is then
+   anchored to the scenario's margin, as the served sim is to the served one.
+2. **Players:** who takes the passer slot (`_promote_starter` / play probability), so the QB's own props and the
+   distribution of targets.
+What does **not** move: quarterback quality. The engine gives any starter the team's passing (the 10/1 run: Bagent got
+Keenum's 30 att / ~235 yds; the generic QB charge is "not a comparison with the quarterback who replaces him").
+Every scenario therefore carries that caveat, and a backup QB's own props in a scenario are shown as unreliable, not
+as picks (the NYJ @ CHI ruling). Fixing the quality term itself is the rejected P28/P39 work and is out of scope.
+
+**Which scenarios are worth covering (QB only to start):**
+- (a) **as served** (reproduced, as the control: must match the served sim exactly, as run A did on 10/1);
+- (b) **the books' priced QB starts**, when it differs from the sim's QB1 (the P53 warning; NYJ @ CHI);
+- (c) **the questionable / doubtful starter plays** (play probability 1) and (d) **is out** (0), when the sim's QB1
+  or the priced QB carries a game status (IND @ WAS: Daniels plays / Daniels out = Mariota starts).
+At most three scenarios per game, usually two. **Not covered:** non-QB questionable players (combinatorial, and P9
+found the injury coefficient has no edge to show), weather, coaching. Can be widened later on evidence.
+
+**How it triggers.** Candidate games are found from data already produced: the P53 warning (sim QB1 != priced QB,
+stored in the sim's `input_warnings`), a starting QB with a game status on the current report, or a P49 'unresolved'
+hold. (1) On demand: `python -m src.scenarios --game 2026_04_NYJ_CHI` prints the table. (2) Optionally at each
+refresh, after the sim step, for candidate games only, written to `data/scenarios.json` and a "Scenarios
+(unvalidated, comparison only)" panel on the game page using the existing unvalidated label. A game's scenarios
+retire when its inactive list posts (the starter is then known) or at kickoff.
+
+**Cost.** No Odds API, Sportradar or Claude calls (an optional one-line Claude note per game would be ~$0.01; not
+proposed). Compute only: the nflverse inputs load once per run (~1-2 min, already paid by the refresh if run inside
+it); then ~20-40 s per scenario at 10,000 sims (the 10/1 runs: two 10k CHI runs and a full baseline rebuild in a few
+minutes). A typical week (2-3 flagged games x 2-3 scenarios) adds ~2-6 minutes to a refresh, or runs on demand.
+
+**What building it would require:** a `src/scenarios.py` (candidate detection, scenario specs, the baseline re-run on
+a copied injury list, the sim with the scenario anchor and starter, the summary table: win %, margin, total, QB line,
+the props whose sim P(over) moves most); `data/scenarios.json`; a game-page panel; tests. Proposed criteria, to be
+confirmed before building: scenario (a) byte-identical to the served sim; each scenario's margin equals the baseline
+re-run by hand with the same injury change; served outputs byte-identical with scenarios on vs off; every scenario
+shows the no-QB-quality caveat and backup-QB props as unreliable; suite passes.
+
+---
+
+## 2026-10-01 — Explanations regenerated after the API credit top-up; close-game rule added to the game notes
+
+User request. The Claude API credit had run out during the 03:30Z refresh (prop and game explanations skipped). After the
+top-up: prop explanations for the top 25 (~$0.08) and game notes for all 16 week-4 games (~$0.13) regenerated; the number
+guard dropped none. **Game-note prompt change (display only, no new logic):** a game whose served baseline win
+probability rounds to 45-55% is marked "close game" in its prompt line, and the note must say why it is close
+(the factors favouring the lean and those offsetting them) rather than only state the lean. Week 4: PIT @ CLE 52%,
+ARI @ NYG 52%, ATL @ NO 48%, DEN @ SF 45%, LA @ PHI 45% (44.6% rounds in). Test added; suite 239. The ask-a-question
+panel was checked live through the running servers: one transient connection error, then a correct answer (~$0.01).
 
 ---
 
