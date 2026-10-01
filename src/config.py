@@ -140,6 +140,14 @@ QB_EXPECTED_STARTER = os.getenv("QB_EXPECTED_STARTER", "0").strip().lower() in (
 # INACTIVES_QB_HOLD=0 for the old behaviour (every flag applied).
 INACTIVES_QB_HOLD = os.getenv("INACTIVES_QB_HOLD", "1").strip().lower() in ("1", "true", "yes")
 
+# Games whose ESPN gameday inactive list is not applied at all (the rows stay
+# stored as evidence); the teams fall back to the injury report, including the
+# manual file. 2026_04_PIT_CLE (user, 2026-10-01): ESPN's lists were last
+# week's carried forward (CLE + Campbell, Brailsford; PIT + Porter Jr.,
+# Anderson), against the Browns' official list and a second source; the P49
+# mechanism on non-QBs. Add game ids only on a confirmed stale list.
+INACTIVES_SKIP_GAMES = {"2026_04_PIT_CLE"}
+
 # Claude API: the one metered piece of the stack. Low effort suits short,
 # data-grounded answers; the daily cap stops a runaway page or loop from
 # running up a bill (src/claude_ai.py refuses calls past it).

@@ -451,7 +451,8 @@ def apply_inactives(report: list[dict], inactives: list[dict], qb: dict | None =
     if not weeks:
         return report
     current_week = max(weeks)
-    rows = [r for r in inactives if (r.get("season"), r.get("week")) == current_week]
+    rows = [r for r in inactives if (r.get("season"), r.get("week")) == current_week
+            and r.get("game_id") not in config.INACTIVES_SKIP_GAMES]
     latest: dict = {}
     for r in rows:
         k, when = (r.get("game_id"), r.get("team")), parse_dt(r.get("pulled_at"))

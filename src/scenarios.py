@@ -332,7 +332,8 @@ def run(game_id: str | None = None, n: int | None = None, publish: bool = False,
             games = [g for g in games if g["game_id"] == game_id]
         if game_ids is not None:
             games = [g for g in games if g["game_id"] in game_ids]
-        posted = {(r["game_id"], r["team"]) for r in db.select_merged(store, "inactives")}
+        posted = {(r["game_id"], r["team"]) for r in db.select_merged(store, "inactives")
+                  if r["game_id"] not in config.INACTIVES_SKIP_GAMES}
         lines = json.loads((config.DATA_DIR / "props_lines.json").read_text(encoding="utf-8"))
         inputs = load_inputs(season)
         qbc = qb_check_inputs(store)
