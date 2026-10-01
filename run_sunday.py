@@ -165,6 +165,11 @@ def refresh(window: Window, target: date, args) -> None:
 
     step("grade", lambda: grade.run(sport="nfl", refresh=True))
 
+    # P64: an invalid hand-transcribed injury file stops the refresh. Running on
+    # without it would publish numbers missing whatever the file was there to fix.
+    if not step("manual injury file", lambda: ingest_injuries.check_manual("nfl"), critical=True):
+        return
+
     if step("injuries + inactives", lambda: ingest_injuries.run(sport="nfl")):
         store = db.get_store()
         try:
