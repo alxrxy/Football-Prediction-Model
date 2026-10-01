@@ -67,8 +67,10 @@ def product(path: str) -> str:
 class KeyManager:
     def __init__(self, usage_dir: Path = USAGE_DIR, names: list[str] | None = None,
                  values: dict[str, str] | None = None, quota: int = MONTHLY_QUOTA,
-                 margin: int = QUOTA_MARGIN, now: Callable[[], datetime] | None = None):
+                 margin: int = QUOTA_MARGIN, now: Callable[[], datetime] | None = None,
+                 job: str | None = None):
         self.dir = Path(usage_dir)
+        self.job = job   # tagged on each logged call when set (P62 S7c: calls by job)
         self.names = names if names is not None else key_names()
         self.values = values if values is not None else {n: os.getenv(n, "").strip() for n in self.names}
         self.quota, self.margin = quota, margin
@@ -166,7 +168,8 @@ class KeyManager:
             state["last_call_epoch"] = time.time()
             self._save_state(state)
             self._append({"event": "call", "utc": self._stamp(), "key": name,
-                          "product": product(path), "path": path, "status": resp.status_code})
+                          "product": product(path), "path": path, "status": resp.status_code,
+                          **({"job": self.job} if self.job else {})})
             if resp.status_code == 429:
                 time.sleep(MIN_INTERVAL * (attempt + 1))
                 continue

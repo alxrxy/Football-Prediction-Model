@@ -232,6 +232,38 @@ codes equal ours, LA and WAS included, from the cached 9/30 schedule).
 - **Not built yet:** the S1-S5 comparison script over saved pulls, the S8(b) scratch sim rebuild (needed at each Sunday
   window inside the two weeks), and the S8(c) props-page section (user review before final).
 
+**Measurement tools built 2026-10-01 (user: ready before the window can open; user is checking the trial end date).**
+- **Shadow bookkeeping added:** each pull also saves `holdouts.json` (the live `PROP_HOLDOUTS` / `KNOWN_DEFECTS` keys for
+  its games; they are code and change between a pull and its comparison, S2d). `props.run` saves the sims its ranking
+  used, plus the served `props.json`, to `rank_<stamp>/` beside the pull whose `odds.json` is byte-identical to the lines
+  ranked: `game_simulations` keeps one row per game (62 rows, overwritten), so S4's "same sims" cannot be rebuilt
+  later. Both are wrapped; neither can change what is served. Shadow calls now carry `"job": "p62_shadow"` in the
+  Sportradar ledger (S7c); P61's code is untouched, so its calls stay untagged.
+- **`python -m src.p62_compare --since <window start>`:** S1-S5 over every saved pull, each reported PASS / FAIL / STOP
+  or UNMEASURED with the reason. Pairs: a game counts only when its shadow pull is <= 10 min after its own Odds API pull;
+  both files are restricted to paired games before ranking. S1 classes a miss as misnamed on a fuzzy match >= 0.88
+  **or a word-order swap** (an unconverted "Last, First" scores low on the ratio and would otherwise pass as a
+  coverage gap); misnamed entries go to S2 and do not count against S1(b). S2: manifest mapping problems,
+  `match_player` resolving to the same sim player, priced-QB sets by `player_key` (the set P49 / P53 / P51 all build),
+  hold-table entries by exact name. S3 tags lag / gap / unexplained. S4 attributes in the confirmed order (book mix by
+  re-ranking Sportradar on shared books, line, coverage, else unexplained). S5 grades the last pull before each game
+  from ESPN's final box score (`export_sims.actual_result`; no W-L grader for ranked props existed) and matches names by
+  `player_key` on the books' name. S7(c) reports shadow pulls and the hypothetical credit saving (labelled).
+- **`python -m src.p62_sim_check --pull <stamp> --sims 2000`:** S8(b). Runs the pull's games A (Odds API file at the two
+  read points: `features.qb_context`, `simulate_nfl.qb_check_inputs`), B (Sportradar file), A' (Odds API again), with
+  `store_results=False`. A == A' is the control (else INCONCLUSIVE); B == A byte-identical with the same sim QBs, else
+  STOP. Sims are seeded per game, so 2,000 sims answer it as well as 10,000; ~1.5 min a game for the three runs.
+- **Checks:** `tests/test_p62_compare.py` (32 checks): identical files pass; > 10 min excluded; nothing paired is
+  UNMEASURED, not PASS (a bug found by the smoke run and fixed); word-order swap is misnamed and stops S2; priced-QB
+  difference stops S2; raw-name hold lookup stops S2 while S1 stays covered (first run of this test caught misnamed
+  entries being counted against S1(b); fixed); line difference attributed to line; Sportradar-only books attributed to
+  book mix; lag tag; grading W / push / unmatched; S8(b)'s swap reaches both read points. Suite 234 passed.
+  **Live:** S8(b) on the 9/30 dry-run pull (PIT @ CLE, LA @ PHI, 2,000 sims): PASS, identical, sim QBs Watson / Rodgers
+  and Hurts / Stafford, 3 min. Comparison smoke run on the same real payloads with the pair window widened in a scratch
+  copy (11 h apart, so not evidence): runs end to end; S1 flags Davante Adams (LA @ PHI) as a top-25 absence; S3 tags all
+  66 differences `gap`. S5's box-score fetch graded PHI @ CHI (Keenum 247 pass yds) correctly.
+- **Still to build:** the S8(c) props-page comparison section (user review before final).
+
 ---
 
 ## 2026-09-30 — P64 scoped: manual injury/practice file. Format, ingestion and criteria set before the build

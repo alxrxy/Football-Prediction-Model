@@ -562,8 +562,10 @@ def explain(top: list[dict]) -> dict[int, str]:
 def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = False) -> dict:
     if not PROPS_LINES_JSON.exists():
         raise SystemExit("No prop lines yet. Run: python -m src.ingest_props")
-    lines = json.loads(PROPS_LINES_JSON.read_text(encoding="utf-8"))
-    result = rank(lines, _sims())
+    lines_bytes = PROPS_LINES_JSON.read_bytes()
+    lines = json.loads(lines_bytes.decode("utf-8"))
+    sims = _sims()
+    result = rank(lines, sims)
     top = result["ranked"][:top_n]
     alts_pulled = None
     if with_alts and top:
@@ -632,6 +634,16 @@ def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = Fa
         print(f"  {r['rank']:>2}. {r['player']:<22} {r['label']:<10} {r['pick']:<5} {r['line']:>6} "
               f"{r['price']:+d}  sim {r['p_model']:.0%} vs mkt {r['p_market']:.0%}  (+{r['gap'] * 100:.1f} pp)"
               + (f"  | alt {alt['line']} {alt['price']:+d} sim {alt['p_model']:.0%}" if alt else ""))
+
+    # P62 Phase 1: keep the sims this ranking used beside the matching shadow
+    # pull, after props.json is written. Never affects what is served.
+    try:
+        from .shadow_props_sr import save_rank_snapshot
+
+        if (folder := save_rank_snapshot(lines_bytes, sims, payload)) is not None:
+            print(f"  [P62 shadow] ranking sims kept in {folder.parent.name}/{folder.name}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [warn] P62 shadow: ranking sims not kept ({exc}); nothing served changed")
     return payload
 
 
