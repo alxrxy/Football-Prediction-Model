@@ -136,8 +136,19 @@ def test_pull_saves_pair():
         check("keeps the Odds API event id (for --alts)", g["event_id"], "oddsapi1")
         check("same schema keys", set(g) >= {"home", "away", "kickoff", "event_id", "books", "players", "pulled_at"}, True)
         pull = tmp / "sr" / "pulls" / "20261001T230000Z"
-        check("pair saved: odds copy, sr file, raw", sorted(p.name for p in pull.iterdir()),
-              ["odds.json", "raw_2026_04_PIT_CLE.json", "sr.json"])
+        check("pair saved: hold tables, odds copy, sr file, raw", sorted(p.name for p in pull.iterdir()),
+              ["holdouts.json", "odds.json", "raw_2026_04_PIT_CLE.json", "sr.json"])
+        holds = json.loads((pull / "holdouts.json").read_text(encoding="utf-8"))
+        check("hold tables saved as lists", set(holds), {"prop_holdouts", "known_defects"})
+
+        # The served ranking keeps its sims beside the pull whose odds.json matches.
+        sims = {"2026_04_PIT_CLE": {"box_score": {}}, "2026_04_OTHER": {"box_score": {}}}
+        folder = sh.save_rank_snapshot(odds_path.read_bytes(), sims, {"top": []}, now=NOW, out=tmp / "sr")
+        check("rank snapshot beside the matching pull", folder.parent, pull)
+        check("only the pulled games' sims kept",
+              list(json.loads((folder / "sims.json").read_text(encoding="utf-8"))), ["2026_04_PIT_CLE"])
+        check("no snapshot for lines the shadow never paired",
+              sh.save_rank_snapshot(b'{"games": {}}', sims, {}, now=NOW, out=tmp / "sr"), None)
 
 
 def _raises(exc):

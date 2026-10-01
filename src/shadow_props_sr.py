@@ -262,8 +262,45 @@ def pull(odds: dict, live_games: set[str], get: Callable[[str], dict], now: date
         (pull_dir / "sr.json").write_text(text, encoding="utf-8")
         if odds_path is not None and odds_path.exists():
             shutil.copyfile(odds_path, pull_dir / "odds.json")
+        _save_holdouts(pull_dir, set(odds.get("games") or {}))
     _log(out, rows)
     return rows
+
+
+def _save_holdouts(pull_dir: Path, games: set[str]) -> None:
+    """The PROP_HOLDOUTS / KNOWN_DEFECTS entries live at this pull, for S2(d).
+    They are code and change between a pull and its comparison, so they are
+    kept with the pull. A failure here leaves S2(d) unmeasured for the pull."""
+    try:
+        from . import props
+
+        snap = {"prop_holdouts": [list(k) for k in props.PROP_HOLDOUTS if k[0] in games],
+                "known_defects": [list(k) for k in props.KNOWN_DEFECTS if k[0] in games]}
+        (pull_dir / "holdouts.json").write_text(json.dumps(snap), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [warn] P62 shadow: hold tables not saved for this pull ({exc})")
+
+
+def save_rank_snapshot(lines_bytes: bytes, sims: dict, served: dict, now: datetime | None = None,
+                       out: Path = OUT_DIR) -> Path | None:
+    """Called by props.run after the served props.json is written. Keeps the
+    sims that ranking used, and the served list, beside the shadow pull whose
+    odds.json is byte-identical to the lines just ranked (S4 ranks both files
+    against the same sims, and game_simulations keeps only one row per game,
+    so they cannot be rebuilt later). Returns the folder, or None when no
+    pull matches (a ranking of lines the shadow never paired)."""
+    pulls = sorted((out / "pulls").glob("*/odds.json"), reverse=True) if (out / "pulls").exists() else []
+    match = next((p.parent for p in pulls if p.read_bytes() == lines_bytes), None)
+    if match is None:
+        return None
+    games = set((json.loads(lines_bytes) or {}).get("games") or {})
+    now = now or datetime.now(timezone.utc)
+    folder = match / f"rank_{now:%Y%m%dT%H%M%SZ}"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "sims.json").write_text(json.dumps({g: v for g, v in sims.items() if g in games}, default=str),
+                                      encoding="utf-8")
+    (folder / "props.json").write_text(json.dumps(served, default=str), encoding="utf-8")
+    return folder
 
 
 def shadow(odds: dict, live_games: set[str], *, get: Callable[[str], dict] | None = None,
@@ -281,7 +318,7 @@ def shadow(odds: dict, live_games: set[str], *, get: Callable[[str], dict] | Non
         if get is None:
             from .sportradar import KeyManager
 
-            km = KeyManager(names=[SHADOW_KEY])   # KEY1 only: cannot rotate (S7b)
+            km = KeyManager(names=[SHADOW_KEY], job="p62_shadow")   # KEY1 only: cannot rotate (S7b)
             get = km.get
         rows = pull(odds, live_games, get, now, out, lines_path, odds_path)
     except Exception as exc:  # noqa: BLE001 - the shadow must never break the props pull
