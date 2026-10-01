@@ -239,6 +239,9 @@ def qb_availability_loss(rows: list[dict]) -> float:
 # Sources whose report arrives team by team through the week (P19).
 PER_TEAM_SOURCES = {"nflverse"}
 
+# Hand-transcribed report (P64, src/manual_injuries.py).
+MANUAL_SOURCE = "manual"
+
 
 def latest_injury_report(rows: list[dict]) -> list[dict]:
     """Only the rows from each source's most recent pull.
@@ -284,15 +287,36 @@ def latest_injury_report(rows: list[dict]) -> list[dict]:
             if key not in latest or pulled > latest[key]:
                 latest[key] = pulled
 
+    # P64. Manual rows count only from the most recent ingest run: a run made
+    # without the file has newer feed rows, and an old override must not sit
+    # beside them. Where they do count they win over every other current row
+    # for the player, including a team's nflverse fallback to an older pull
+    # (the override took the player out of this run's nflverse rows, so that
+    # fallback would still list him). Healthy manual rows exist only to clear
+    # the player, and are dropped here so they never take a starter slot.
+    newest = max((p for r in rows if (p := parse_dt(r.get("pulled_at")))), default=None)
+
     def current(r) -> bool:
         source = r.get("source")
+        if source == MANUAL_SOURCE:
+            return parse_dt(r.get("pulled_at")) == newest
         if source in PER_TEAM_SOURCES:
             if (r.get("season"), r.get("week")) != week.get(source):
                 return False
             source = (source, r.get("team"))
         return parse_dt(r.get("pulled_at")) == latest.get(source)
 
-    return [r for r in rows if current(r)]
+    out = [r for r in rows if current(r)]
+    manual = [r for r in out if r.get("source") == MANUAL_SOURCE]
+    if not manual:
+        return out
+    from .ingest_injuries import player_key
+
+    overridden = {player_key(r.get("team"), r.get("player")) for r in manual}
+    return [r for r in out
+            if (r.get("source") == MANUAL_SOURCE and float(r.get("play_probability", 0.0)) < 1.0)
+            or (r.get("source") != MANUAL_SOURCE
+                and player_key(r.get("team"), r.get("player")) not in overridden)]
 
 
 # Game statuses a posted inactive list settles (P10). Out and IR ("ir", P20)

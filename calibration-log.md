@@ -91,6 +91,7 @@ status only when its adoption test is met.
 | P61 | Props: capture each game's closing prop line (Sportradar Odds Comparison Player Props) so prop CLV can be measured at all | data / validation | 2026-09-30 | Nothing in the repo computes prop CLV, yet P17's adoption test is "prop CLV >= 0 over 65+ leans"; our last Odds API props pull comes hours or days before kickoff. Sportradar's per-game props carry, per book, the current line and the opening line (`total`, `open_total`, `odds_*`, `open_odds_*`), and kept last week's ended PHI @ CHI with every line flagged `removed` (174 book lines, 39 player-markets). Against our stored week-3 MNF-day pull: 35 player-markets matched, 15 differ from Sportradar's last line (Keenum pass yds 170.5 vs 164.5, Lemon rec yds 28 vs 23.5; book mixes differ). **Retention is short:** the schedule held only that MNF game, none of week 3's Sunday games (ended 9/27), so closing lines must be captured within about a day, not backfilled. **Caveat, not yet checked:** that "removed" means pulled at kickoff and not earlier | (proposed, confirm with user) (1) a pull of each game's props at T-15 min, plus one after kickoff that keeps the `removed` lines, stored raw (same pattern as P47's capture), about 32 calls/week; (2) on two windows, measure how often the post-kickoff line differs from the T-15 pull (the kickoff caveat); (3) prop CLV = the move from our priced line to the close, in the direction of our lean, reported per market; no model change; (4) suite passes | **Capture STARTED 2026-09-30 (user: passive, no prediction impact, does not wait for the P22/P51 boundary); criteria below set before the first capture.** `src/capture_prop_closes.py`, run every 15 min by Task Scheduler (`\FootballPredictor\P61 prop closes`, `capture_prop_closes.cmd`). Per game, one pull at each checkpoint (minutes from kickoff): t-60, t-45, t-30, t-15, t+0, t+15, t+120, t+24h; a window that passes without a pull is logged `missed`. Schedule cached, re-read every 12 h; a quiet pass makes no call. Raw responses + `manifest.csv` (lines, removed, live, event status per pull) in `data/prop_closes/` (local, gitignored); nothing reads them. Budget ~130 prop + ~14 schedule calls/week (~610/month, KEY1). Tests `tests/test_capture_prop_closes.py` (13); suite 206. Live dry run (clock T-10 before PIT @ CLE, output in a scratchpad): 372 book lines, **10 already `removed` more than a day before kickoff**, so `removed` also marks lines pulled mid-week, not only at kickoff. **Validation of the capture point (first two windows: TNF 10/1 PIT @ CLE and the Sunday 10/4 early window; unit = one book's line for one player-market; `is_live` markets excluded):** (V1) capture: every game has its t-15 and a post-kickoff pull, <= 1 missed pre-kickoff checkpoint per window; (V2) not early: of the lines live at t-30, >= 95% are still live (not `removed`) at t-15; (V3) frozen after kickoff: >= 95% of lines have the same total and price at t+0, t+15 and t+120 (lines still changing after kickoff would mean in-play updates, not a close); (V4) removed at kickoff: >= 95% of the lines live at t-15 are `removed` by t+15; (V5) retention: report whether the game is still returned at t+120 and t+24h. **Decision rule:** V2-V4 pass -> the close is the last post-kickoff (`removed`) line, and the kickoff point is confirmed to the 15-min resolution of the pulls. V3 fails -> the close is the t-15 pull (last pre-kickoff), with the t-15 -> t+0 change reported as the unmeasured last-15-min move. V2 fails (lines pulled early) -> each line's close is its last live value, and how early is reported. V4 fails -> report what `removed` means from the data; no close defined until it is understood. Always reported: distribution of t-15 -> close changes; mid-week `removed` share; calls used. No prop CLV is computed until V1-V4 are read **Task check 2026-09-30:** first scheduled pass (17:30 CDT) was terminated (0xC000013A, console closed or interrupted) after writing its start stamp and before any call; a manual run of the wrapper and the 17:45 scheduled pass both exited 0 ('nothing due'). Cause not confirmed; a repeat inside a checkpoint window would show as `missed` in the manifest and count against V1 **Cause and fix, 2026-09-30 (user: confirm before Sunday):** Task Scheduler history was disabled, so no record exists; by elimination: no sleep, power, crash or logoff event at 17:30 (System / Application logs), on AC, no battery or idle stop; no Sportradar call logged, so it died between its start stamp (22:30:01.7Z) and its first call's response. 0xC000013A is a console control event (Ctrl+C / Ctrl+Break / window close); the task ran 'only when user is logged on', so each pass opened a visible console in the user's session for 1-2 s. Most likely that window was closed or received a keystroke; not provable without history. **Fix 1 (applied):** the task now starts `capture_prop_closes.vbs`, which runs the .cmd with no window; the .cmd writes a start and an exit line per run (a start with no exit = killed). Manual trigger 17:51: exit 0, both lines. **Fix 2 (needs the user, elevated):** 'run whether logged on or not' (S4U) was refused without elevation (Access denied); a script tests the mode with a throwaway task, then converts P61, and enables Task Scheduler history. Note: neither mode runs while the laptop sleeps (battery: sleep after 10 min; AC: never; WakeToRun off); `run_sunday --watch` is a terminal process, not a task, and needs the same. P33's probe (first run Sun 10/4) has the old visible-console setup **Fix 1 FAILED; replaced 2026-09-30 20:48 (user: keep fix 2 for later, move P33 to the same launcher):** the .vbs wrapper never ran under the scheduler. Every scheduled pass from 18:00 to 20:45 left no start line in `task.log`, and the 20:45 `wscript.exe` was still alive with its only thread in state `Suspended` and no child process: created, never resumed, so the script never executed (P61 captured nothing for ~3 h; no checkpoint was due, so no `missed`). The same command line runs fine from a shell, and a manual `Start-ScheduledTask` reproduced the hang on P33; the 17:51 manual trigger that passed was not representative. Cause not found. **Fix 1b (applied to P61 and P33):** both tasks now run `conhost.exe --headless cmd.exe /c <name>.cmd` with the project folder as working directory (no window, no wscript; the .cmd is called by bare name because headless conhost mis-parses a quoted path with spaces). .vbs files removed. Manual triggers: P61 and P33 both exit 0 with start + exit lines. **Verified on scheduled passes (not manual):** P61 at 21:00:01 and 21:15:01 each wrote a start and an `exit 0` line, task result 0, no process left behind. P33's first scheduled pass is Sun 10/4 00:00 (same launcher; manual triggers only so far). Fix 2 (elevated, S4U + history) stays with the user, not before Sunday |
 | P62 | Props source: Sportradar as the primary pull for the four priced markets, The Odds API kept as fallback, to end the quota-driven coverage gaps | data | 2026-09-30 | Odds API quota 200 after the 9/30 pull (184 after TD), ~64 credits per 4-market pull + 16 for TD. Sportradar, 2 week-4 games (PIT @ CLE, ATL @ NO) against this week's Odds API file: **the same players on all four markets** (pass 2/2, rush 5/5 and 6/6, rec yds 12/12 and 10/10, receptions 12/12 and 10/10), 1 call per game for every market. Books differ: Sportradar has MGM, DraftKings, FanDuel, BetRivers, Caesars (WilliamHillNJ), plus a `consensus`; Odds API had betonline and bovada as well (6 books PIT @ CLE, 3 ATL @ NO; Sportradar 5-6 and 4-5). 13 extra markets (carries, attempts, completions, pass TD, longest reception, rush+rec, kicking...), none of them priced by us today. Anytime TD **is** posted (**corrected 2026-09-30**: first read as absent because the check only read `players_props`; scorer markets sit in the separate `players_markets` block): PIT @ CLE 29 players, ATL @ NO 25, DraftKings / FanDuel / Caesars + consensus, alongside first / last / 2+ / 3+ TD scorer | (proposed, confirm with user) (1) over one full week, per game and market, player coverage >= the Odds API's; (2) median line within 0.5 of the Odds API's on the same books at the same pull; (3) the props ranking built from each source differs only where lines differ (list every change); (4) Odds API calls per week drop, reported; (5) trial terms and the post-trial price are known before anything depends on it (a trial key expires) | **scoped 2026-09-30 (user: scope before deciding); nothing built, no decision.** See the 2026-09-30 'P62 scoped' entry: what reads the lines, what a switch requires, what could break (QB selection by name is the serious one), and a shadow-only Phase 1 with criteria S1-S8, to be confirmed with the user. Swapping the source changes no model; coverage and quota only |
 | P63 | Game side: real bet-% / money-% splits (Sportradar Betting Splits) as a cross-check on value flags | investigate | 2026-09-30 | **No access.** All five Sportradar keys return 401 on the documented endpoint (`api.radar360.sportradar.com/insights/v2/bettingsplits/nfl/en/game/{sr:match id}`, both header styles); the docs say the splits token is separate from the sports-API key and that trial access is arranged through a sales rep; v2 is retired 9/30 for v3, whose path is not public. So nothing could be compared with P52. Prior against it: P37 found the baseline edge carries no ATS information at any size, and closing-line CLV runs slightly negative, so a signal that must beat the close is starting from a weak model side. **Also a design limit:** splits appear to be current values only, so there is no history to walk forward; any test needs forward capture | (if access is obtained; set before any capture) hypothesis: flagged games where money % exceeds bet % on the flagged side by >= 15 pp (sharper money) cover more than flagged games against it. Capture splits at each odds pull, forward only; test on >= 65 flagged games (most of a season at the current flag rate), bar = the P37 / baseline trust rule (52.4%, p < 0.05). Display-only until then | **blocked 2026-09-30: no key.** Get a splits token (sales) first, and its terms, before scoping further |
+| P64 | Injuries: a hand-transcribed injury/practice file (read from report screenshots) merged into the live injury layer before a refresh | data | 2026-09-30 | No scraped source is allowed or affordable for the official team reports (P47: team pages banned by terms; FantasyPros free tier 10 rows/request), and nflverse/ESPN can lag a team's report on game day. The user can read reports from screenshots. The live layer uses only (game status, one practice level) through `ingest_injuries.PLAY_PROBABILITY`; no per-day logic exists (P47 not built) | see the 2026-09-30 P64 entry: C1-C8, set before the build | **BUILT 2026-09-30, C1-C8 pass; not yet used live** (first use: whenever a `data/manual_injuries/<season>-wk<NN>.csv` is present at a refresh; none exists, so nothing has changed). `src/manual_injuries.py`; merge in `ingest_injuries.run`; read side in `features.latest_injury_report`; `run_sunday` stops the refresh on an invalid file. See the 2026-09-30 P64 entry's results. Days 1-2 are kept in the file but unused (user: not folded into P47's trend-table decision; revisit when P47 is scoped) |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -132,6 +133,82 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-09-30 — P64 scoped: manual injury/practice file. Format, ingestion and criteria set before the build
+
+**Why.** The user can read official team injury reports from screenshots. P64 lets that transcription go into the
+live injury layer before a refresh. It changes play probability exactly as the existing table would for the same
+report, and nothing else: no new table values, no trend term. Days 1 and 2 are recorded but unused (user decision
+9/30; that belongs to P47's own scoping).
+
+**Format.** One CSV per week at `data/manual_injuries/<season>-wk<NN>.csv` (gitignored, like all of `data/`).
+`#` lines are comments; one comment must carry `season=<yyyy> week=<n>`. Columns:
+`team,player,pos,injury,d1,d2,d3,game`. `team` = store codes (Rams `LA`); `pos` = a key of
+`features.STARTER_SLOTS`; `d1..d3` = `DNP` / `LP` / `FP` / `-` (also `Limit`, `Full`); `game` = `Out` /
+`Doubtful` / `Questionable` / `IR` / blank. No `Probable` (the table has no entry; it would fall back to 0.50).
+Practice used = the last day that isn't `-`; play probability = `ingest_injuries.play_probability(game, practice)`.
+
+**Ingestion.** `ingest_injuries.run` reads the file for the run's season/week if present. The whole file is
+validated before any use. A matched player (`player_key`) has the feed row's status, practice and play probability
+replaced; an unmatched player is added with the usual snap-share lookup; merged rows carry `source="manual"`. The
+merge happens before storage, as for ESPN. `latest_injury_report` counts `manual` rows only when they come from the
+most recent ingest run, so a stale override never sits beside newer feed rows. `run_sunday` checks the file as its
+own step before the refresh and stops the refresh if it is invalid.
+
+**Criteria (all must pass before first live use):**
+- **C1 replay, week 3.** A hand-made week-3 file (>= 8 rows covering: status change, practice-only change, a
+  Questionable cleared to no status + FP, a player absent from the feeds, a suffixed name, a QB) merged into the
+  week-3 nflverse final report in memory (no store writes; finished week, nothing re-simulated). Play probability
+  changes for exactly the file's matched/added players and equals the table value for their row; every other row
+  is unchanged in every field.
+- **C2 no double-charging.** After the merge, no `player_key` appears twice in the run's rows. Across two runs (one
+  with the file, a later one without it), `latest_injury_report` returns no duplicate `player_key` and no `manual`
+  rows. Each team's `score_injuries` charge equals the charge computed from the feed rows with the manual values
+  substituted by hand.
+- **C3 no quiet skipping.** Every malformed line (unknown team, bad position, bad practice value, bad or `Probable`
+  status, wrong column count, a player listed twice) and a missing or wrong `season`/`week` header raises, and **all**
+  errors are listed with line numbers in one message, not just the first. Nothing is written to the store on an
+  invalid file. A row that fails to match a feed row is reported as added, never dropped.
+- **C4 week scoping.** A file whose header week differs from the run's week is rejected (C3). Manual rows from an
+  earlier run stop applying once a later ingest run has written.
+- **C5 no file, no change.** With no file present, the ingest rows are identical to the pre-P64 code's.
+- **C6 days 1-2 inert.** Changing `d1`/`d2` alone changes no output field.
+- **C7 printed.** Each run prints rows read, overrides, additions, and every play-probability change
+  (`team player old -> new`).
+- **C8** full suite passes.
+
+**Design detail found while building (C2).** Merging at ingest is not enough on its own. If an override moves a team's
+only nflverse row to `manual`, that run has no nflverse rows for the team, and `latest_injury_report` falls back to the
+team's previous nflverse pull, which still lists the player: charged twice. The same fallback would revive a cleared
+player. So the read side also lets current manual rows win over every other current row for the same `player_key`, and
+healthy manual rows (play probability 1.0) act only as clears: they suppress the player and are then dropped, so they
+never take a starter slot the nflverse ingest (which skips healthy players) would not have given them. An unmatched IR
+player with no snaps for the team is not added (P20's rule) and is printed as `not added`.
+
+**Results (2026-09-30), all pass:**
+- **C1** replay on the 2026 week-3 nflverse final report, in memory (writes discarded; nothing re-simulated), hand-made
+  file of 10 rows: 7 overrides, 1 cleared (BUF Ed Oliver), 1 added (SEA Jaxon Smith-Njigba, 0.25), 1 healthy with no
+  feed row (no effect). 8 of 8 feed players matched, including `Marvin Mims` / `Rob Beal` against `Jr.` in the feed.
+  The 140 unlisted rows are identical in every field; each listed player is one `manual` row at the table value.
+  Team charges moved: BAL -1.795 -> -1.979, BUF -2.419 -> -2.483, CIN -1.610 -> -1.361, DEN -0.355 -> -0.486,
+  SEA -2.013 -> -2.819. CHI unchanged: Bagent 0.80 -> 0.55 is QB2 behind the Out Caleb Williams, who holds the slot.
+- **C2** no `player_key` twice in the run or in `latest_injury_report` over a plain t0 pull + the manual t1 run; every
+  team's `score_injuries` equals the hand-substituted rows; a later run without the file leaves no `manual` rows
+  (unit test).
+- **C3** a bad file lists every error with line numbers in one message (unit test: 6 bad lines, 6 errors); `run`
+  raises before `ingest_nfl` is called or anything is written; `check_manual` raises, which `run_sunday` treats as a
+  critical stop.
+- **C4** a wrong-week file is refused; stale manual rows drop out once a newer run writes.
+- **C5** on the live injuries table (1,165 rows), the pre-P64 `latest_injury_report` and the new one return identical
+  output; `ingest_nfl` / `ingest_espn` / `merge_feeds` are untouched, and no file means no merge.
+- **C6** changing d1/d2 alone gives identical merged rows.
+- **C7** each run prints rows read, counts by action, and `team player old -> new action` per row.
+- **C8** suite 215 passed (9 new in `tests/test_manual_injuries.py`).
+
+Live check: `check_manual` for week 4 reports no file, feeds only. A template is at
+`data/manual_injuries/_TEMPLATE.csv` (local; `data/` is gitignored).
 
 ---
 

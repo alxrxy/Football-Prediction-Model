@@ -392,6 +392,10 @@ def run(sport: str = "nfl", season: int | None = None, week: int | None = None) 
 
     print(f"[injuries] {sport} season {season} week {week} -> {store.backend}")
 
+    # P64: validated before anything is pulled or written, so an invalid file
+    # stops the run with the store untouched.
+    manual = _load_manual(store, sport, season, week)
+
     rows: list[dict] = []
     shares: dict = {}
     if sport == "nfl":
@@ -409,6 +413,12 @@ def run(sport: str = "nfl", season: int | None = None, week: int | None = None) 
     for c in merge["ir_conflicts"]:
         print(f"  [conflict] {c['team']} {c['player']}: ESPN says Injured Reserve, the official report says "
               f"{c['nflverse_status']}; the official report is kept")
+
+    if manual is not None:
+        from . import manual_injuries
+
+        rows, report = manual_injuries.merge(rows, manual, shares, season, week)
+        manual_injuries.print_report(report, manual_injuries.path_for(season, week).name)
 
     store.upsert("injuries", db.stamp(rows))
 
@@ -435,6 +445,39 @@ def run(sport: str = "nfl", season: int | None = None, week: int | None = None) 
         except Exception as exc:  # noqa: BLE001 - the injury report stands without it
             print(f"  [warn] inactives skipped: {exc}")
     return len(rows)
+
+
+def _load_manual(store: db.Store, sport: str, season: int, week: int) -> list[dict] | None:
+    """The week's hand-transcribed report (P64), None if there is no file.
+    NFL only; raises ManualFileError on an invalid file."""
+    if sport != "nfl":
+        return None
+    from . import manual_injuries
+    from .features import STARTER_SLOTS
+
+    teams = {t["team"] for t in store.select("teams", {"sport": sport})}
+    return manual_injuries.load(season, week, teams, set(STARTER_SLOTS))
+
+
+def check_manual(sport: str = "nfl", season: int | None = None, week: int | None = None) -> None:
+    """Validate the manual file for the week a refresh would ingest (P64).
+    Prints what it found; raises ManualFileError if the file is invalid."""
+    from datetime import datetime, timezone
+
+    from . import manual_injuries
+
+    store = db.get_store()
+    try:
+        season = season or datetime.now(timezone.utc).year
+        week = week or _infer_week(store, sport, season)
+        rows = _load_manual(store, sport, season, week)
+    finally:
+        store.close()
+    path = manual_injuries.path_for(season, week)
+    if rows is None:
+        print(f"  no manual file for season {season} week {week} ({path}); feeds only")
+    else:
+        print(f"  {path.name}: {len(rows)} rows valid")
 
 
 def _infer_week(store: db.Store, sport: str, season: int) -> int:
