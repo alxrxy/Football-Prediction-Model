@@ -379,3 +379,33 @@ ul.scoring li:last-child { border-bottom: 0; }
 }
 .wp-tip strong { font-size: 13px; }
 .wp-tip span { color: var(--text-dim); }
+
+/* --- P62 shadow comparison (S8c), under the props list --- */
+.p62 > summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.p62-pills { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.p62-pill, .p62-status, .p62-cause {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;
+  padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim);
+}
+.p62-pill.pass, .p62-status.pass { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
+.p62-pill.stop, .p62-status.stop, .p62-cause.stop { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+.p62-cause.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.p62-pill.open, .p62-status.open { border-style: dashed; }
+.p62-body { margin-top: 12px; font-size: 13px; line-height: 1.5; }
+.p62-intro { margin: 0 0 12px; }
+.p62-intro .tag { margin-right: 4px; }
+.p62-criteria { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.p62-criteria > li { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--border); }
+.p62-criteria > li:last-child { border-bottom: 1px solid var(--border); }
+.p62-status { justify-self: start; }
+.p62-detail { display: block; color: var(--text-dim); font-size: 12.5px; }
+.p62-items { margin: 4px 0 0; padding-left: 16px; font-size: 12px; color: var(--text-dim); }
+.p62-h { margin: 18px 0 0; font-size: 13.5px; }
+.p62-h .muted { font-weight: 400; font-size: 12.5px; }
+.p62-table td { vertical-align: top; }
+.p62-legend { margin: 8px 0 0; }
+.p62-diffs { margin-top: 14px; }
+.p62-diffs > summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+@media (max-width: 640px) { .p62-criteria > li { grid-template-columns: 1fr; gap: 4px; } }
+.p62 th.num { font-family: inherit; }
+.p62-slot .sub { display: block; font-style: normal; font-size: 11px; color: var(--text-dim); margin-top: 2px; }

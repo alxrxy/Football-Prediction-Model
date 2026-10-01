@@ -259,13 +259,75 @@ def test_sim_check_swaps_both_read_points():
         check("restored afterwards", features.config is saved[0] and simulate_nfl.config is saved[1], True)
 
 
+def test_export_page_json():
+    """S8(c): the page JSON says what the report says, and building it opens no socket."""
+    import socket
+
+    sr = copy.deepcopy(PLAYERS)
+    sr["Jerry Jeudy"]["player_reception_yds"] = {"draftkings": bk(30.5), "fanduel": bk(30.5)}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_pull(root, "20261004T150200Z", PLAYERS, sr)
+        _, want = pc.run(pc._parse(pc.WINDOW_START), pc._parse(pc.WINDOW_END), do_grade=False, out_dir=root)
+        real = socket.socket
+
+        def no_network(*a, **k):
+            raise AssertionError("export opened a socket")
+
+        socket.socket = no_network
+        try:
+            out = root / "public" / "p62_compare.json"
+            pc.export(out, out_dir=root)
+        finally:
+            socket.socket = real
+        d = json.loads(out.read_text(encoding="utf-8"))
+        check("verdict same as the report", d["verdict"], want)
+        check("one status line per criterion, S1-S5", [(c["id"], c["status"]) for c in d["criteria"]],
+              [(k, want[k]) for k in ("S1", "S2", "S3", "S4", "S5")])
+        check("S5 says why it is not graded", "not on refresh" in d["criteria"][4]["detail"][0], True)
+        jeudy = [c for c in d["changes"] if c["player"] == "Jerry Jeudy"]
+        check("Jeudy's change listed with its cause", [(c["kinds"], c["cause"]) for c in jeudy], [(["flips"], "line")])
+        check("both lines carried", (jeudy[0]["odds_line"], jeudy[0]["sr_line"]), (45.5, 30.5))
+        check("line differences carried", (d["line_diff_count"], len(d["line_diffs"])), (2, 2))
+        check("difference row has both sides", d["line_diffs"][0]["sr"]["point"], 30.5)
+
+
+def test_export_outside_window_or_empty():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_pull(root, "20261020T150200Z", PLAYERS, PLAYERS)   # after the window closes
+        out = root / "p62_compare.json"
+        d = pc.export(out, out_dir=root)
+        check("a pull outside the window is not counted", d["pulls"], [])
+        check("all five unmeasured, none pass", [c["status"] for c in d["criteria"]], ["UNMEASURED"] * 5)
+        check("file written for the page", out.exists(), True)
+
+
+def test_export_says_held_out_or_not_priced():
+    """A prop off one source's ranking is either held out (line and side kept) or never priced."""
+    sr = copy.deepcopy(PLAYERS)
+    sr["Jerry Jeudy"]["player_reception_yds"] = {"draftkings": bk(5.5), "fanduel": bk(5.5)}   # gap far past the limit
+    del sr["DK Metcalf"]["player_reception_yds"]                                             # no line at all
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_pull(root, "20261004T150200Z", PLAYERS, sr)
+        d = pc.export(root / "p62_compare.json", out_dir=root)
+        by = {c["player"]: c for c in d["changes"]}
+        j, m = by.get("Jerry Jeudy", {}), by.get("DK Metcalf", {})
+        check("Jeudy ranked in the Odds API list", j.get("odds_state"), "ranked")
+        check("Jeudy held out on a gap in Sportradar's", j.get("sr_state"), "held: gap")
+        check("held-out line and side kept", (j.get("sr_line"), j.get("sr_side") is not None), (5.5, True))
+        check("Metcalf never priced in Sportradar's", (m.get("sr_state"), m.get("sr_line")), ("not priced", None))
+
+
 if __name__ == "__main__":
     for fn in [test_identical_files_pass, test_pair_window, test_word_order_is_misnamed_and_stops,
                test_priced_qb_difference_stops, test_holdout_name_difference_stops,
                test_line_difference_counted_and_attributed, test_extra_book_is_book_mix,
                test_no_sims_is_unmeasured_not_pass, test_nickname_is_misnamed_not_absent, test_odds_only_book_is_book_mix,
                test_lag_tag, test_grade,
-               test_sim_check_swaps_both_read_points]:
+               test_sim_check_swaps_both_read_points, test_export_page_json, test_export_outside_window_or_empty,
+               test_export_says_held_out_or_not_priced]:
         print(fn.__name__)
         fn()
     print(f"\n{PASS} passed, {FAIL} failed")

@@ -3,10 +3,13 @@
     python -m src.p62_compare --since 2026-10-04T00:00Z            # report to stdout
     python -m src.p62_compare --since ... --out calibration/p62/report.md
     python -m src.p62_compare --no-grade                           # skip S5 (no ESPN calls)
+    python -m src.p62_compare --export                             # S8(c): the props-page JSON
 
 Reads data/props_sr/pulls/<stamp>/ (odds.json, sr.json, holdouts.json and the
 first rank_*/sims.json after the pull) and the shadow manifest. Writes nothing
-but the report. Criteria as confirmed 2026-09-30 (calibration-log.md, 'P62
+but the report, or with --export the props-page section's JSON (S8(c): built
+over the validation window from saved files only, no ESPN call, so S5 is
+reported as not graded there). Criteria as confirmed 2026-09-30 (calibration-log.md, 'P62
 Phase 1 criteria confirmed'); each is reported PASS / FAIL / STOP, or
 UNMEASURED with the reason, never silently skipped.
 
@@ -27,7 +30,7 @@ from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from . import market
+from . import config, market
 from .ingest_injuries import player_key
 from .props import NAME_MATCH, TOP_N, match_player, pnorm, rank
 from .shadow_props_sr import OUT_DIR
@@ -39,6 +42,11 @@ S3_TOTAL_BAR = 0.95
 S3_P_BAR = 0.95
 S3_P_TOL = 0.02
 MOVE_REPORT = 5
+# Validation window (calibration-log.md, P62 row: weeks 4 and 5).
+WINDOW_START = "2026-10-01T03:22Z"
+WINDOW_END = "2026-10-15T03:22Z"
+PUBLIC_P62_JSON = config.ROOT / "dashboard" / "public" / "p62_compare.json"
+DIFF_ROWS = 400   # line differences carried into the page JSON; the count is always full
 ACTUAL_KEY = {"player_pass_yds": "pass_yds", "player_rush_yds": "rush_yds",
               "player_reception_yds": "rec_yds", "player_receptions": "rec"}
 
@@ -290,6 +298,15 @@ def _restrict_to_shared(sr: dict, odds: dict) -> tuple[dict, dict]:
     return a, b
 
 
+def _where(result: dict) -> dict:
+    """key -> (state, row) over every priced prop: 'ranked', 'held: gap',
+    'held: structural' or 'started'. A key missing here was never priced."""
+    out = {_key(r): ("started", r) for r in result["started"]}
+    out.update({_key(r): (f"held: {r['held_reason']}", r) for r in result["held_out"]})
+    out.update({_key(r): ("ranked", r) for r in result["ranked"]})
+    return out
+
+
 def ranking(p: Pull, line_keys: set, absent_keys: set) -> dict | None:
     if p.sims is None or not p.games:
         return None
@@ -302,6 +319,7 @@ def ranking(p: Pull, line_keys: set, absent_keys: set) -> dict | None:
     # odds-name lookup for attribution: key -> odds name
     odds_name = {_key(r): r["odds_name"] for r in a["ranked"] + a["held_out"]}
     sr_name = {_key(r): r["odds_name"] for r in b["ranked"] + b["held_out"]}
+    where_a, where_b = _where(a), _where(b)
     for k in set(sa) | set(sb):
         kinds = []
         if top(sa, k) != top(sb, k):
@@ -323,8 +341,16 @@ def ranking(p: Pull, line_keys: set, absent_keys: set) -> dict | None:
             cause = "coverage"
         else:
             cause = "unexplained"
+        wa, wb = where_a.get(k, ("not priced", {})), where_b.get(k, ("not priced", {}))
+        ref = wa[1] or wb[1]
         changes.append({"pull": p.stamp, "key": k, "kinds": kinds, "cause": cause,
-                        "odds": sa.get(k), "sr": sb.get(k)})
+                        "odds": sa.get(k), "sr": sb.get(k),
+                        # Held-out and started props keep their line and side,
+                        # so the page can say where a prop went, not just that it left.
+                        "odds_state": wa[0], "sr_state": wb[0],
+                        "odds_line": wa[1].get("line"), "sr_line": wb[1].get("line"),
+                        "odds_side": wa[1].get("pick"), "sr_side": wb[1].get("pick"),
+                        "label": ref.get("label"), "team": ref.get("team"), "game": ref.get("game")})
     return {"changes": changes, "moves": moves, "odds_rank": a, "sr_rank": b}
 
 
@@ -391,14 +417,95 @@ def record(pulls: list[Pull], do_grade: bool) -> dict:
 
 # --- report ------------------------------------------------------------------
 
-def run(since: datetime | None, until: datetime | None, do_grade: bool = True, out_dir: Path = OUT_DIR) -> tuple[str, dict]:
+CRITERIA = {"S1": "Coverage", "S2": "Names and game identity", "S3": "Lines",
+            "S4": "Ranking", "S5": "Record"}
+
+
+def _best_rank(c: dict) -> int:
+    return min((c["odds"] or [999])[0], (c["sr"] or [999])[0])
+
+
+def _collected(pulls: list[Pull], paired: int, v: dict) -> dict:
+    """run()'s results as plain data for the props-page section (S8(c))."""
+    entries, absent, misnamed, changes = v["entries"], v["absent"], v["misnamed"], v["changes"]
+    n, same, pn, pok, diffs, rec = v["n"], v["same"], v["pn"], v["pok"], v["diffs"], v["rec"]
+    graded = [x for x in rec["graded"] if x["result"] in ("W", "L", "push")]
+
+    def wlp(which: str) -> str:
+        c = Counter(x["result"] for x in graded if x["list"] == which)
+        return f"{c['W']}-{c['L']}-{c['push']}"
+
+    causes = Counter(c["cause"] for c in changes)
+    tags = Counter(d["tag"] for d in diffs)
+    criteria = [
+        ("S1", v["s1"], [
+            f"top-{TOP_N} Odds API props absent from Sportradar: {len(v['top_absent'])}",
+            f"covered {entries - len(absent)} of {entries} entries ({v['covered']:.1%}; bar {S1_COVERAGE:.0%})"
+            if entries else "no entries compared",
+            f"{len(absent)} absent, {len(misnamed)} misnamed (misnamed count under S2)"],
+         [f"{m['game']} {m['player']} {m['market']}: {m['kind']}{' [top]' if m['in_top'] else ''}"
+          for m in v["all_misses"]]),
+        ("S2", v["s2"], [f"{len(v['fails'])} name or game-identity failures"]
+         + [f"unmeasured {u}" for u in v["unmeasured"]], v["fails"]),
+        ("S3", v["s3"], [
+            f"totals equal {same} of {n} ({v['r_tot']:.1%}; bar {S3_TOTAL_BAR:.0%})" if n else "nothing compared",
+            f"P(over) within {S3_P_TOL} {pok} of {pn} ({v['r_p']:.1%}; bar {S3_P_BAR:.0%})" if pn
+            else "no prices compared",
+            f"{len(diffs)} differences" + (": " + ", ".join(f"{k} {c}" for k, c in tags.most_common()) if diffs else "")],
+         []),
+        ("S4", v["s4"], [
+            f"{len(changes)} ranking changes"
+            + (" (" + ", ".join(f"{k} {c}" for k, c in causes.most_common()) + ")" if changes else ""),
+            f"{len(v['unexplained'])} unexplained",
+            f"{len(v['moves'])} move{'' if len(v['moves']) == 1 else 's'} of {MOVE_REPORT}+ places inside the top {TOP_N} (reported only)"], []),
+        ("S5", v["s5"], (
+            ["graded in the full report (python -m src.p62_compare), not on refresh: grading reads ESPN"]
+            if not v["do_grade"] else [
+                f"Sportradar top-{TOP_N} props unmatched in grading: {len(rec['unmatched_sr'])}",
+                f"not final yet: {', '.join(rec['not_final']) or 'none'}",
+                f"Odds API list {wlp('odds')}, Sportradar list {wlp('sr')} (reported only)"]),
+         rec["unmatched_sr"]),
+    ]
+    return {
+        "pulls": [{"stamp": p.stamp, "at": p.at.isoformat(), "games": len(p.games),
+                   "excluded": len(p.excluded), "ranked": p.sims is not None} for p in pulls],
+        "paired": paired,
+        "excluded": sum(len(p.excluded) for p in pulls),
+        "criteria": [{"id": k, "name": CRITERIA[k], "status": st, "detail": det, "items": items}
+                     for k, st, det, items in criteria],
+        "changes": [{"pull": c["pull"], "game_id": c["key"][0], "player": c["key"][1], "market": c["key"][2],
+                     "game": c["game"], "team": c["team"], "label": c["label"], "kinds": c["kinds"],
+                     "cause": c["cause"],
+                     "odds_rank": c["odds"][0] if c["odds"] else None, "odds_pick": c["odds"][1] if c["odds"] else None,
+                     "sr_rank": c["sr"][0] if c["sr"] else None, "sr_pick": c["sr"][1] if c["sr"] else None,
+                     "odds_state": c["odds_state"], "sr_state": c["sr_state"],
+                     "odds_side": c["odds_side"], "sr_side": c["sr_side"],
+                     "odds_line": c["odds_line"], "sr_line": c["sr_line"]}
+                    for c in sorted(changes, key=lambda c: (c["pull"], _best_rank(c)))],
+        "moves": [{"pull": m["pull"], "game_id": m["key"][0], "player": m["key"][1], "market": m["key"][2],
+                   "odds_rank": m["odds_rank"], "sr_rank": m["sr_rank"]} for m in v["moves"]],
+        "line_diffs": [{k: d[k] for k in ("pull", "game", "player", "market", "book", "kind", "tag", "minutes")}
+                       | {"odds": {k: d["odds"].get(k) for k in ("point", "over", "under")},
+                          "sr": {k: d["sr"].get(k) for k in ("point", "over", "under")}}
+                       for d in diffs[:DIFF_ROWS]],
+        "line_diff_count": len(diffs),
+    }
+
+def run(since: datetime | None, until: datetime | None, do_grade: bool = True, out_dir: Path = OUT_DIR,
+        collect: dict | None = None) -> tuple[str, dict]:
+    """The report and the verdict per criterion. `collect`, when given, is
+    filled with the same results as plain data (the props-page section)."""
     pulls = load_pulls(out_dir, since, until)
     verdict: dict[str, str] = {}
     lines: list[str] = [f"# P62 Phase 1 comparison ({len(pulls)} pulls"
                         f"{', since ' + since.isoformat() if since else ''}{', until ' + until.isoformat() if until else ''})", ""]
     if not pulls:
-        return "\n".join(lines + ["No saved pulls in range."]), {"S1": "UNMEASURED", "S2": "UNMEASURED",
-                                                                   "S3": "UNMEASURED", "S4": "UNMEASURED", "S5": "UNMEASURED"}
+        verdict = {k: "UNMEASURED" for k in CRITERIA}
+        if collect is not None:
+            collect.update({"pulls": [], "paired": 0, "excluded": 0, "criteria": [
+                {"id": k, "name": CRITERIA[k], "status": v, "detail": ["no saved pulls in range"], "items": []}
+                for k, v in verdict.items()], "changes": [], "moves": [], "line_diffs": [], "line_diff_count": 0})
+        return "\n".join(lines + ["No saved pulls in range."]), verdict
     paired = sum(len(p.games) for p in pulls)
     lines += ["## Pairs", "", f"{paired} game pairs within {PAIR_MINUTES:g} min; "
               f"{sum(len(p.excluded) for p in pulls)} excluded; "
@@ -543,7 +650,23 @@ def run(since: datetime | None, until: datetime | None, do_grade: bool = True, o
               f"- hypothetical Odds API credits a switch would have saved on these pulls: "
               f"{4 * sum(len(p.games) + len(p.excluded) for p in pulls)} (4 markets x games pulled; HYPOTHETICAL)"]
     head = ["## Verdict", ""] + [f"- {k}: {v}" for k, v in verdict.items()] + [""]
+    if collect is not None:
+        collect.update(_collected(pulls, paired, locals()))
     return "\n".join(lines[:2] + head + lines[2:]), verdict
+
+
+def export(path: Path = PUBLIC_P62_JSON, out_dir: Path = OUT_DIR, now: datetime | None = None) -> dict:
+    """S8(c): the props-page section's data, over the validation window, from
+    saved shadow files only (no grading, so no ESPN call). Nothing else reads it."""
+    data: dict = {}
+    since, until = _parse(WINDOW_START), _parse(WINDOW_END)
+    _, verdict = run(since, until, do_grade=False, out_dir=out_dir, collect=data)
+    payload = {"generated_at": (now or datetime.now(timezone.utc)).isoformat(),
+               "window": {"start": since.isoformat(), "end": until.isoformat()},
+               "top_n": TOP_N, "verdict": verdict, **data}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=1, default=str), encoding="utf-8")
+    return payload
 
 
 def main() -> None:
@@ -552,7 +675,12 @@ def main() -> None:
     ap.add_argument("--until")
     ap.add_argument("--out", type=Path)
     ap.add_argument("--no-grade", action="store_true")
+    ap.add_argument("--export", action="store_true", help="write the props-page JSON (S8c) and stop")
     args = ap.parse_args()
+    if args.export:
+        payload = export()
+        print(f"wrote {PUBLIC_P62_JSON}: " + ", ".join(f"{k} {v}" for k, v in payload["verdict"].items()))
+        return
     text, verdict = run(_parse(args.since), _parse(args.until), do_grade=not args.no_grade)
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

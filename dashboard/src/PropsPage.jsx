@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import GameQA from './GameQA.jsx'
+import P62Compare from './P62Compare.jsx'
 import { kickoffLabel } from './format.js'
 import { teamColor } from './teams.js'
 import { PageHead, TeamLogo, pct } from './ui.jsx'
@@ -136,6 +137,7 @@ export default function PropsPage({ tabs = null }) {
               </ol>
               <MoreProps more={data.more || []} held={data.held_out || []} maxGap={data.max_gap}
                 structural={data.structural_holdouts || []} />
+              <P62Compare />
             </>
           )}
         </div>
