@@ -276,6 +276,20 @@ def _starter_mismatch(market: str, position: str, line, q: dict) -> str | None:
 # and Strand are all inactive so Cooper Rush takes 100% of the passing rather
 # than the 60/40 split the ATL note described. Neither note was true any more,
 # and a stale caveat is worse than none.
+# 2026-10-01, NYJ @ CHI: the simulation starts Keenum (depth QB2, Williams
+# doubtful); the books price Bagent. The engine prices a team's passing at team
+# level, so a forced-Bagent run gave him Keenum's numbers (calibration-log,
+# 2026-10-01 NYJ @ CHI entry) and his 200.5 line looked like a 22.8-pt edge.
+# When the inactive list posts: if Keenum starts, remove both entries; if
+# Bagent starts, keep Bagent's (unreliable, not a pick) and drop Keenum's.
+_CHI_QB_NOTE = ("Held out: CHI's starting QB is unresolved (the simulation starts Keenum; the books price Bagent).")
+_CHI_BAGENT_NOTE = ("Held out as unreliable: the simulation gives any CHI starter the same team-level passing, "
+                    "so a Bagent line measures the missing quarterback-quality term, not the player. "
+                    "Stays held even if the inactive list confirms him.")
+PROP_HOLDOUTS.update({("2026_04_NYJ_CHI", qb, m): note
+                      for qb, note in (("Case Keenum", _CHI_QB_NOTE), ("Tyson Bagent", _CHI_BAGENT_NOTE))
+                      for m in ("player_pass_yds", "player_rush_yds")})
+
 KNOWN_DEFECTS: dict[tuple[str, str], str] = {}
 
 
