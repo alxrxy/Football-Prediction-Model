@@ -94,6 +94,7 @@ status only when its adoption test is met.
 | P64 | Injuries: a hand-transcribed injury/practice file (read from report screenshots) merged into the live injury layer before a refresh | data | 2026-09-30 | No scraped source is allowed or affordable for the official team reports (P47: team pages banned by terms; FantasyPros free tier 10 rows/request), and nflverse/ESPN can lag a team's report on game day. The user can read reports from screenshots. The live layer uses only (game status, one practice level) through `ingest_injuries.PLAY_PROBABILITY`; no per-day logic exists (P47 not built) | see the 2026-09-30 P64 entry: C1-C8, set before the build | **BUILT 2026-09-30, C1-C8 pass; not yet used live** (first use: whenever a `data/manual_injuries/<season>-wk<NN>.csv` is present at a refresh; none exists, so nothing has changed). `src/manual_injuries.py`; merge in `ingest_injuries.run`; read side in `features.latest_injury_report`; `run_sunday` stops the refresh on an invalid file. See the 2026-09-30 P64 entry's results. Days 1-2 are kept in the file but unused (user: not folded into P47's trend-table decision; revisit when P47 is scoped) |
 | P65 | Sportradar: P61's live capture runs through the rotating key manager, whose multi-key use has not been checked against Sportradar's trial terms | terms / data | 2026-09-30 | Raised during P62's S7 review (user, 9/30): P62's shadow is restricted to KEY1 with no rotation until the multi-key terms are known, because five trial keys used to extend quota may breach a one-trial-per-person term. P61 (`capture_prop_closes`, live since 9/30) calls through `sportradar.KeyManager`, which moves to the next of `SPORTRADAR_API_KEY1..5` when a key reaches `MONTHLY_QUOTA - QUOTA_MARGIN` (1000 - 50) calls for a product in a UTC month. **Checked 2026-09-30 (`data/sportradar/usage.jsonl`, 28 calls):** no `switch` event yet; all P61 calls on KEY1; KEY2-5 have 2 calls each, all from the 9/30 diagnosis (every key tested on Betting Splits and the NFL / props APIs), not rotation. P61's ~610 calls/month plus P62's ~215 stay under 950 on KEY1, so rotation is not expected in October, but nothing stops it | (proposed, confirm with user) (1) Sportradar's terms on holding and using multiple trial keys are found and cited (account page, terms, or a written answer); (2) until then, P61 and P62 use KEY1 only and stop with a log line at the margin instead of rotating; (3) any past rotation is listed from `usage.jsonl` (none as of 9/30) | **logged 2026-09-30, nothing changed** (user: check separately whether P61 has been operating within confirmed terms). Belongs with P62 S7(d), which needs the same terms |
 | P66 | Scenarios: for a game whose starting QB is genuinely unresolved, show the prediction under each realistic starter, on demand | display / tooling | 2026-10-01 | IND @ WAS (Daniels questionable, books price Mariota) and NYJ @ CHI (sim Keenum, books Bagent) are served on one assumed starter; the 10/1 manual Bagent-vs-Keenum scratch run showed what the alternative looks like. Nothing repeatable exists | (proposed, confirm with user before building) see the 2026-10-01 'P66 scoped' entry | **LIVE 2026-10-01: panel approved as final (user, `b42a408`); wired into `run_sunday` for qualifying games (user)**, after the props ranking, merged into `scenarios.json`; also on demand (`python -m src.scenarios --publish`). See the 2026-10-01 'P66 built' entry. Criteria confirmed 2026-10-01 as proposed (user) |
+| P67 | Props record: grade the served top 25 / top 50 each week against actual outcomes (W-L-push, hit rate, by category), from an archive of every served ranking | process / validation | 2026-10-01 | No graded record of the served props list exists. `props.json` is overwritten at every ranking; before 10/1 only ad-hoc snapshots survive. Backfill checked 2026-10-01 (read-only): **week 1** no list ever existed (the ranking was added 9/15); **week 2** only the Thu/Fri lists (lines 9/17 23:00Z) survive, the Sat/Sun lists after the 2A / k32 / PENALTY_REPLAY changes were overwritten; **week 3** the TNF list is saved exactly (ATL @ GB, generated 00:09Z, kickoff 00:15Z), the Sun/Mon lists were not: each game's last lines and stored pregame sim survive, so its prices can be rebuilt but not its rank (each window's list also held later games whose sims were re-run since); **week 4** every ranking since 10/1 03:47Z exists only as P62 shadow snapshots (`rank_*/props.json`), which depend on Sportradar pairing and stop at the 10/15 window close. Reusable: `p62_compare.grade` (player match + W/L/push on the four markets) and `_actual` (ESPN finals, cached); nflverse as fallback | Phase A (archive) A1-A5 and phase B (record) B1-B8 in the 2026-10-01 'P67 scoped' entry, set before any build | **scoped 2026-10-01; user decisions: record starts at week 4, no backfill into it; each game graded from its own last list served before kickoff (S5's rule), with the real row count per week shown beside the top-25 / top-50 numbers; week 2's Friday list and week 3's TNF game only as a labelled 'pre-record / reconstructed' footnote, never counted; phase A (archive) built before Sunday 10/4's early window.** Nothing built yet |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -135,6 +136,78 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-10-01 — P67 scoped: weekly props record from an archive of every served ranking (nothing built)
+
+**Why.** The served props list has never been graded as a list. The 9/21 and 9/29 props grading (P31) graded every
+priced prop, rebuilt from saved lines, which says nothing about the top of the ranking the page actually shows.
+
+**What survives (checked 2026-10-01, read-only).** Only `props.run` writes `props.json`, and it overwrites it at every
+ranking. Saved copies:
+
+| Week | Saved | In the record? |
+|---|---|---|
+| 1 | nothing: the ranking was added 9/15 (99128c6), after week 1 was played | no; no list ever existed |
+| 2 | `data/snapshots/pre-2A_2026-09-18/` (list 06:15Z 9/18, TNF still ranked after kickoff, pre-dates the `started` filter) and `pre-friday_2026-09-18/` (list 21:41Z 9/18, TNF under `started`); both on lines pulled 9/17 23:00Z | no; the Sat/Sun lists that followed the 9/18-9/19 engine changes (2A, k32, PENALTY_REPLAY) were overwritten. Friday list = footnote only |
+| 3 | `pre-sunday_2026-09-27/props.json` is the TNF list (generated 00:09Z 9/25, ATL @ GB kicked off 00:15Z; 4 of its top 25); `wk3-props_2026-09-28/props_lines.json` has the last pregame lines of the other 15 games, but its `props.json` was regenerated after the games (411 `started`) | no; TNF = footnote only. Sun/Mon prices could be rebuilt from lines + stored pregame sims, ranks cannot: each window's list also ranked later games on sims since re-run, so a rebuilt top 25 is a list nobody was shown |
+| 4 | P62 shadow `data/props_sr/pulls/*/rank_*/props.json`: the served payload at each paired ranking since 10/1 03:47Z | yes, the first week; phase A removes the dependence on Sportradar pairing |
+
+**User decisions (2026-10-01).** (1) The record starts at week 4, with no backfill into it. Week 2's Friday list and
+week 3's TNF game appear only in a separate footnote labelled **pre-record / reconstructed**, explicitly not part of
+the graded track record and never in any total. (2) Each game is graded from **its own last list served before its
+kickoff**, the same rule as P62 S5; the actual row count per week is reported beside the top-25 / top-50 numbers,
+since Thursday, Sunday and Monday games come from different lists and a week can exceed 25 / 50 rows. (3) Phase A,
+the archive, is built before Sunday 10/4's early window (17:00Z), so week 4's record does not depend on the shadow.
+
+**Phase A: archive of every served ranking (build now).**
+- **A1 complete.** Every `props.run` that writes `props.json` also writes one archive file
+  `data/props_archive/<season>_w<WW>/<generated_at stamp>.json` holding the **exact bytes** written to `props.json`,
+  and appends one row to `data/props_archive/index.csv`: stamp, week, generated_at, lines_pulled_at, git commit,
+  line source (`odds_api`), sha256 of the served file and of the `props_lines.json` it ranked, top / more / held /
+  started counts, and an origin tag (`live`). The ranked lines file is kept once per distinct sha
+  (`lines/<sha12>.json`).
+- **A2 isolated.** Served outputs (`props.json`, `dashboard/public/props.json`) are byte-identical with the archive on
+  or failing; an archive error prints a warning and the ranking completes. The archive runs after the served file is
+  written. Unit tests for both.
+- **A3 append-only.** No archive file is overwritten; a stamp collision gets a suffix. Nothing reads the archive except
+  the record builder.
+- **A4 live.** Before 17:00Z Sunday 10/4, a real ranking has produced an archive file whose bytes equal
+  `data/props.json` at that moment, with a correct index row. Reported.
+- **A5 seed.** The three week-4 P62 rankings already saved (10/1 03:47Z, 04:14Z, 07:34Z) are copied in with origin
+  `p62_shadow`, after a check that each equals what was served (the shadow wrote it through `json.dumps(..., default=str)`;
+  any byte difference is reported, not normalised away). Suite passes.
+- `data/` is gitignored: the archive is local and OneDrive-backed, like the P58 archive, not committed.
+
+**Phase B: the record (criteria set now; build after phase A; first run once week 4's TNF is final, full week after
+MNF 10/5).**
+- **B1 list rule.** Per game: the archived list with the latest `generated_at` before kickoff that ranks the game. Its
+  rows for that game with rank <= 25 form the top-25 set, rank <= 50 the top-50 set (ranks as served, from `props` and
+  `more`). Held-out and started rows are never graded. A game with no archived pregame list is reported as **no list**,
+  never filled from another source.
+- **B2 grading.** `p62_compare.grade`'s matching and W / L / push (actual vs line on the picked side). Hit rate =
+  W / (W + L); pushes shown, not in the rate. A row with no box-score line is not graded and is listed by name (did
+  not play, or a name failure: each is checked; a name failure is a defect to fix, then the week is re-graded).
+- **B3 output per week and season-to-date.** Rows graded (the real count) and games covered; top 25 and top 50 each
+  with W-L-push and hit rate, overall and by category: passing (pass yds), rushing (rush yds), receiving (rec yds),
+  receptions; over / under split reported. Written to `calibration/props_record.md` (+ machine-readable JSON),
+  regenerated from the archive, so a re-run gives the same numbers.
+- **B4 markers.** Each graded row carries its list's generated_at, git commit, line source and bias-fit date. Known
+  boundaries are shown as splits in the season-to-date, not blended silently: the P22/P51 merge (after MNF 10/5,
+  week 5 on), any props refit, and any line-source switch (P62 S5c's record-marking gate).
+- **B5 actuals.** ESPN final box scores (cached finals); nflverse weekly stats as the fallback; the source per game
+  recorded. A game that is not final is reported as pending, not graded.
+- **B6 footnote.** Week 2 Friday list (`pre-friday_2026-09-18/props.json`, Sunday/Monday games; TNF excluded as
+  started) and week 3 TNF (`pre-sunday_2026-09-27/props.json`, ATL @ GB rows only), graded by the same code in a
+  separate section headed **pre-record / reconstructed, not counted**, each with why it is not the record (week 2:
+  not the last pregame list, two engine changes and two days stale; week 3: one game).
+- **B7 no claims.** Hit rates are reported with the average break-even of the prices taken, for context only; no
+  "validated" or "profitable" wording; anything shown on the dashboard later carries `UNVALIDATED_TEXT`. A
+  dashboard view is not in scope until the user decides.
+- **B8 tests.** List rule (latest pregame list wins; post-kickoff lists ignored; no-list games reported), grading
+  (W / L / push, pushes outside the rate, no-box-line rows listed), category split, footnote never in totals; suite
+  passes.
 
 ---
 
