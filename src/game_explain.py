@@ -39,6 +39,9 @@ RECONCILE_TOL = 0.05
 NAME_INJURY_PTS = 0.3
 # Below this the served margin is called a toss-up rather than a lean.
 TOSS_UP_PTS = 1.0
+# A game whose baseline win probability shows as 45-55% (rounded, as the page
+# shows it) is a close game: its note says why it is close, not just the lean.
+CLOSE_WIN_PROB = (45, 55)
 
 SYSTEM = (
     "You write short explanations for a personal NFL prediction page. Each game comes with the model's "
@@ -52,7 +55,11 @@ SYSTEM = (
     "it is given next to that player's name, and never move a caveat from one player to another; don't judge "
     "how reliable a factor is beyond what a caveat says; call the team rating "
     "a 'team rating' or 'rating gap', never 'opponent-adjusted'; never recommend a bet, never say 'lock' or "
-    "'value'; no hype."
+    "'value'; no hype. "
+    "For a game marked 'close game', explain why it is close rather than only stating the lean: name the "
+    "factor or factors favouring the model's side and the factor or factors offsetting them, in the form "
+    "'the rating gap favours X, but Y pulls the other way', using only the factors given. If nothing pulls "
+    "the other way, say that the factors favouring the lean are all small."
 )
 SCHEMA = {
     "type": "object",
@@ -129,6 +136,9 @@ def factors(game: dict, ratings: dict[str, dict] | None = None, prior: float | N
         "favoured": home if margin > 0 else away,
         "margin_home": round(margin, 1),
         "toss_up": abs(margin) < TOSS_UP_PTS,
+        "win_prob_home": base.get("win_prob_home"),
+        "close": (base.get("win_prob_home") is not None
+                  and CLOSE_WIN_PROB[0] <= round(base["win_prob_home"] * 100) <= CLOSE_WIN_PROB[1]),
         "parts": {k: round(v, 1) for k, v in parts.items()},
         "rest_days": {home: layers.get("home_rest_days"), away: layers.get("away_rest_days")},
         "away_travel_miles": layers.get("away_travel_miles"),
@@ -210,7 +220,8 @@ def describe(gid: str, f: dict) -> str:
     fav = f["favoured"]
     other = away if fav == home else home
     bits = [f"{gid} | {away} at {home}{' (neutral site)' if f['neutral'] else ''}",
-            f"model: {_lean(fav, other, f['margin_home'])}" + (" (toss-up)" if f["toss_up"] else ""),
+            f"model: {_lean(fav, other, f['margin_home'])}" + (" (toss-up)" if f["toss_up"] else "")
+            + (f" (close game: {home} win probability {round(f['win_prob_home'] * 100)}%)" if f.get("close") else ""),
             # Each factor names the team it helps: a signed home-team number
             # was misread as favouring the wrong side.
             "factors: " + ", ".join(f"{k.replace('_', ' ')} {_toward(v, home, away)}"
@@ -347,7 +358,7 @@ def attach(games: list[dict], *, call_claude: bool = True) -> None:
         if (f := facts.get(gid)) is None:
             continue
         text = notes.get(gid)
-        g["explanation"] = {"text": text, "favoured": f["favoured"], "toss_up": f["toss_up"],
+        g["explanation"] = {"text": text, "favoured": f["favoured"], "toss_up": f["toss_up"], "close": f["close"],
                             "parts": f["parts"], "caveats": f["caveats"],
                             "model": config.CLAUDE_MODEL if text else None, "generated_at": at}
 
