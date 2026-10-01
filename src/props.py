@@ -638,6 +638,15 @@ def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = Fa
     PROPS_JSON.write_text(json.dumps(payload), encoding="utf-8")
     if PUBLIC_PROPS_JSON.parent.exists():
         shutil.copy(PROPS_JSON, PUBLIC_PROPS_JSON)
+    # P67: keep this ranking exactly as served (the bytes on disk), for the
+    # weekly props record. After the served files are written; never affects them.
+    try:
+        from .props_archive import archive
+
+        kept = archive(PROPS_JSON.read_bytes(), lines_bytes)
+        print(f"  [P67] ranking archived -> {kept.parent.name}/{kept.name}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [warn] P67: ranking NOT archived ({exc}); nothing served changed")
     print(f"[props] week {payload['week']}: {payload['priced']} props priced, top {len(top)} written "
           f"({sum(r['held_reason'] == 'gap' for r in result['held_out'])} held out as likely usage misses, "
           f"{sum(r['held_reason'] == 'structural' for r in result['held_out'])} held out as engine defects, "
