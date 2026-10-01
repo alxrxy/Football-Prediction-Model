@@ -110,7 +110,7 @@ export default function ScenarioPanel({ gameId }) {
       )}
       <p className="muted small">
         {g.sims.toLocaleString()} simulations per scenario, same seed and inputs as the served run · generated{' '}
-        {new Date(data.generated_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} ·
+        {new Date(g.generated_at || data.generated_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} ·
         retires when the inactive list posts
       </p>
     </div>

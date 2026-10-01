@@ -107,6 +107,62 @@ def test_control_comparison():
     check("a produced value differs", sc._same_sim(fresh, stored), False)
 
 
+def test_publish_merges_and_retires():
+    """A window refresh replaces its own games, drops one that no longer
+    qualifies, keeps other windows' games, and drops kicked-off games."""
+    import json
+    import tempfile
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+
+    future = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    prev = {"season": 2026, "week": 4, "games": {
+        "OTHER_WINDOW": {"kickoff": future, "scenarios": []},
+        "NOW_KNOWN": {"kickoff": future, "scenarios": []},
+        "KICKED_OFF": {"kickoff": past, "scenarios": []}}}
+    saved = (sc.OUT_JSON, sc.PUBLIC_JSON, sc.run_game, sc.db.get_store, sc.FeatureContext)
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        sc.OUT_JSON, sc.PUBLIC_JSON = tmp / "s.json", tmp / "nope" / "s.json"
+        sc.OUT_JSON.write_text(json.dumps(prev), encoding="utf-8")
+        sc.run_game = lambda gid, *a, **k: {"kickoff": future, "scenarios": [1]} if gid == "STILL_OPEN" else None
+        import src.simulate_nfl as sn
+        saved_sn = (sn.load_inputs, sn.qb_check_inputs)
+        sn.load_inputs = lambda season: None
+        sn.qb_check_inputs = lambda store: None
+
+        class Store:
+            def select(self, *a, **k):
+                return []
+
+            def close(self):
+                pass
+
+        class Ctx:
+            def __init__(self, *a, **k):
+                self.games = [{"game_id": g, "season": 2026, "week": 4, "kickoff_time": future,
+                               "home_team": "H", "away_team": "A"} for g in ("STILL_OPEN", "NOW_KNOWN")]
+        sc.db.get_store, sc.FeatureContext = (lambda: Store()), Ctx
+        import src.ingest_injuries as ii
+        saved_iw = ii._infer_week
+        ii._infer_week = lambda *a: 4
+        saved_sm = sc.db.select_merged
+        sc.db.select_merged = lambda *a, **k: []
+        lines_path = sc.config.DATA_DIR / "props_lines.json"
+        try:
+            out = sc.run(publish=True, game_ids={"STILL_OPEN", "NOW_KNOWN"})
+            got = json.loads(sc.OUT_JSON.read_text(encoding="utf-8"))
+        finally:
+            (sc.OUT_JSON, sc.PUBLIC_JSON, sc.run_game, sc.db.get_store, sc.FeatureContext) = saved
+            sn.load_inputs, sn.qb_check_inputs = saved_sn
+            ii._infer_week = saved_iw
+            sc.db.select_merged = saved_sm
+    check("merged games", sorted(got["games"]), ["OTHER_WINDOW", "STILL_OPEN"])
+    check("summary names what qualified", "1 scenario(s)" in sc.summary({**out, "games": {
+        "STILL_OPEN": {"away": "A", "home": "H", "scenarios": [1], "control": {"reproduces_served": True}}}}), True)
+
+
 if __name__ == "__main__":
     for t in [v for k, v in dict(globals()).items() if k.startswith("test_")]:
         print(t.__name__)

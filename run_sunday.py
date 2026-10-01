@@ -43,6 +43,7 @@ from src import (
     predict_baseline,
     predict_ml,
     props,
+    scenarios,
     simulate_nfl,
 )
 from src.features import parse_dt
@@ -198,6 +199,12 @@ def refresh(window: Window, target: date, args) -> None:
             cache_minutes=0 if args.fresh_odds else None,
             only_games={g["game_id"] for g in window.games}))
         step("props: rank", lambda: props.run(with_explanations=not args.no_explain))
+
+    # P66: starting-QB scenarios for this window's games that qualify (an
+    # unresolved starter), merged into scenarios.json; comparison only, nothing
+    # served reads it. A game whose lists have posted retires from the panel.
+    step("QB scenarios", lambda: print(scenarios.summary(
+        scenarios.run(publish=True, game_ids={g["game_id"] for g in window.games}))))
 
     step("export sims", lambda: export_sims.run(dates=[target.isoformat()], quiet=True))
     step("export dashboard", lambda: export_dashboard.run(explain=not args.no_explain))
