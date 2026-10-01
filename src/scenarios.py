@@ -187,7 +187,8 @@ def _p_over(lines_game: dict, gid: str, view: dict) -> dict[tuple, dict]:
     return out
 
 
-def run_game(gid: str, store, ctx: FeatureContext, inputs, n: int | None, lines: dict, qbc) -> dict | None:
+def run_game(gid: str, store, ctx: FeatureContext, inputs, n: int | None, lines: dict, qbc,
+             posted: set | None = None) -> dict | None:
     from .simulate_nfl import _stored_anchors, simulate_one
 
     game = next(g for g in ctx.games if g["game_id"] == gid)
@@ -200,6 +201,10 @@ def run_game(gid: str, store, ctx: FeatureContext, inputs, n: int | None, lines:
     week = int(game["week"])
     teams = {}
     for team in (game["home_team"], game["away_team"]):
+        # A team whose inactive list has posted has a known starter, unless P49
+        # held a QB flag on it as unresolved (a list that may be wrong).
+        if (gid, team) in (posted or set()) and not unresolved.get(team):
+            continue
         specs = team_specs(team, _depth_qbs(inputs.roles, team), ctx.injuries, warnings.get(team),
                            unresolved.get(team, []))
         if specs:
@@ -222,7 +227,7 @@ def run_game(gid: str, store, ctx: FeatureContext, inputs, n: int | None, lines:
     served_p = _p_over(lines_game, gid, served_sum["_view"]) if lines_game else {}
     served_qb1 = {t: q["player"] for t, q in served_sum["sim_qbs"].items()}
 
-    result = {"game_id": gid, "home": game["home_team"], "away": game["away_team"], "kickoff": game["kickoff_time"],
+    result = {"game_id": gid, "generated_at": datetime.now(timezone.utc).isoformat(), "home": game["home_team"], "away": game["away_team"], "kickoff": game["kickoff_time"],
               "caveat": CAVEAT, "served_margin": served_anchor,
               "rebuilt_margin": rebuilt["model_margin_home"] if rebuilt else None,
               "control": {"label": "As served", **{k: v for k, v in served_sum.items() if k != "_view"},
@@ -305,7 +310,13 @@ def _same_sim(fresh: dict, stored: dict) -> bool:
     return canon(fresh) == canon(stored)
 
 
-def run(game_id: str | None = None, n: int | None = None, publish: bool = False) -> dict:
+def run(game_id: str | None = None, n: int | None = None, publish: bool = False,
+        game_ids: set[str] | None = None) -> dict:
+    """Scenarios for this week's unplayed games (or `game_ids`). With publish,
+    merged into data/scenarios.json: games computed here replace their entry,
+    games that no longer qualify (starter known) are removed, kicked-off games
+    are dropped, and other games keep theirs (a window refresh touches only its
+    own games)."""
     from .ingest_injuries import _infer_week
     from .simulate_nfl import load_inputs, qb_check_inputs
 
@@ -319,25 +330,51 @@ def run(game_id: str | None = None, n: int | None = None, publish: bool = False)
                  and (k := parse_dt(g.get("kickoff_time"))) and k > now]
         if game_id:
             games = [g for g in games if g["game_id"] == game_id]
+        if game_ids is not None:
+            games = [g for g in games if g["game_id"] in game_ids]
         posted = {(r["game_id"], r["team"]) for r in db.select_merged(store, "inactives")}
         lines = json.loads((config.DATA_DIR / "props_lines.json").read_text(encoding="utf-8"))
         inputs = load_inputs(season)
         qbc = qb_check_inputs(store)
         out = {"generated_at": now.isoformat(), "season": season, "week": week, "games": {}}
+        checked = []
         for g in games:
-            if (g["game_id"], g["home_team"]) in posted and (g["game_id"], g["away_team"]) in posted:
-                continue   # both lists posted: the starters are known
-            res = run_game(g["game_id"], store, ctx, inputs, n, lines, qbc)
+            checked.append(g["game_id"])
+            res = run_game(g["game_id"], store, ctx, inputs, n, lines, qbc, posted)
             if res is not None:
                 out["games"][g["game_id"]] = res
     finally:
         store.close()
+    out["checked"] = checked
     if publish:
+        merged = {"games": {}}
+        try:
+            prev = json.loads(OUT_JSON.read_text(encoding="utf-8"))
+            if (prev.get("season"), prev.get("week")) == (out["season"], out["week"]):
+                merged = prev
+        except (OSError, ValueError):
+            pass
+        games_out = {gid: g for gid, g in (merged.get("games") or {}).items()
+                     if gid not in checked and (k := parse_dt(g.get("kickoff"))) and k > now}
+        games_out.update(out["games"])
+        published = {**{k: v for k, v in out.items() if k not in ("games", "checked")}, "games": games_out}
         config.ensure_dirs()
-        OUT_JSON.write_text(json.dumps(out, default=str), encoding="utf-8")
+        OUT_JSON.write_text(json.dumps(published, default=str), encoding="utf-8")
         if PUBLIC_JSON.parent.exists():
             shutil.copy(OUT_JSON, PUBLIC_JSON)
     return out
+
+
+def summary(out: dict) -> str:
+    """One line for run_sunday: what was checked and what qualified."""
+    have = out.get("games") or {}
+    rest = [g for g in out.get("checked") or [] if g not in have]
+    parts = [f"{g['away']} @ {g['home']}: {len(g['scenarios'])} scenario(s)"
+             + ("" if g["control"].get("reproduces_served") is True else " [control does NOT reproduce served]")
+             for g in have.values()]
+    return (f"  [scenarios] {len(out.get('checked') or [])} game(s) checked; "
+            + ("; ".join(parts) if parts else "none qualifies")
+            + (f"; no scenarios (starter known or no signal): {len(rest)}" if rest else ""))
 
 
 def format_report(out: dict) -> str:
