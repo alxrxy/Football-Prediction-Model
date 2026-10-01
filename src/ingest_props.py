@@ -163,6 +163,7 @@ def run(cache_minutes: int | None = None, only_missing: bool = False,
            "week": games[0].get("week"), "markets": markets, "games": {}}
     meta: dict = {}
     live_calls = carried = 0
+    live_games: set[str] = set()   # fetched live this run: the games P62's shadow pairs with
     for i, game in matched.items():
         event = events[i]
         prior = prev_games.get(game["game_id"]) or {}
@@ -189,6 +190,8 @@ def run(cache_minutes: int | None = None, only_missing: bool = False,
             if meta.get("quota_remaining") is not None:
                 out["quota_remaining"] = meta["quota_remaining"]
             continue
+        if not meta.get("from_cache"):
+            live_games.add(game["game_id"])
         out["games"][game["game_id"]] = {
             "home": game["home_team"], "away": game["away_team"], "kickoff": game.get("kickoff_time"),
             "event_id": event["id"], "books": len((data or {}).get("bookmakers") or []),
@@ -225,6 +228,15 @@ def run(cache_minutes: int | None = None, only_missing: bool = False,
     if name_misses:
         print(f"  [warn] unmatched events: {', '.join(name_misses[:5])}")
     print(f"  wrote {PROPS_LINES_JSON}")
+
+    # P62 Phase 1: Sportradar shadow pull, only after the served file is
+    # written. It never raises and nothing served reads what it writes.
+    try:
+        from .shadow_props_sr import shadow
+
+        shadow(out, live_games, odds_path=PROPS_LINES_JSON)
+    except Exception as exc:  # noqa: BLE001 - shadow() never raises; this covers its import
+        print(f"  [warn] P62 shadow unavailable, nothing served changed: {exc}")
     return out
 
 
