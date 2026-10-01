@@ -317,6 +317,43 @@ in a way the tool has to be fixed for, pending the user's ruling:**
   classed unexplained.
 Nothing served depends on either; the window keeps collecting.
 
+**User rulings and converter fix, 2026-10-01 (user confirmed explicitly):**
+1. **Measurement fixes, both applied to `p62_compare`:** (a) a name that shares only the last name with exactly one
+   unclaimed Sportradar player in the game is **misnamed** (S2), not absent (S1); (b) S4's book-mix test cuts **both**
+   files to the books both carry for that player-market, so a change caused by an Odds-API-only book (BetOnline,
+   Bovada) is book mix. Tests pin both (37 checks). The nickname rule also showed Jacory Croskey-Merritt was never
+   absent: Sportradar writes him "Jacory Merritt".
+2. **Converter fix (S2's mid-window rule: must pass re-run over every saved pull):** `NameResolver` maps each Sportradar
+   player to the nflverse weekly-roster `player_name` (the form the sim, P49, P53, P51 and the books use) **only** when
+   the team matches, the last name matches (or one part of a hyphenated roster surname), and the Sportradar first name
+   equals that player's legal first name, football name or display first name, with exactly one such player.
+   Otherwise the Sportradar name is kept and counted as unresolved or ambiguous; every resolution is written to the
+   pull's `names.json`. Saved pulls are re-converted from their raw responses (`reconvert_pull`; the first version kept
+   as `sr_v1.json`). **False-match checks:** unit tests show no merge across teams, none on the same team and last name
+   with a different first name, a two-candidate case reported as ambiguous and not guessed, and the hyphen rule still
+   needing the first name. On every saved raw payload (TNF window pull 16 games, 10/01 dry run 2, 9/30 diagnosis 2;
+   281 player entries): 277 exact, 4 alias, **0 unresolved, 0 ambiguous, 0 collisions** (no two Sportradar ids turned
+   into one name), and **every name change in a pull with a paired Odds API file matches the Odds API's own spelling**
+   (16/16 in the window pull: Cam Ward, Cam Skattebo, Woody Marks, Jacory Croskey-Merritt, plus suffixes and
+   capitals such as Michael Penix Jr., Chris Godwin Jr., DeMario Douglas). Suffixes now match the hold tables' raw
+   books' names too (S2d). **Status: validated by S2's rule on every saved pull; the evidence is small (4 alias cases in
+   one window pull), so it is re-tested at every pull through the window (`p62_compare` S2), not taken as settled.**
+   Live pulls resolve names from the nflverse roster from now on; if the roster can't be read, names stay as
+   Sportradar writes them and `names.json` says so.
+
+**Before / after on the TNF window pull** (measurement fixes on in both): S1 PASS 409/409 -> PASS 409/409; **S2 STOP
+(9 misnamed entries, TEN priced QBs Cam Ward vs Cameron Ward) -> PASS (0 misnamed, priced sets identical)**; S3 PASS
+1077/1079 totals, 1076/1076 prices -> PASS 1107/1109, 1106/1106 (the renamed entries are now compared); S4 PASS
+(8 changes, all book mix) in both.
+
+3. **S8(b) on the TNF pull (2,000 sims, A / B / A'):** the first run died on an nflverse download timeout: the tool
+   reloaded the inputs once per game (48 downloads). Rebuilt to load them once and call `simulate_one` per game (same
+   steps as `run()`, nothing stored). **Pre-fix files: PASS, 16/16 identical; post-fix files: PASS, 16/16 identical**,
+   same sim QBs in both. The pre-fix pass despite S2's stop is expected: P53 compares only priced names found in the
+   team's QB room, so "Cameron Ward" was silently dropped rather than warned on, and P49 / P51 act only when a QB is
+   flagged inactive or ruled out. The name failure was latent this week and would have reached the sims only in a week
+   Ward was flagged, which is why S2 is a separate stop.
+
 ---
 
 ## 2026-09-30 — P64 scoped: manual injury/practice file. Format, ingestion and criteria set before the build

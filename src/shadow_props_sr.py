@@ -101,15 +101,83 @@ def _american(value) -> int | None:
         return None
 
 
-def convert(payload: dict) -> tuple[dict, dict]:
+class NameResolver:
+    """Sportradar names -> the nflverse roster names the pipeline matches on (P62 S2).
+
+    Sportradar uses legal first names ("Cameron Ward", "Jo'Quavious Marks")
+    where nflverse, the sim, P49 / P53 / P51 and the books use the football name
+    ("Cam Ward", "Woody Marks"). A name is changed only on a strict match within
+    the player's own team: the same last name, and the Sportradar first name
+    equal to that roster player's legal first name, football name or display
+    first name, with exactly one such player. Anything else keeps its
+    Sportradar name and is counted, so a wrong merge needs a roster player on
+    the same team with the same last name and a matching first name.
+    """
+
+    def __init__(self, rows: list[dict]):
+        from .props import pnorm
+
+        self._pnorm = pnorm
+        self.by_last: dict[tuple[str, str], list[dict]] = {}
+        for r in rows:
+            if r.get("team") and r.get("last_name") and r.get("player_name"):
+                last = str(r["last_name"])
+                # A hyphenated surname is also indexed under each part: Sportradar
+                # writes Jacory Croskey-Merritt as "Merritt, Jacory".
+                keys = {pnorm(last)} | ({pnorm(x) for x in last.split("-") if x.strip()} if "-" in last else set())
+                for k in keys:
+                    self.by_last.setdefault((r["team"], k), []).append(r)
+
+    @classmethod
+    def from_nflverse(cls, season: int) -> "NameResolver":
+        import nfl_data_py as nfl
+
+        df = nfl.import_weekly_rosters([season])
+        latest = df[df["week"] == df["week"].max()]
+        rest = df[~df["player_id"].isin(set(latest["player_id"]))]   # traded / dropped since: still resolvable
+        rows = (latest.to_dict("records") + rest.drop_duplicates("player_id", keep="last").to_dict("records"))
+        return cls(rows)
+
+    def resolve(self, team: str | None, sr_name: str) -> tuple[str, str]:
+        """(name to use, how): how is exact, alias, unresolved or ambiguous."""
+        p = self._pnorm
+        last, sep, first = str(sr_name or "").partition(", ")
+        fallback = first_last(sr_name)
+        if not sep or not team:
+            return fallback, "unresolved"
+        cands = self.by_last.get((team, p(last)), [])
+        exact = [r for r in cands if p(r["player_name"]) == p(fallback)]
+        if len(exact) == 1:
+            return exact[0]["player_name"], "exact"
+        hits = []
+        for r in cands:
+            firsts = {p(r.get("first_name") or ""), p(r.get("football_name") or ""),
+                      p(str(r["player_name"]).split(" ")[0])}
+            if p(first) in firsts:
+                hits.append(r)
+        ids = {r.get("player_id") for r in hits}
+        if len(ids) == 1:
+            return hits[0]["player_name"], "alias"
+        return fallback, "ambiguous" if len(ids) > 1 else "unresolved"
+
+
+def convert(payload: dict, resolver: NameResolver | None = None) -> tuple[dict, dict]:
     """(players, counts): players = name -> market -> book -> {point, over, under},
-    the props_lines.json shape, from one Sportradar players_props response."""
+    the props_lines.json shape, from one Sportradar players_props response.
+    With a resolver, names are mapped to nflverse roster names (counts["names"])."""
     ev = payload.get("sport_event_players_props") or {}
     counts = {"book_lines": 0, "removed": 0, "live_dropped": 0, "consensus_dropped": 0,
-              "unmapped_books": set(), "ambiguous": 0}
+              "unmapped_books": set(), "ambiguous": 0, "names": []}
+    teams = {c.get("id"): c.get("abbreviation") for c in (ev.get("sport_event") or {}).get("competitors") or []}
     players: dict = {}
     for pp in ev.get("players_props") or []:
-        name = first_last((pp.get("player") or {}).get("name"))
+        raw = (pp.get("player") or {}).get("name")
+        if resolver is None:
+            name = first_last(raw)
+        else:
+            team = teams.get((pp.get("player") or {}).get("competitor_id"))
+            name, how = resolver.resolve(team, raw)
+            counts["names"].append({"sr": raw, "name": name, "how": how, "team": team})
         for m in pp.get("markets") or []:
             key = MARKET_MAP.get(str(m.get("name") or "").strip().lower())
             if key is None:
@@ -218,6 +286,7 @@ def pull(odds: dict, live_games: set[str], get: Callable[[str], dict], now: date
         _log(out, rows)
         return rows
     mapping, problems = map_events(events, games)
+    resolver, names = _resolver(odds.get("season")), []
     prev = {}
     if lines_path.exists():
         try:
@@ -245,7 +314,8 @@ def pull(odds: dict, live_games: set[str], get: Callable[[str], dict], now: date
         pull_dir.mkdir(parents=True, exist_ok=True)
         raw = pull_dir / f"raw_{gid}.json"
         raw.write_text(json.dumps(data), encoding="utf-8")
-        players, counts = convert(data)
+        players, counts = convert(data, resolver)
+        names += [{**n, "game_id": gid} for n in counts.pop("names")]
         books = {b for p in players.values() for m in p.values() for b in m}
         sr["games"][gid] = {"home": g.get("home"), "away": g.get("away"), "kickoff": g.get("kickoff"),
                             "event_id": g.get("event_id"), "sr_event_id": eid, "books": len(books),
@@ -263,8 +333,52 @@ def pull(odds: dict, live_games: set[str], get: Callable[[str], dict], now: date
         if odds_path is not None and odds_path.exists():
             shutil.copyfile(odds_path, pull_dir / "odds.json")
         _save_holdouts(pull_dir, set(odds.get("games") or {}))
+        (pull_dir / "names.json").write_text(json.dumps(
+            {"resolver": "nflverse" if resolver else "none (roster unavailable)", "names": names}), encoding="utf-8")
     _log(out, rows)
     return rows
+
+
+_RESOLVERS: dict = {}
+
+
+def _resolver(season) -> NameResolver | None:
+    """The nflverse roster resolver, once per process; None if the roster can't
+    be read (names then stay as Sportradar writes them, and names.json says so)."""
+    if season is None:
+        return None
+    if season not in _RESOLVERS:
+        try:
+            _RESOLVERS[season] = NameResolver.from_nflverse(int(season))
+        except Exception as exc:  # noqa: BLE001 - the shadow never raises
+            print(f"  [warn] P62 shadow: nflverse roster unavailable, names unresolved ({exc})")
+            _RESOLVERS[season] = None
+    return _RESOLVERS[season]
+
+
+def reconvert_pull(pull_dir: Path, resolver: NameResolver | None) -> dict:
+    """Rebuild a saved pull's sr.json from its raw responses with the current
+    converter (S2: a converter fix must pass re-run over every saved pull). The
+    first version is kept as sr_v1.json. Returns {game_id: name records}."""
+    sr_path = pull_dir / "sr.json"
+    sr = json.loads(sr_path.read_text(encoding="utf-8"))
+    if not (pull_dir / "sr_v1.json").exists():
+        shutil.copyfile(sr_path, pull_dir / "sr_v1.json")
+    out = {}
+    for gid, g in (sr.get("games") or {}).items():
+        raw = pull_dir / f"raw_{gid}.json"
+        if g.get("pulled_at") != sr.get("pulled_at") or not raw.exists():
+            continue
+        players, counts = convert(json.loads(raw.read_text(encoding="utf-8")), resolver)
+        g["players"] = players
+        g["books"] = len({b for p in players.values() for m in p.values() for b in m})
+        out[gid] = counts["names"]
+    sr["converter"] = "v2: nflverse roster names"
+    sr_path.write_text(json.dumps(sr), encoding="utf-8")
+    (pull_dir / "names.json").write_text(json.dumps(
+        {"resolver": "nflverse" if resolver else "none", "names": [{**n, "game_id": g} for g, ns in out.items() for n in ns]}),
+        encoding="utf-8")
+    return out
 
 
 def _save_holdouts(pull_dir: Path, games: set[str]) -> None:
