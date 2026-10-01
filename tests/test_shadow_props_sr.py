@@ -19,6 +19,8 @@ import requests
 
 from src import shadow_props_sr as sh
 
+sh._RESOLVERS[2026] = None   # unit tests never fetch the nflverse roster
+
 PASS, FAIL = 0, 0
 FIXTURE = Path(__file__).parent / "fixtures" / "sr_props_pit_cle_2026w4.json"
 NOW = datetime(2026, 10, 1, 23, 0, tzinfo=timezone.utc)
@@ -56,6 +58,50 @@ def test_first_last():
     check("suffix kept in place", sh.first_last("Penix Jr., Michael"), "Michael Penix Jr.")
     check("two-word last name", sh.first_last("St. Brown, Amon-Ra"), "Amon-Ra St. Brown")
     check("no comma kept", sh.first_last("DK Metcalf"), "DK Metcalf")
+
+
+ROSTER = [  # nflverse weekly-roster rows (real 2026 values for these players)
+    {"team": "TEN", "player_id": "a", "player_name": "Cam Ward", "first_name": "Cameron", "last_name": "Ward", "football_name": "Cameron"},
+    {"team": "CLE", "player_id": "b", "player_name": "Denzel Ward", "first_name": "Denzel", "last_name": "Ward", "football_name": "Denzel"},
+    {"team": "NYG", "player_id": "c", "player_name": "Cam Skattebo", "first_name": "Cameron", "last_name": "Skattebo", "football_name": "Cam"},
+    {"team": "HOU", "player_id": "d", "player_name": "Woody Marks", "first_name": "Jo'Quavious", "last_name": "Marks", "football_name": "Woody"},
+    {"team": "ATL", "player_id": "e", "player_name": "Michael Penix Jr.", "first_name": "Michael", "last_name": "Penix", "football_name": "Michael"},
+    {"team": "PIT", "player_id": "f", "player_name": "DK Metcalf", "first_name": "DeKaylin", "last_name": "Metcalf", "football_name": "DK"},
+    {"team": "WAS", "player_id": "i", "player_name": "Jacory Croskey-Merritt", "first_name": "Jacory", "last_name": "Croskey-Merritt", "football_name": "Jacory"},
+    # two same-team players with the same last name and first name: must not be merged
+    {"team": "BAL", "player_id": "g", "player_name": "Chris Smith", "first_name": "Chris", "last_name": "Smith", "football_name": "Chris"},
+    {"team": "BAL", "player_id": "h", "player_name": "Chris Smith", "first_name": "Christopher", "last_name": "Smith", "football_name": "Chris"},
+]
+
+
+def test_name_resolver():
+    r = sh.NameResolver(ROSTER)
+    check("legal first name -> football name", r.resolve("TEN", "Ward, Cameron"), ("Cam Ward", "alias"))
+    check("Skattebo", r.resolve("NYG", "Skattebo, Cameron"), ("Cam Skattebo", "alias"))
+    check("legal name -> nickname", r.resolve("HOU", "Marks, Jo'Quavious"), ("Woody Marks", "alias"))
+    check("suffix restored from the roster", r.resolve("ATL", "Penix, Michael"), ("Michael Penix Jr.", "exact"))
+    check("exact name kept", r.resolve("PIT", "Metcalf, DK"), ("DK Metcalf", "exact"))
+    check("one part of a hyphenated surname", r.resolve("WAS", "Merritt, Jacory"), ("Jacory Croskey-Merritt", "alias"))
+    check("hyphen part still needs the first name", r.resolve("WAS", "Merritt, John"), ("John Merritt", "unresolved"))
+    # false-match guards
+    check("same last name, other team: not merged", r.resolve("CLE", "Ward, Cameron"), ("Cameron Ward", "unresolved"))
+    check("same team + last name, different first name: not merged", r.resolve("TEN", "Ward, Denzel"),
+          ("Denzel Ward", "unresolved"))
+    check("two roster players fit: ambiguous, not guessed", r.resolve("BAL", "Smith, Chris"), ("Chris Smith", "ambiguous"))
+    check("unknown team: unchanged", r.resolve(None, "Ward, Cameron"), ("Cameron Ward", "unresolved"))
+    check("no comma: unchanged", r.resolve("TEN", "Cam Ward"), ("Cam Ward", "unresolved"))
+
+
+def test_convert_with_resolver_uses_team():
+    data = {"sport_event_players_props": {
+        "sport_event": {"competitors": [{"id": "sr:competitor:1", "abbreviation": "TEN"},
+                                        {"id": "sr:competitor:2", "abbreviation": "BAL"}]},
+        "players_props": [{"player": {"name": "Ward, Cameron", "competitor_id": "sr:competitor:1"},
+                           "markets": [{"name": "total passing yards (incl. overtime)", "books": [book("DraftKings")]}]}],
+        "players_markets": {"markets": []}}}
+    players, counts = sh.convert(data, sh.NameResolver(ROSTER))
+    check("converted under the roster name", list(players), ["Cam Ward"])
+    check("name record kept", counts["names"], [{"sr": "Ward, Cameron", "name": "Cam Ward", "how": "alias", "team": "TEN"}])
 
 
 def test_convert_real_payload():
@@ -137,7 +183,7 @@ def test_pull_saves_pair():
         check("same schema keys", set(g) >= {"home", "away", "kickoff", "event_id", "books", "players", "pulled_at"}, True)
         pull = tmp / "sr" / "pulls" / "20261001T230000Z"
         check("pair saved: hold tables, odds copy, sr file, raw", sorted(p.name for p in pull.iterdir()),
-              ["holdouts.json", "odds.json", "raw_2026_04_PIT_CLE.json", "sr.json"])
+              ["holdouts.json", "names.json", "odds.json", "raw_2026_04_PIT_CLE.json", "sr.json"])
         holds = json.loads((pull / "holdouts.json").read_text(encoding="utf-8"))
         check("hold tables saved as lists", set(holds), {"prop_holdouts", "known_defects"})
 
@@ -304,6 +350,8 @@ def test_ingest_props_identical_with_shadow_failing_or_off():
 if __name__ == "__main__":
     for fn in [
         test_first_last,
+        test_name_resolver,
+        test_convert_with_resolver_uses_team,
         test_convert_real_payload,
         test_convert_exclusions,
         test_map_events,

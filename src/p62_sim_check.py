@@ -51,17 +51,38 @@ def _variant(root: Path, name: str, lines_file: Path) -> Path:
     return d
 
 
+_INPUTS: dict = {}
+
+
 def simulate(games: list[str], data_dir: Path, n: int) -> dict[str, dict]:
+    """The steps of simulate_nfl.run (context, anchors, QB check, simulate_one per
+    game) with the two props-line reads pointed at data_dir and nothing stored.
+    The nflverse inputs don't read props lines, so they are loaded once and
+    shared by every run: one load instead of one per game (a per-game reload
+    took 48 downloads for 16 games and died on a network timeout, 10/1)."""
+    from . import db
+
     saved = (features.config, simulate_nfl.config)
     features.config = simulate_nfl.config = _DataDir(data_dir)
+    store = db.get_store()
     try:
+        ctx = features.FeatureContext(store, "nfl")   # P49 reads the lines here
+        rows = [g for g in ctx.games if g["game_id"] in set(games)]
+        season = int(rows[0]["season"])
+        if season not in _INPUTS:
+            _INPUTS[season] = simulate_nfl.load_inputs(season)
+        anchors = simulate_nfl._stored_anchors(store, rows)
+        qbc = simulate_nfl.qb_check_inputs(store)        # P53 / P51 read the lines here
         out = {}
-        for gid in games:
-            rows = simulate_nfl.run(game_id=gid, n=n, store_results=False, quiet=True)
-            if rows:
-                out[gid] = rows[0]
+        for game in rows:
+            margin, label = anchors.get(game["game_id"], (None, None))
+            row = simulate_nfl.simulate_one(game, ctx, _INPUTS[season], n, anchor=margin,
+                                            anchor_label=label, qb_check=qbc)
+            if row is not None:
+                out[game["game_id"]] = row
         return out
     finally:
+        store.close()
         features.config, simulate_nfl.config = saved
 
 
@@ -120,11 +141,12 @@ def main() -> None:
     ap.add_argument("--pull", default="latest", help="pull stamp under data/props_sr/pulls, or 'latest'")
     ap.add_argument("--root", type=Path, default=OUT_DIR)
     ap.add_argument("--sims", type=int, default=simulate_nfl.N_SIMS)
+    ap.add_argument("--dir", type=Path, help="a pull folder outside data/props_sr (e.g. a backup copy)")
     args = ap.parse_args()
     pulls = sorted(p.parent for p in (args.root / "pulls").glob("*/sr.json"))
     if not pulls:
         raise SystemExit("no saved shadow pulls")
-    pull = pulls[-1] if args.pull == "latest" else args.root / "pulls" / args.pull
+    pull = args.dir or (pulls[-1] if args.pull == "latest" else args.root / "pulls" / args.pull)
     _, lines = check(pull, args.sims)
     print("\n".join(lines))
 

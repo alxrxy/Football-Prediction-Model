@@ -131,10 +131,19 @@ def coverage(p: Pull, top_keys: set | None) -> dict:
                     swapped = next((x for x in s if sorted(pnorm(x).split()) == tokens), None)
                     best = max(s, key=lambda x: SequenceMatcher(None, pnorm(x), pnorm(name)).ratio(), default=None)
                     ratio = SequenceMatcher(None, pnorm(best), pnorm(name)).ratio() if best else 0.0
+                    # A nickname / legal-name pair ("Cam" / "Cameron Ward", "Woody" /
+                    # "Jo'Quavious Marks") shares only the last name. Counted as a name
+                    # failure (user ruling 10/1) when exactly one Sportradar player in the
+                    # game has that last name and no Odds API player already claims him.
+                    claimed = {s_norm[k] for k in (pnorm(x) for x in o) if k in s_norm}
+                    last = pnorm(name).split(" ")[-1] if pnorm(name) else ""
+                    same_last = [x for x in s if x not in claimed and pnorm(x).split(" ")[-1] == last]
                     if swapped is not None:
                         kind = f"misnamed (as {swapped!r}, word order)"
                     elif ratio >= NAME_MATCH:
                         kind = f"misnamed (as {best!r}, {ratio:.2f})"
+                    elif len(same_last) == 1:
+                        kind = f"misnamed (as {same_last[0]!r}, same last name)"
                     else:
                         kind = "absent"
                 misses.append({"pull": p.stamp, "game": gid, "player": name, "market": m, "kind": kind,
@@ -257,25 +266,37 @@ def _status(result: dict) -> dict:
     return {_key(r): (r["rank"], r["pick"]) for r in result["ranked"]}
 
 
-def _restrict_to_shared(sr: dict, odds: dict) -> dict:
-    out = json.loads(json.dumps(sr))
-    for gid, g in out["games"].items():
-        o = odds["games"][gid]["players"]
-        o_norm = {pnorm(x): x for x in o}
-        for name, mk in g["players"].items():
-            oname = o_norm.get(pnorm(name))
+def _restrict_to_shared(sr: dict, odds: dict) -> tuple[dict, dict]:
+    """Both files cut to the books both carry, per player-market (user ruling
+    10/1: restricting only Sportradar cannot remove a change caused by a book
+    only the Odds API carries, e.g. BetOnline or Bovada)."""
+    a, b = json.loads(json.dumps(odds)), json.loads(json.dumps(sr))
+    for gid in a["games"]:
+        oa, ob = a["games"][gid]["players"], b["games"][gid]["players"]
+        ob_norm = {pnorm(x): x for x in ob}
+        for name, mk in oa.items():
+            sname = ob_norm.get(pnorm(name))
             for m in list(mk):
-                shared = set((o.get(oname) or {}).get(m) or {})
-                mk[m] = {b: v for b, v in mk[m].items() if b in shared}
-    return out
+                other = (ob.get(sname) or {}).get(m) or {}
+                shared = set(mk[m]) & set(other)
+                mk[m] = {k: v for k, v in mk[m].items() if k in shared}
+                if sname is not None and m in ob[sname]:
+                    ob[sname][m] = {k: v for k, v in ob[sname][m].items() if k in shared}
+        claimed = {ob_norm.get(pnorm(n)) for n in oa}
+        for sname, mk in ob.items():
+            if sname not in claimed:
+                for m in mk:
+                    mk[m] = {}   # no Odds API counterpart: nothing shared
+    return a, b
 
 
 def ranking(p: Pull, line_keys: set, absent_keys: set) -> dict | None:
     if p.sims is None or not p.games:
         return None
     a, b = rank(p.lines("odds"), p.sims, now=p.at), rank(p.lines("sr"), p.sims, now=p.at)
-    restricted = rank(_restrict_to_shared(p.lines("sr"), p.lines("odds")), p.sims, now=p.at)
-    sa, sb, sr_ = _status(a), _status(b), _status(restricted)
+    ra, rb = _restrict_to_shared(p.lines("sr"), p.lines("odds"))
+    ra_, rb_ = _status(rank(ra, p.sims, now=p.at)), _status(rank(rb, p.sims, now=p.at))
+    sa, sb = _status(a), _status(b)
     top = lambda st, k: k in st and st[k][0] <= TOP_N   # noqa: E731
     changes, moves = [], []
     # odds-name lookup for attribution: key -> odds name
@@ -292,8 +313,10 @@ def ranking(p: Pull, line_keys: set, absent_keys: set) -> dict | None:
         if not kinds:
             continue
         name = odds_name.get(k) or sr_name.get(k) or k[1]
-        if top(sr_, k) == top(sa, k) and (k not in sa or k not in sr_ or sr_[k][1] == sa[k][1]):
-            cause = "book mix"
+        same_top = top(ra_, k) == top(rb_, k)
+        same_pick = k not in ra_ or k not in rb_ or ra_[k][1] == rb_[k][1]
+        if same_top and same_pick:
+            cause = "book mix"   # the change disappears on the books both carry
         elif (k[0], pnorm(name), k[2]) in line_keys:
             cause = "line"
         elif (k[0], pnorm(name), k[2]) in absent_keys:

@@ -171,6 +171,33 @@ def test_no_sims_is_unmeasured_not_pass():
         check("S2 says partly unmeasured", v["S2"], "PASS (partly unmeasured)")
 
 
+def test_nickname_is_misnamed_not_absent():
+    """User ruling 10/1: Cam / Cameron is a name failure (S2), not coverage (S1)."""
+    sr = copy.deepcopy(PLAYERS)
+    sr["Kaylin Metcalf"] = sr.pop("DK Metcalf")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_pull(root, "20261004T150200Z", PLAYERS, sr)
+        text, v = run(root)
+        check("misnamed by shared last name", "misnamed (as 'Kaylin Metcalf', same last name)" in text, True)
+        check("coverage unaffected", "covered 3/3" in text, True)
+        check("S2 stops", v["S2"], "STOP")
+
+
+def test_odds_only_book_is_book_mix():
+    """User ruling 10/1: both files cut to shared books, so a change caused by a
+    book only the Odds API carries is book mix, not unexplained."""
+    odds = copy.deepcopy(PLAYERS)
+    for b in ("betonlineag", "bovada", "betmgm"):
+        odds["Jerry Jeudy"]["player_reception_yds"][b] = bk(30.5)   # Odds-API-only books move the posted line
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_pull(root, "20261004T150200Z", odds, PLAYERS)
+        text, v = run(root)
+        check("odds-only books -> book mix", "-> book mix" in text and "-> unexplained" not in text, True)
+        check("S4 passes", v["S4"], "PASS")
+
+
 def test_lag_tag():
     """A Sportradar value equal to the Odds API's previous pull is lag, not unexplained."""
     old = copy.deepcopy(PLAYERS)
@@ -236,7 +263,8 @@ if __name__ == "__main__":
     for fn in [test_identical_files_pass, test_pair_window, test_word_order_is_misnamed_and_stops,
                test_priced_qb_difference_stops, test_holdout_name_difference_stops,
                test_line_difference_counted_and_attributed, test_extra_book_is_book_mix,
-               test_no_sims_is_unmeasured_not_pass, test_lag_tag, test_grade,
+               test_no_sims_is_unmeasured_not_pass, test_nickname_is_misnamed_not_absent, test_odds_only_book_is_book_mix,
+               test_lag_tag, test_grade,
                test_sim_check_swaps_both_read_points]:
         print(fn.__name__)
         fn()
