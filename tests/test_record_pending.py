@@ -55,3 +55,18 @@ def test_graded_game_is_unchanged():
     assert row["predicted"] is True
     assert row["actual_margin"] == -14
     assert week["models"]["baseline-v1"]["su"]["n"] == 1
+
+
+def test_week_note_is_carried_without_changing_the_record():
+    """Week 4 (2026) carries its how-predicted note; weeks without one carry None."""
+    from src.export_dashboard import WEEK_NOTES
+
+    week = _weeks(GRADED, GAMES)[0]
+    assert week["note"] is None
+    assert WEEK_NOTES[(2026, 4)].startswith("Predicted 3–5 days before kickoff")
+    games4 = {gid.replace("_03_", "_04_"): {**g, "game_id": gid.replace("_03_", "_04_"), "week": 4}
+              for gid, g in GAMES.items()}
+    graded4 = [{**r, "game_id": r["game_id"].replace("_03_", "_04_")} for r in GRADED]
+    week4 = _weeks(graded4, games4)[0]
+    assert week4["note"] == WEEK_NOTES[(2026, 4)]
+    assert week4["models"] == week["models"]

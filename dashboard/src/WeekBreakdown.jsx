@@ -99,6 +99,8 @@ export default function WeekBreakdown({ weeks, results }) {
             </span>
           </summary>
 
+          {week.note && <p className="week-howmade muted small">{week.note}</p>}
+
           <div className="table-wrap">
             <table className="slate">
               <thead>
