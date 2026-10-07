@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-from . import config, db
+from . import config, db, inactives_raw
 from .features import parse_dt
 from .http import get_json
 from .ingest_injuries import BROWSER_UA, _resolve_team, _snap_shares, player_key
@@ -138,7 +138,17 @@ def fetch(store: db.Store, season: int, week: int, now: datetime | None = None,
             log.append({"game": label, "result": "outside window"})
             continue
         for team_id, team in (home, away):
-            code, data = _get(f"{CORE}/events/{event['id']}/competitions/{event['id']}/competitors/{team_id}/roster")
+            url = f"{CORE}/events/{event['id']}/competitions/{event['id']}/competitors/{team_id}/roster"
+            code, data = _get(url)
+            # P68: keep the raw response for later review. Logging only: nothing
+            # reads it, and neither save() nor building its arguments can raise here.
+            try:
+                inactives_raw.save(season=season, week=week, game_id=game["game_id"], team=team,
+                                   event_id=str(event.get("id")), url=url, http=code, body=data,
+                                   lead_hours=None if kickoff is None else round((kickoff - now).total_seconds() / 3600, 3),
+                                   origin="replay" if include_final else "live")
+            except Exception:  # noqa: BLE001
+                pass
             entries = (data or {}).get("entries") or []
             flagged = [x for x in entries if x.get("didNotPlay")]
             if not flagged:
