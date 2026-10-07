@@ -1,0 +1,22 @@
+pbp 2025-2026: 20,722 targeted passes; 2026 weeks present: [1, 2, 3, 4]
+week 1: 253 receiver-games
+week 2: 255 receiver-games
+week 3: 266 receiver-games
+week 4: 260 receiver-games
+
+identity: max |sum pred - team actual| yds 5.68e-14, rec 7.11e-15
+receiver-games scored: 1034 ({1: 253, 2: 255, 3: 266, 4: 260})
+
+== 2026 weeks 1-4 ==
+  baseline           yds MSE    278.9 (+0.00%)  better in 0/4 weeks  per week 1:+0.00%, 2:+0.00%, 3:+0.00%, 4:+0.00% | rec MSE 0.731 (+0.00%)
+  posprior-only      yds MSE    283.1 (+1.52%)  better in 1/4 weeks  per week 1:-0.39%, 2:+1.99%, 3:+0.56%, 4:+3.56% | rec MSE 0.725 (-0.72%)
+  k100-pos-w24=0.5   yds MSE    280.7 (+0.65%)  better in 1/4 weeks  per week 1:-1.11%, 2:+1.01%, 3:+0.24%, 4:+2.20% | rec MSE 0.717 (-1.94%)
+  k100-pos-w24=0.5 yds change +0.65%; team-game bootstrap 90% CI -1.48% to +2.89%, 95% CI -1.87% to +3.27%
+
+DECISION RULE (gain >= 1% and better in >= 3 of 4 weeks): gain -0.65%, weeks better 1/4  -> STILL CLOSED
+
+== tercile calibration (players with 20+ prior targets, terciles by pre-week own yds/target) ==
+  baseline           yds pred/actual  bottom 1.014  middle 0.984  top 0.948   | rec bottom 0.974 top 0.982
+  posprior-only      yds pred/actual  bottom 1.011  middle 0.984  top 0.953   | rec bottom 0.991 top 0.973
+  k100-pos-w24=0.5   yds pred/actual  bottom 0.994  middle 0.980  top 0.966   | rec bottom 0.988 top 0.977
+  n per tercile: {0: 237, 1: 237, 2: 237}; cut points [6.71 7.99]
