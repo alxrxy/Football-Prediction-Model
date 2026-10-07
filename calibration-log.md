@@ -175,7 +175,7 @@ kept as dated history.
 | commands | `run_pipeline` / `run_sunday` and 10 module `--help`s exit 0; `train_model.load('nfl')` 3,060 rows |
 | `training_nfl.csv` and `models/nfl_margin.*` | on-disk sha **identical** before / after; a full rebuild gives the **same sha** with branch and main code (3,092 rows) |
 | front-end build | **passes** (57 modules) |
-| NFL pages render, no console errors (preview on port 5175) | **pending** |
+| NFL pages render, no console errors (preview on port 5175) | **console check pending**: the Chrome extension was not connected on 10/7. Served over HTTP, all 200: the page, both built assets (`index-DOmP-VPr.js`, `index-CpSEGOD3.css`), `data.json` (`sports: ['nfl']`, 15 games), `sims.json`, `props.json`, `sims_archive/index.json`, `p62_compare.json`, `scenarios.json`. The user confirmed the build serves with no college tab |
 
 The harness ran each tree's code against main's `.env` and data, read-only; it was run twice on the untouched tree and
 gave identical hashes, so it is deterministic.
@@ -195,7 +195,8 @@ those rows today: `db.select_merged` adds a mirror row only when Supabase lacks 
 in Supabase; `grade` reads CLV filtered to NFL. The one unfiltered read, `python -m src.clv --report` without `--sport`,
 would surface the mirror's 160 college CLV rows **if Supabase's college rows were deleted first**.
 
-**Open items.** (1) Render check on port 5175 (pending). (2) **Merge only after the TNF window (10/8) and the raw-roster
+**Open items.** (1) Browser console check of the NFL pages (games, a game page, props, record, past weeks) on port 5175,
+once the Chrome extension is connected; serving is confirmed. (2) **Merge only after the TNF window (10/8) and the raw-roster
 check.** (3) **Mirror cleanup together with or before the Supabase delete.** (4) **Supabase delete only after a stable
 game week and the user's explicit OK.** (5) P6, P7, P56 closed as 'retired: college removed' and the CFBD key revocation
 (user) at the merge, as decided 9/30.
