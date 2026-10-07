@@ -140,6 +140,31 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-07 — TNF TB @ DAL: starting-QB decision rule, written before any official data exists
+
+Set by the user on 10/7, before TB's official week-5 report, the books' window prices or any inactive list exist.
+Today: the simulation starts Baker Mayfield (did not practise, no game status, play probability 0.60) in about 60% of
+games and Jalon Daniels in the rest; the books price only Daniels; Mayfield's and Daniels' QB props and TD picks are
+held, and the game carries a QB label (now built at each export from that refresh's sim split and priced QB, bfb02c9).
+
+**Sources.** Mayfield's status comes from the NFL's official injury report (via nflverse, or a `2026-wk05.csv` row the
+user transcribes from it). **A QB inactive flag clears only after the Buccaneers' own official inactive article has been
+read and omits the player** (standing rule, 10/7); otherwise the flag stays and the doubt is noted.
+
+**The rule, by Mayfield's official status:**
+- **(a) Out:** remove Mayfield's holds (props and TD). **Keep Jalon Daniels' holds, as unreliable** (the 10/1 Bagent
+  precedent: the simulation gives any starter the team's passing, so a backup's line measures the missing
+  quarterback-quality term, not the player). P51 promotes Daniels in the sim. The label's note says so.
+- **(b) Active with no game status:** remove Mayfield's holds **only if the books price him** in the window's props
+  pull; otherwise no change. Daniels' holds stay.
+- **(c) Questionable or Doubtful:** **no change**; the holds stay until the starter is confirmed by an official source.
+
+**Applying it.** Only on the user's OK. The edits are prepared in advance as patches (not applied); an edit applied after
+the 18:00 CDT refresh needs a props / TD re-rank to take effect. BAL @ ATL is not part of Thursday's window and its holds
+are unchanged.
+
+---
+
 ## 2026-10-07 — P58 (NCAAF removal) built on its own branch; every NFL check identical; NOT merged, nothing deleted from Supabase
 
 **Where it lives.** Branch `p58-ncaaf-removal` in the worktree `Football Predictor p58`: **16dcd12** (the removal) and
