@@ -170,6 +170,8 @@ article has been read and omits the player**; otherwise the flag stays and the d
 
 **P68 status (user, 10/7): no guard supported on weeks 2-4 evidence; weeks 5-6 re-run decides; C running to build the case count.** No non-QB guard is built.
 
+**P68 C, `official_report_posted` (user, 10/7; definition written before C's file reads any week-5 data).** C keeps logging every flagged row (no filtering at the source) and records, at flag time, `official_report_posted` = **true if the flagged player's team has at least one row, of any status or none, in the current week's official (nflverse) injury report as pulled in that same refresh** (the rows `ingest_nfl` returns for that season and week, before the ESPN merge and the manual file); false otherwise, including when the nflverse pull failed. Set once, at first flag; a later refresh does not rewrite it. The midweek review list printed at each refresh shows only rows with the column true, plus a separate count of false rows. B's stale-charged-case count is reported three ways (posted true, posted false, total); **the minimum of 5 applies to the total.** Report-only as before. Disclosure: the 10/7 dry run (scratch folder) read the stored week-5 rows before this definition existed; it wrote nothing to the real file.
+
 ---
 
 ## 2026-10-07 — P68 replay run (read-only): defense/ST selects R3 under both bounds (lower margin +0.01 pts); skill, OL, QB keep today's behaviour; D does not qualify; 10/1 PIT @ CLE premise was 3/4 wrong
