@@ -31,7 +31,7 @@ from . import config
 
 OUT_DIR = config.DATA_DIR / "espn_feed_flags"
 FIELDS = ["season", "week", "team", "player", "position", "status", "play_probability", "snap_share",
-          "est_charge", "last_week_snaps", "first_flagged_at", "last_flagged_at", "times_flagged",
+          "est_charge", "last_week_snaps", "official_report_posted", "first_flagged_at", "last_flagged_at", "times_flagged",
           "served_charge", "outcome", "outcome_snaps", "outcome_checked_at"]
 RULED = ("out", "doubtful")
 
@@ -138,13 +138,18 @@ def report(season: int, week: int, official: list[dict], final: list[dict], stor
         snaps = _snaps(season) if snaps is None else snaps
         rows = _read(path)
         hits = flagged(official, final, week, snaps)
+        # official_report_posted (calibration-log, P68 C, 10/7): the team has at least one row on this week's
+        # official report as pulled in this refresh. Set at first flag, never rewritten.
+        posted_teams = {r["team"] for r in official}
         for r in hits:
+            r["_posted"] = r["team"] in posted_teams
             k = (str(season), str(week), r["team"], r["player"])
             old = rows.get(k, {})
             rows[k] = {**old, "season": season, "week": week, "team": r["team"], "player": r["player"],
                        "position": r.get("position"), "status": r.get("status"),
                        "play_probability": r.get("play_probability"), "snap_share": r.get("snap_share"),
                        "est_charge": _charge(r), "last_week_snaps": r["_last_week_snaps"],
+                       "official_report_posted": old.get("official_report_posted") or r["_posted"],
                        "first_flagged_at": old.get("first_flagged_at") or now, "last_flagged_at": now,
                        "times_flagged": int(old.get("times_flagged") or 0) + 1,
                        "outcome": old.get("outcome") or "pending"}
@@ -160,9 +165,13 @@ def report(season: int, week: int, official: list[dict], final: list[dict], stor
                 r.update(outcome="played" if s > 0 else "did not play", outcome_snaps=s, outcome_checked_at=now)
         _write(path, rows)
         stale = [r for r in rows.values() if r.get("outcome") == "played" and float(r.get("served_charge") or 0) > 0]
+        s_true = sum(1 for r in stale if str(r.get("official_report_posted")) == "True")
+        shown = [r for r in hits if r["_posted"]]
         print(f"  [P68 C] ESPN-only out/doubtful, off the official report, played last week: {len(hits)} this refresh"
-              f" | file {len(rows)} rows, stale charged cases so far {len(stale)} (B needs 5 by end of week 10)")
-        for r in hits:
+              f" ({len(shown)} on teams whose official report has posted, listed; {len(hits) - len(shown)} on teams"
+              f" without one, not listed) | file {len(rows)} rows | stale charged cases: posted {s_true},"
+              f" not posted {len(stale) - s_true}, total {len(stale)} (B needs 5 in total by end of week 10)")
+        for r in shown:
             print(f"    {r['team']} {r['player']} ({r.get('position')}, {r.get('status')}, last week {r['_last_week_snaps']:g}"
                   f" snaps, est. charge {_charge(r):.2f})")
         return len(hits)
