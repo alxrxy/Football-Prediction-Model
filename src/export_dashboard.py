@@ -72,15 +72,6 @@ def _slate_for(store, sport: str) -> tuple[str, list[dict], dict]:
 # the page rather than hidden. Remove each entry once the item is fixed or the
 # game has kicked off.
 KNOWN_GAME_ISSUES = {
-    "2026_04_IND_WAS": (
-        "Known issue (starting QB, P53 cross-check): WAS's official week-4 injury report hasn't posted yet. Last week's official statuses aren't carried over, so WAS runs on ESPN's feed, which lists Jayden Daniels as questionable, and the simulation starts him in about 55% of games. The books price Marcus Mariota, who started week 3 with Daniels out. Daniels is charged 2.09 points as questionable, against 4.65 as out in last night's numbers, which is most of why the baseline moved from IND by 12.2 to IND by 10.0. The baseline and ML lines, the simulation and WAS's passing numbers all rest on that 55%. WAS's quarterback props are held out until the official report posts (expected by Thursday morning), when this is re-checked."
-    ),
-    "2026_04_NYJ_CHI": (
-        "Known issue (starting QB, P53 cross-check): the simulation starts Case Keenum, CHI's QB2 on the nflverse depth chart, because Caleb Williams is doubtful (ESPN feed, play probability 0.10). The books price Tyson Bagent as CHI's passer. The simulation cannot model that switch reliably: a read-only run with Bagent forced as the starter (10/1) gave him the same volume and efficiency as Keenum (30 attempts, about 235 yards) and moved the game by about a third of a point, because the engine prices CHI's passing at team level, not by quarterback. CHI's quarterback props are held out. If the inactive list confirms Bagent as the starter, his props stay held as unreliable: the simulation's edge on them (over 200.5, sim 74% vs market 50%) is that missing quarterback-quality term, not a signal. CHI's pass-catchers are priced on the Keenum-led simulation; the Bagent run moved them by a yard or less."
-    ),
-    "2026_04_LA_PHI": (
-        "Known issue (P43): PHI's injury list counts WR Marquise Brown twice. The official week-3 report lists him as Marquise Brown (out, charged 0.29), and ESPN's week-4 feed lists him under his nickname, Hollywood Brown (questionable, charged 0.21). The two rows aren't matched, so both are charged: PHI's injury total is about 0.2-0.3 points too harsh, which leans the line that much toward LA. Nothing else in this game is affected. Left as a label rather than fixed mid-week."
-    ),
     "2026_05_TB_DAL": (
         "Known issue (starting QB, P53 cross-check): TB's official week-5 injury report hasn't posted yet. Baker Mayfield did not practise and has no game status, so he plays with probability 0.60 and the simulation starts him in about 60% of games, with Jalon Daniels (QB2) in the rest. The books price only Jalon Daniels. Mayfield is charged 2.35 points in the baseline. The baseline and ML lines, the simulation and TB's passing numbers all rest on that 60%. P51 does not apply: it promotes a priced QB only when the depth-chart starter is ruled out. TB's quarterback props and TD picks are held out; the hold comes off once the official report confirms the starter."
     ),

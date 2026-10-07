@@ -140,6 +140,41 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-07 — Week-4 QB holds and labels retired (IND @ WAS, NYJ @ CHI); display leak of old holds onto week 5 fixed
+
+**How they were keyed (checked before removing).** `props.PROP_HOLDOUTS` is applied by (game_id, books' name,
+market) (`props.rank`), `td_props.PLAYER_HOLDOUTS` by (game_id, books' name), `export_dashboard.KNOWN_GAME_ISSUES`
+by game_id. So no hold could fire on a week-5 game. **But one display path was not game-scoped:** `props.run` wrote
+every `PROP_HOLDOUTS` entry into `props.json`'s `structural_holdouts`, so the week-5 props page listed the week-4
+WAS and CHI notes (including "WAS's starting QB is unresolved until the official week-4 report posts", with WAS
+playing in week 5). Now filtered to the games in the ranked lines; `tests/test_holdout_scope.py` pins every key to
+one game id and checks no week-4 entry remains. Suite 263 before, 267 after.
+
+**Finished game pages.** A past game's page is built from the week archive (`data/sims_archive/2026_w04.json`), which
+never carried `known_issue`; the label only ever reached the page through `data.json`'s current slate. So no stored
+copy exists to keep, and the week-4 labels were not shown on finished pages before or after this change. (The
+week-3 `2026_03_ATL_GB` entry is in the same position: in the table, never served for a finished game; left as is.)
+
+**The record of what was held and why (as served, verbatim):**
+- **IND @ WAS** (labelled 9/30): props pass + rush yds for Marcus Mariota and Jayden Daniels, TD picks for both:
+  "Held out: WAS's starting QB is unresolved until the official week-4 report posts (the simulation starts Daniels in
+  ~55% of games; the books price Mariota)." The game label set out the 55% Daniels split, his 2.09-pt questionable
+  charge vs 4.65 as out, and that the lines, sim and WAS passing all rested on it. Outcome: Mariota started and was
+  replaced in-game by Kaliakmanis (P35-type).
+- **NYJ @ CHI** (labelled 10/1): Case Keenum pass + rush yds and TD ("CHI's starting QB is unresolved (the simulation
+  starts Keenum; the books price Bagent)"); Tyson Bagent pass + rush yds and TD ("Held out as unreliable: the
+  simulation gives any CHI starter the same team-level passing, so a Bagent line measures the missing
+  quarterback-quality term, not the player. Stays held even if the inactive list confirms him."). The game label set
+  out the forced-Bagent run (same volume as Keenum, ~1/3 pt). Outcome: Bagent started (268 pass yds).
+
+**Re-rank:** same lines and sims. The first re-rank was run with `--no-explain` by mistake and was served for ~16 s
+without the props explanations (P67 archive `20261007T090959Z`); re-ranked with explanations at
+`20261007T091015Z`. Both rankings are identical to `090307Z` in every rank, pick, line and probability, and in the
+held-out set; only `structural_holdouts` changed (week-5 entries only). Nothing else re-exported: week-4 games are
+not on the current slate.
+
+---
+
 ## 2026-10-07 — P5 live follow-up (information only): served weeks 1-4 lean slope negative, not significant; P5 stays closed
 
 The queued check from the 2026-09-30 P5 entry: P37's lean slope (`lean_slope` / `perm_p` from

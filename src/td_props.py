@@ -82,11 +82,6 @@ TD_MAX_GAP = 0.20
 # Single players held out by hand, (game_id, the books' name) -> reason; same
 # role as props.PROP_HOLDOUTS. Remove each once its cause is resolved.
 PLAYER_HOLDOUTS: dict[tuple[str, str], str] = {
-    ("2026_04_IND_WAS", "Marcus Mariota"): "WAS's starting QB is unresolved until the official week-4 report posts",
-    ("2026_04_IND_WAS", "Jayden Daniels"): "WAS's starting QB is unresolved until the official week-4 report posts",
-    ("2026_04_NYJ_CHI", "Case Keenum"): "CHI's starting QB is unresolved (the simulation starts Keenum; the books price Bagent)",
-    ("2026_04_NYJ_CHI", "Tyson Bagent"): ("unreliable: the simulation gives any CHI starter the same team-level passing; "
-                                          "stays held even if the inactive list confirms him"),
     **{("2026_05_TB_DAL", qb): ("TB's starting QB is unresolved (the simulation starts Mayfield in ~60% of games; the "
                                 "books price only Jalon Daniels); the hold comes off once the official report confirms the starter")
        for qb in ("Baker Mayfield", "Jalon Daniels")},
