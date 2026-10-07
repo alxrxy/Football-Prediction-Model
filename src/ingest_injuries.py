@@ -404,6 +404,7 @@ def run(sport: str = "nfl", season: int | None = None, week: int | None = None) 
             rows += ingest_nfl(store, season, week, shares)
         except Exception as exc:  # noqa: BLE001
             print(f"  [warn] nflverse injuries failed: {exc}")
+    official = list(rows)   # the official report as pulled, for P68's report-only check below
 
     espn_rows = ingest_espn(store, sport, season, week, shares)
     rows, merge = merge_feeds(rows, espn_rows)
@@ -421,6 +422,16 @@ def run(sport: str = "nfl", season: int | None = None, week: int | None = None) 
         manual_injuries.print_report(report, manual_injuries.path_for(season, week).name)
 
     store.upsert("injuries", db.stamp(rows))
+
+    if sport == "nfl":
+        # P68 decision 4, C: report-only, after the rows are stored; it gets
+        # copies and cannot raise into the refresh.
+        try:
+            from . import espn_feed_report
+
+            espn_feed_report.report(season, week, official, rows, store=store)
+        except Exception:  # noqa: BLE001
+            pass
 
     teams_covered = len({r["team"] for r in rows})
     total_teams = len(store.select("teams", {"sport": sport}))
