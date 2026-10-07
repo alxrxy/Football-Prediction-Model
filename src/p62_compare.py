@@ -26,7 +26,7 @@ import csv
 import json
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -44,7 +44,12 @@ S3_P_TOL = 0.02
 MOVE_REPORT = 5
 # Validation window (calibration-log.md, P62 row: weeks 4 and 5).
 WINDOW_START = "2026-10-01T03:22Z"
-WINDOW_END = "2026-10-15T03:22Z"
+# Extended 2026-10-07 (user): through MNF 10/19 (kickoff 10/20 00:15Z), criteria unchanged.
+WINDOW_END = "2026-10-20T12:00Z"
+# User, 2026-10-07: S3 and S4 need a minimum of gameday pull pairs before they can pass. A gameday pair is a
+# shadow pull whose paired games include one kicking off within GAMEDAY_HOURS after the pull (a window refresh).
+GAMEDAY_HOURS = 3.0
+MIN_GAMEDAY_PAIRS = 6
 PUBLIC_P62_JSON = config.ROOT / "dashboard" / "public" / "p62_compare.json"
 DIFF_ROWS = 400   # line differences carried into the page JSON; the count is always full
 ACTUAL_KEY = {"player_pass_yds": "pass_yds", "player_rush_yds": "rush_yds",
@@ -386,6 +391,56 @@ def grade(rows: list[dict], actual: dict, game: dict) -> list[dict]:
     return out
 
 
+_SNAPS: dict = {}
+
+
+def _snap_rows(season: int):
+    """nflverse snap counts for a season, loaded once; None when unavailable."""
+    if season not in _SNAPS:
+        try:
+            import nfl_data_py as nfl
+
+            _SNAPS[season] = nfl.import_snap_counts([season])
+        except Exception:  # noqa: BLE001 - unknown stays a failure, never a silent pass
+            _SNAPS[season] = None
+    return _SNAPS[season]
+
+
+def _did_not_play(gid: str, team: str, name: str) -> bool:
+    """True only when that week's snap counts for the team are posted and the player has no row in them
+    (user ruling 2026-10-07: 'not graded: did not play', not an S5 failure). Anything unknown returns False,
+    so the row stays an unmatched-name failure."""
+    try:
+        season, week = int(gid[:4]), int(gid[5:7])
+        snaps = _snap_rows(season)
+        if snaps is None:
+            return False
+        tw = snaps[(snaps["week"] == week) & (snaps["team"] == team)]
+        if tw.empty:
+            return False
+        return player_key(team, name) not in {player_key(team, n) for n in tw["player"]}
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _no_odds_market(pulls: list[Pull], row: dict) -> bool:
+    """A manifest 'unmapped' row whose game had no Odds API lines in that pull."""
+    at = _parse(row.get("run_utc"))
+    for p in pulls:
+        if at is not None and abs((p.at - at).total_seconds()) < 1:
+            g = (p.odds.get("games") or {}).get(row.get("game_id"))
+            return g is not None and not (g.get("players") or {})
+    return False
+
+
+def _is_gameday(p: Pull) -> bool:
+    for gid in p.games:
+        ko = _parse(((p.odds.get("games") or {}).get(gid) or {}).get("kickoff"))
+        if ko is not None and timedelta(0) < ko - p.at <= timedelta(hours=GAMEDAY_HOURS):
+            return True
+    return False
+
+
 def record(pulls: list[Pull], do_grade: bool) -> dict:
     """S5: per game, the last pull before kickoff that has sims; both lists' top-N rows."""
     last: dict[str, Pull] = {}
@@ -396,7 +451,7 @@ def record(pulls: list[Pull], do_grade: bool) -> dict:
             ko = _parse(p.odds["games"][gid].get("kickoff"))
             if ko and p.at < ko and (gid not in last or p.at > last[gid].at):
                 last[gid] = p
-    out = {"graded": [], "not_final": [], "unmatched_sr": [], "unmatched_odds": []}
+    out = {"graded": [], "not_final": [], "unmatched_sr": [], "unmatched_odds": [], "dnp": []}
     if not do_grade:
         return out
     for gid, p in sorted(last.items()):
@@ -409,6 +464,11 @@ def record(pulls: list[Pull], do_grade: bool) -> dict:
             rows = [r for r in rk["ranked"][:TOP_N] if r["game_id"] == gid]
             for g in grade(rows, actual, game):
                 g["list"] = which
+                if g["result"] == "name unmatched" and _did_not_play(gid, g["team"], g["odds_name"]):
+                    g["result"] = "not graded: did not play"
+                    tag = f"{gid} {g['odds_name']} {g['market']}"
+                    if which == "sr" and tag not in out["dnp"]:
+                        out["dnp"].append(tag)
                 out["graded"].append(g)
                 if g["result"] == "name unmatched":
                     out["unmatched_sr" if which == "sr" else "unmatched_odds"].append(f"{gid} {g['odds_name']} {g['market']}")
@@ -446,12 +506,14 @@ def _collected(pulls: list[Pull], paired: int, v: dict) -> dict:
          [f"{m['game']} {m['player']} {m['market']}: {m['kind']}{' [top]' if m['in_top'] else ''}"
           for m in v["all_misses"]]),
         ("S2", v["s2"], [f"{len(v['fails'])} name or game-identity failures"]
-         + [f"unmeasured {u}" for u in v["unmeasured"]], v["fails"]),
+         + [f"unmeasured {u}" for u in v["unmeasured"]]
+         + [f"excluded, no market on either source: {r['game_id']}" for r in v["no_market"]], v["fails"]),
         ("S3", v["s3"], [
             f"totals equal {same} of {n} ({v['r_tot']:.1%}; bar {S3_TOTAL_BAR:.0%})" if n else "nothing compared",
             f"P(over) within {S3_P_TOL} {pok} of {pn} ({v['r_p']:.1%}; bar {S3_P_BAR:.0%})" if pn
             else "no prices compared",
-            f"{len(diffs)} differences" + (": " + ", ".join(f"{k} {c}" for k, c in tags.most_common()) if diffs else "")],
+            f"{len(diffs)} differences" + (": " + ", ".join(f"{k} {c}" for k, c in tags.most_common()) if diffs else ""),
+            f"{len(v['gameday'])} of {MIN_GAMEDAY_PAIRS} gameday pull pairs needed for S3 and S4"],
          []),
         ("S4", v["s4"], [
             f"{len(changes)} ranking changes"
@@ -462,6 +524,7 @@ def _collected(pulls: list[Pull], paired: int, v: dict) -> dict:
             ["graded in the full report (python -m src.p62_compare), not on refresh: grading reads ESPN"]
             if not v["do_grade"] else [
                 f"Sportradar top-{TOP_N} props unmatched in grading: {len(rec['unmatched_sr'])}",
+                f"not graded, did not play: {len(rec['dnp'])}",
                 f"not final yet: {', '.join(rec['not_final']) or 'none'}",
                 f"Odds API list {wlp('odds')}, Sportradar list {wlp('sr')} (reported only)"]),
          rec["unmatched_sr"]),
@@ -517,6 +580,10 @@ def run(since: datetime | None, until: datetime | None, do_grade: bool = True, o
     man = [r for r in manifest_rows(out_dir)
            if (not since or (_parse(r["run_utc"]) or since) >= since) and (not until or (_parse(r["run_utc"]) or until) <= until)]
     mapping = [r for r in man if r["result"].startswith(("unmapped", "mapping"))]
+    # User ruling 2026-10-07: a game with no market on either source (no Odds API lines and no Sportradar event)
+    # is excluded and reported, not an S2 stop; Odds API lines with no Sportradar event stay a stop.
+    no_market = [r for r in mapping if _no_odds_market(pulls, r)]
+    mapping = [r for r in mapping if r not in no_market]
     errors = [r for r in man if r["result"].startswith("error")]
 
     # S1
@@ -567,6 +634,7 @@ def run(since: datetime | None, until: datetime | None, do_grade: bool = True, o
     lines += ["", f"## S2 names and game identity: {s2}", ""]
     lines += [f"- {f}" for f in fails] or ["- no differences"]
     lines += [f"- unmeasured {u}" for u in unmeasured]
+    lines += [f"- excluded (no market on either source): {r['run_utc']} {r['game_id']}" for r in no_market]
 
     # S3
     n = same = pn = pok = 0
@@ -577,10 +645,16 @@ def run(since: datetime | None, until: datetime | None, do_grade: bool = True, o
         diffs += df
     r_tot = same / n if n else None
     r_p = pok / pn if pn else None
+    gameday = [p for p in pulls if _is_gameday(p)]
+    short = len(gameday) < MIN_GAMEDAY_PAIRS
     s3 = "UNMEASURED" if not n else ("PASS" if r_tot >= S3_TOTAL_BAR and (r_p or 0) >= S3_P_BAR else "FAIL")
+    if s3 == "PASS" and short:
+        s3 = f"INSUFFICIENT (passing so far; {len(gameday)} of {MIN_GAMEDAY_PAIRS} gameday pull pairs)"
     verdict["S3"] = s3
     tags = Counter(d["tag"] for d in diffs)
     lines += ["", f"## S3 lines: {s3}", "",
+              f"- gameday pull pairs (a paired game kicks off within {GAMEDAY_HOURS:g} h): {len(gameday)}"
+              f" ({', '.join(p.stamp for p in gameday) or 'none'}); minimum {MIN_GAMEDAY_PAIRS} for S3 and S4",
               f"- (a) totals equal {same}/{n} = {r_tot:.1%} (bar {S3_TOTAL_BAR:.0%})" if n else "- (a) nothing compared",
               f"- (b) P(over) within {S3_P_TOL} {pok}/{pn} = {r_p:.1%} (bar {S3_P_BAR:.0%})" if pn else "- (b) nothing compared",
               f"- (c) {len(diffs)} differences: " + ", ".join(f"{k} {v}" for k, v in tags.most_common())]
@@ -603,6 +677,8 @@ def run(since: datetime | None, until: datetime | None, do_grade: bool = True, o
         moves += r["moves"]
     unexplained = [c for c in changes if c["cause"] == "unexplained"]
     s4 = "UNMEASURED" if len(s4_unmeasured) == len(pulls) else ("STOP" if unexplained else "PASS")
+    if s4 == "PASS" and short:
+        s4 = f"INSUFFICIENT (passing so far; {len(gameday)} of {MIN_GAMEDAY_PAIRS} gameday pull pairs)"
     verdict["S4"] = s4
     lines += ["", f"## S4 ranking: {s4}", "",
               f"- changes: {len(changes)} ({', '.join(f'{k} {v}' for k, v in Counter(c['cause'] for c in changes).most_common()) or 'none'})"
@@ -626,6 +702,8 @@ def run(since: datetime | None, until: datetime | None, do_grade: bool = True, o
               f"- (a) Sportradar top-{TOP_N} props unmatched in grading: {len(rec['unmatched_sr'])}"
               f" (Odds API list, for context: {len(rec['unmatched_odds'])})",
               *[f"  - {u}" for u in rec["unmatched_sr"]],
+              f"- not graded, did not play (no snap row that week; user ruling 2026-10-07): {len(rec['dnp'])}",
+              *[f"  - {u}" for u in rec["dnp"]],
               f"- not final yet: {', '.join(rec['not_final']) or 'none'}",
               "- (b) reported only; two weeks is not evidence for either source:"]
     for which in ("odds", "sr"):

@@ -71,8 +71,15 @@ def write_pull(root: Path, stamp: str, odds_players, sr_players, sr_at=SR_AT, ho
         (d / "rank_20261004T150500Z" / "sims.json").write_text(json.dumps(sims), encoding="utf-8")
 
 
-def run(root):
-    return pc.run(None, None, do_grade=False, out_dir=root)
+def run(root, min_gameday=1):
+    """The comparison logic tests use one gameday pull, so they run with the minimum at 1; the minimum itself
+    (user, 2026-10-07) has its own test below."""
+    saved = pc.MIN_GAMEDAY_PAIRS
+    pc.MIN_GAMEDAY_PAIRS = min_gameday
+    try:
+        return pc.run(None, None, do_grade=False, out_dir=root)
+    finally:
+        pc.MIN_GAMEDAY_PAIRS = saved
 
 
 def test_identical_files_pass():
@@ -332,3 +339,71 @@ if __name__ == "__main__":
         fn()
     print(f"\n{PASS} passed, {FAIL} failed")
     sys.exit(1 if FAIL else 0)
+
+
+def test_gameday_minimum_for_s3_s4():
+    """User, 2026-10-07: S3 and S4 cannot pass before MIN_GAMEDAY_PAIRS gameday pull pairs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_pull(root, "20261004T150200Z", PLAYERS, PLAYERS)     # kickoff 17:00Z, 2 h later: a gameday pair
+        _, v = run(root, min_gameday=6)
+        check("S3 insufficient below the minimum", v["S3"], "INSUFFICIENT (passing so far; 1 of 6 gameday pull pairs)")
+        check("S4 insufficient below the minimum", v["S4"], "INSUFFICIENT (passing so far; 1 of 6 gameday pull pairs)")
+        check("S1 unaffected", v["S1"], "PASS")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_pull(root, "20261004T150200Z", PLAYERS, PLAYERS)
+        early = json.loads((root / "pulls" / "20261004T150200Z" / "odds.json").read_text(encoding="utf-8"))
+        early["games"][GID]["kickoff"] = "2026-10-06T17:00:00+00:00"          # two days out: not gameday
+        (root / "pulls" / "20261004T150200Z" / "odds.json").write_text(json.dumps(early), encoding="utf-8")
+        text, v = run(root, min_gameday=1)
+        check("a midweek pull is not a gameday pair", v["S3"], "INSUFFICIENT (passing so far; 0 of 1 gameday pull pairs)")
+        check("count shown in the report", "gameday pull pairs (a paired game kicks off within 3 h): 0" in text, True)
+
+
+NL = chr(10)
+
+
+def _manifest(root, game_id):
+    (root / "manifest.csv").write_text(
+        "run_utc,odds_pulled_at,minutes_after_odds,game_id,sr_event_id,result,players,book_lines,removed,"
+        "live_dropped,consensus_dropped,unmapped_books,ambiguous,file" + NL
+        + f"2026-10-04T15:02:00+00:00,{ODDS_AT},2,{game_id},,unmapped: {game_id}: 0 Sportradar events match,,,,,,,," + NL,
+        encoding="utf-8")
+
+
+def test_no_market_on_either_source_is_excluded_not_a_stop():
+    """User ruling 2026-10-07: no Odds API lines and no Sportradar event -> excluded and reported."""
+    other = "2026_04_MIN_NO"
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_pull(root, "20261004T150200Z", PLAYERS, PLAYERS)
+        odds = json.loads((root / "pulls" / "20261004T150200Z" / "odds.json").read_text(encoding="utf-8"))
+        odds["games"][other] = {"home": "NO", "away": "MIN", "kickoff": "2026-10-04T17:00:00+00:00",
+                                "players": {}, "pulled_at": ODDS_AT}
+        (root / "pulls" / "20261004T150200Z" / "odds.json").write_text(json.dumps(odds), encoding="utf-8")
+        _manifest(root, other)
+        text, v = run(root)
+        check("no market on either source: S2 passes", v["S2"], "PASS")
+        check("and the game is reported as excluded", f"excluded (no market on either source): 2026-10-04T15:02:00+00:00 {other}" in text, True)
+        odds["games"][other]["players"] = {"Some Player": {"player_pass_yds": {"draftkings": bk(200.5)}}}
+        (root / "pulls" / "20261004T150200Z" / "odds.json").write_text(json.dumps(odds), encoding="utf-8")
+        _, v = run(root)
+        check("Odds API lines with no Sportradar event still stop", v["S2"], "STOP")
+
+
+def test_did_not_play_is_not_an_s5_failure():
+    """User ruling 2026-10-07 (Fant): no snap row that week while the team's snaps are posted -> not graded."""
+    import pandas as pd
+
+    saved = pc._snap_rows
+    pc._snap_rows = lambda season: pd.DataFrame({"week": [4, 4], "team": ["NO", "NO"],
+                                                 "player": ["Juwan Johnson", "Chris Olave"]})
+    try:
+        check("absent from posted snaps -> did not play", pc._did_not_play("2026_04_ATL_NO", "NO", "Noah Fant"), True)
+        check("in the snaps -> played (a name failure stays a failure)",
+              pc._did_not_play("2026_04_ATL_NO", "NO", "Juwan Johnson"), False)
+        check("team-week not posted -> unknown, stays a failure",
+              pc._did_not_play("2026_04_ATL_NO", "ATL", "Bijan Robinson"), False)
+    finally:
+        pc._snap_rows = saved
