@@ -140,6 +140,45 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-07 — Week 4 graded and archived (16/16). No Sunday or Monday window refresh: 15 games graded on the 10/1 predictions
+
+**What was served (user, 10/7):** the Sunday and Monday window refreshes were not run, so the stored predictions are
+the ones served and are graded as they stand. No finished game was re-predicted or re-simulated.
+
+**Stored-state audit (before grading, read-only).** 16 games; one baseline and one ML row each; every row predates kickoff.
+- **PIT @ CLE (TNF):** predictions 10/1 23:05-23:06Z, sim 23:06Z, T-1.1h (the TNF window refresh).
+- **The other 15 (Sun + Mon): no final-window refresh.** Predictions from 10/1 03:30-03:32Z (ATL @ NO ML 03:52Z), sims
+  03:41-03:44Z: 82h (IND @ WAS, 13:30Z kickoff) to 117h (ATL @ NO) before kickoff. They carry the 10/1 03:30Z lines and
+  injury data (before Thursday/Friday designations, no inactive lists). The 23:05Z TNF refresh re-pulled odds and
+  injuries for every team but re-predicted only PIT @ CLE.
+- **Written after kickoff:** only `live_tracking` (82) and `live_simulations` (81) rows for PIT @ CLE (the live
+  tracker). Grading reads neither. No odds, snapshot, inactives, weather, prediction or sim row is post-kickoff.
+- **Unusable: none.** Two served games carried a QB label: IND @ WAS (books priced Mariota; Mariota started and was
+  replaced in-game by Kaliakmanis, a P35-type case) and NYJ @ CHI (sim QB Keenum; Bagent started, as the books priced).
+  Both are graded as served.
+
+**Graded** (`grade --sport nfl --refresh --since 2026-10-01`, then `export_sims` -> `data/sims_archive/2026_w04.json`:
+16/16 with actual result and both pregame predictions). Independent recount from the predictions table matches.
+CLV closes: all 32 from ESPN/DraftKings (no stale-snapshot fallback).
+
+| Model | Straight up | ATS | Flagged | MAE (line 7.47) |
+|---|---|---|---|---|
+| baseline-v1 | 11/16 | 7-8-1 | 1-0 (JAX @ CIN, JAX) | 7.73 |
+| ml-v1 | 11/16 | 10-5-1 | none flagged | 6.90 |
+
+Push: LAC @ SEA (SEA -7, won by 7). Season to date (62 graded per model): baseline SU 35/62, ATS 26-34-2, flagged 4-10;
+ML SU 41/62, ATS 25-35-2, never flagged. 30 graded ATS results this week: noise, as always.
+
+**P67 week 4 (ad hoc, by the B1/B2 rules; phase B's record builder is still not built).** Every game's last pregame list is
+the 10/1 23:06:58Z live ranking (commit 9590d0c); it ranked all 16 games. Sun/Mon rows were priced on the 10/1 03:44Z
+lines pull (only PIT @ CLE's lines were refreshed at 23:06Z). Top 25: 25 rows, **11-12-0** (47.8%, avg break-even
+0.527), 2 not graded. Top 50: 50 rows, **28-19-0** (59.6%, break-even 0.523), 3 not graded. Top 25 by category:
+pass yds 0-3, rush yds 2-1, rec yds 3-5, receptions 6-3; over 3-1, under 8-11. Not graded (B2 check: did not play, not
+name failures): Noah Fant (NO TE2, ranks 14 and 24; no 2026 snap row in any week) and Jadarian Price (SEA RB1, rank 26;
+no week-4 snap row). Fant being priced and ranked with no snaps all season is a P68/P31-type observation; nothing changed.
+
+---
+
 ## 2026-10-01 — PIT @ CLE injury-layer sensitivity (informational, for P48; nothing changed)
 
 Served baseline (23:05Z): **PIT by 3.2** (-3.16 home). Ratings -1.92 + home field +1.90 + travel +0.05 + rest 0 =
