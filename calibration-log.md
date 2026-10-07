@@ -140,6 +140,36 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-07 — P60 arm B specified (written before running; the bars are the 2026-09-30 ones in P60's row, unchanged)
+
+The 9/30 criteria fix the bars and say arm B's prior is "informed by his as-of NGS profile, the mapping fitted on
+earlier seasons only, every choice fixed on 2025 weeks 3-10". The mapping itself was not written down; this is it,
+before any result exists.
+
+- **Arm A:** P17's frozen design, the harness's own code (`p17_walkforward.py` functions, executed from source):
+  k = 100, position prior, prior season at 0.5, IPF crediting, pre-week category shares. 2025 weeks 3-18.
+- **Profile** (receiver, season s, week w): target-weighted means over his NGS weekly rows (regular season, week >= 1)
+  from season s-1 and season s weeks < w, of avg separation, avg cushion, avg intended air yards, and his team's
+  main passer's avg time to throw in those same games (the passing row with most attempts for that team-week). No
+  rows = no profile.
+- **Mapping:** per target category (red zone / deep / short), a multinomial logistic regression of the harness's
+  outcome bin (incomplete, < 5, 5-9, 10-19, 20+) on position (WR / TE / RB) + the four standardised features, fitted on
+  targets from the seven seasons before s (2018-2024 for 2025), each with its own as-of profile; profiled receivers only.
+- **Arm B prior** for a profiled receiver: arm A's position prior multiplied bin-wise by P_map(bin | pos, his profile)
+  / P_map(bin | pos, the position's mean profile), renormalised. So the NGS profile can only move a player off his
+  position's mix; it never replaces the arm-A mix. Unprofiled receivers get arm A's prior exactly.
+- **The only choice, fixed on 2025 weeks 3-10:** L2 strength C in {0.01, 0.1, 1.0}, lowest rec-yds MSE vs arm A.
+  Nothing else is tuned; k, priors, weights stay frozen. Judged on weeks 11-18. 2026 weeks 1-4 reported (mapping
+  refitted on 2019-2025, same C), not gated.
+- **Bar 4 as it can be checked:** an unprofiled receiver's *prior* is byte-identical by construction; his
+  *prediction* can still move, because IPF re-balances each team-category cell, so a profiled teammate's change
+  shifts him too. Output-level identity is therefore checked on team-games with no profiled receiver. Reported
+  both ways; if the user reads bar 4 as output-level for every unprofiled receiver, it fails by construction.
+- Bars 1-3, 5 as logged: (1) yds MSE >= 1% better than arm A, better in >= 6 of 8 weeks, CI reported; (2) the same on
+  profiled receivers alone; (3) receptions MSE not worse; (5) gain under 1% stops and is reported.
+
+---
+
 ## 2026-10-07 — P17 recheck (2026 weeks 1-4, frozen 9/19 design): yards worse by 0.65%, better in 1 of 4 weeks. STILL CLOSED
 
 Run against the criteria set with the user 2026-09-30 (P17 row), unchanged. `research/p17/p17_recheck_2026.py`
