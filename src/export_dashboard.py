@@ -86,6 +86,12 @@ KNOWN_GAME_ISSUES = {
     ),
 }
 
+# How a graded week's picks were made, when that differs from the usual
+# window refreshes. Shown under the week on the Record page; no number changes.
+WEEK_NOTES = {
+    (2026, 4): "Predicted 3–5 days before kickoff, before designations and inactive lists, except PIT @ CLE.",
+}
+
 
 def build(sport: str, explain: bool = True) -> dict:
     store = db.get_store()
@@ -509,6 +515,7 @@ def _weeks(graded: list[dict], games: dict[str, dict],
             "n_games": len(rows),
             "n_predicted": sum(1 for r in rows if r["predicted"]),
             "n_graded": len(by_game),
+            "note": WEEK_NOTES.get((season, week)),
             "models": model_stats,
             "games": rows,
         })

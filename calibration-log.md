@@ -140,7 +140,79 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-07 — P22 + P51 merged (steps 2-9 of P22's ship sequence). Criteria 1, 2, 6 pass; the dashboard export waits for the user
+
+Run in the order on P22's row. Odds API quota checked before the week-5 pull (free `/sports` call): **410** remaining
+(90 used); after the odds, props and TD pulls, **352**.
+
+- **(2) Snapshot** `data/snapshots/pre-p22-p51_2026-10-07/`: served JSON (`data/` + `dashboard/public/`, also a copy
+  from before week 4's `export_sims`), 2026 `team_ratings`, ML file md5s, main HEAD, and a hash of every stored week-4
+  row (`wk4_fingerprint_before.json`).
+- **(3) 'Before' pass on main (old rating):** `run_pipeline --sport nfl --model both --date 2026-10-08 2026-10-11
+  2026-10-12 --fresh-odds` (one odds pull, 29 events), then `simulate_nfl` on the same dates `--upcoming-only`. 15 games;
+  baseline mean |model - line| 4.46; one baseline flag (LV @ NE). Recorded in `before_wk5.json`.
+- **(4) Merged `p22-rating` (7047cee).** Not clean, against the row's expectation: `src/game_explain.py` conflicted
+  with main's close-game rule (e933f2f, 10/1). Resolved by keeping both: P22's rating sentence ("describe how it is
+  built only as a caveat does") and main's close-game paragraph, both unchanged in wording. Suite 259 passed.
+  Criterion 6 (files): `build_training.py`, `training_nfl.csv`, `nfl_margin.json` / `.meta.json` md5-identical. (The
+  phase-1 snapshot recorded no hashes; these files were last written 9/22, before phase 1, and are compared to today's
+  pre-ship md5s.)
+- **(5) Merged `p51-priced-qb` (c2c18dc)**, clean. Suite 262.
+- **(6) Ratings rebuilt** (`ingest_nflverse`, flag on). Recomputing in memory with the flag off reproduces the
+  pre-ship stored week-5 ratings exactly (max diff 0.000).
+- **(7) Re-predicted week 5, both models, same odds** (`--skip-ingest`). **(8)** props lines pull (15/15 games, 100
+  players) -> simulate -> props rank (187 priced, top 25; P67 archive `2026_w05/20261007T081609Z`) -> TD pull and rank
+  (418 players priced, 271 ranked) -> `export_sims`. QB scenarios (P66) were not run; they are not in the sequence.
+
+**(9) Checks** (`ship_checks.json` in the snapshot; all in memory).
+
+| # | check | result | verdict |
+|---|---|---|---|
+| 1 | served baseline before -> after, same odds | mean abs(model - line) **4.46 -> 3.49** (15 games); 6 games move > 3 pts, 5 toward the line | **pass** |
+| 2 | sim median totals vs the proxy, per-game clause | 12 games with proxy move >= 1: **10 same direction (83%)**; 9/11 without the P51 game | **pass** |
+| 3 | props raw P(over) shift, week-5 slate (information) | non-P51 games: pass yds +0.92 pp (n 20), rec yds -0.65 (58), receptions -0.32 (58), RB rush +0.44 (24), QB rush -0.06 (13). P51 game (CHI @ GB) alone: pass yds -3.59 (n 2), rec yds -1.86 (6), receptions -0.83 (6) | no category with n >= 20 over 1.0 pp; refit decision after week 5 is graded, as ruled |
+| 6 | ML untouched | files md5-identical; ML week-5 predictions before vs after max diff **0.0** | **pass** |
+| 7 | ATS-information test on week-5 edges (reported, not gated) | **not computable yet**: it needs results (cover residuals). Runs once week 5 is graded | pending |
+
+Criterion 1, games moving > 3 pts (home margin before -> after; parts in points, home minus away):
+HOU @ TEN -13.59 -> -4.30 (def carry +4.59, off carry +1.92, off adjust +1.97); LV @ NE +15.35 -> +7.48 (off carry
+-4.36, def carry -2.06; **the 'before' flag is gone**); DET @ ARI -5.33 -> -0.25 (off adjust +2.33, def carry +1.75; line ARI +5.5, so this one moves *away* from the line,
+abs edge 0.17 -> 5.25: the model now has ARI close, the market DET by 5.5);
+CLE @ NYJ -3.83 -> +0.17 (def carry +4.27; abs edge 5.83 -> 1.83); PHI @ JAX +11.84 -> +8.34; SF @ SEA +8.76 -> +5.43. After the merge: **no baseline flags** on week 5.
+
+**Correction to the 9/30 phase-2 criterion-3 numbers.** The phase-2 check script (and my first run today) read
+`props.rank`'s output under `props` / `more`, keys that only exist in the served file; `rank` returns `ranked`. So the
+9/30 figures (n 16 / 8 / 4 / 1 / 1) were held-out props only. Today's numbers above use `ranked` + `held_out`
+(187 props, before and after). The ruling (re-measure on week 5, refit only n >= 20 and > 1.0 pp) is unaffected.
+
+**P51 firing list:** one case. CHI @ GB: depth QB1 Caleb Williams ruled out (ESPN `out`); the books price only Tyson
+Bagent, promoted to QB1.
+
+**QB sweep: two mismatches, neither a P51 case** (QB1 not ruled out, so the rule correctly does not fire):
+- **TB @ DAL (TNF):** sim QB1 Baker Mayfield (no week-5 status; nflverse row carries no status, play prob 0.6); the
+  books price only Jalon Daniels (TB QB2).
+- **BAL @ ATL:** sim QB1 Lamar Jackson (ESPN questionable, 0.55); the books price only Tyler Huntley (depth QB3;
+  Cooper Rush is QB2). Jackson left week 4 early (Huntley threw 63 yds).
+- The served top 25 carries both books-priced QBs at sim median 0: **Huntley pass yds under 174.5 (rank 11)** and
+  **Jalon Daniels pass yds under 181.5 (rank 18)**, the P28 'priced backup at median 0' signature. `props.run`
+  writes `dashboard/public/props.json` directly, so these rows are on the local props page now. Not held: the user decides
+  (the 9/30 IND @ WAS precedent: label + holdouts).
+
+**Week 4 untouched.** Nothing in the sequence re-predicted, re-simulated or rewrote a week-4 prediction, sim, odds
+snapshot, CLV row, injury, inactive or rating row (hashes identical, before vs after), and `2026_w04.json` is
+byte-identical. Three tables show re-stamped week-4 rows, content unchanged: `games` (`pulled_at` from the nflverse
+ingest; scores match the graded rows), `odds` (the 16 `nflverse_close` rows, rewritten by the same ingest), `weather`
+(4 dome games re-pulled by the weather ingest: every value null both times, only `pulled_at` changed).
+
+**Not done yet: (10)** dashboard export (it also shows week 4's note on the Record page), log of served numbers,
+push (with f02f0dd). Waiting for the user.
+
+---
+
 ## 2026-10-07 — Week 4 graded and archived (16/16). No Sunday or Monday window refresh: 15 games graded on the 10/1 predictions
+
+**Week 4 is marked (user, 10/7), on the Record page and here: predicted 3–5 days before kickoff, before designations and
+inactive lists, except PIT @ CLE.** No number changes.
 
 **What was served (user, 10/7):** the Sunday and Monday window refreshes were not run, so the stored predictions are
 the ones served and are graded as they stand. No finished game was re-predicted or re-simulated.
