@@ -72,9 +72,6 @@ def _slate_for(store, sport: str) -> tuple[str, list[dict], dict]:
 # the page rather than hidden. Remove each entry once the item is fixed or the
 # game has kicked off.
 KNOWN_GAME_ISSUES = {
-    "2026_05_TB_DAL": (
-        "Known issue (starting QB, P53 cross-check): TB's official week-5 injury report hasn't posted yet. Baker Mayfield did not practise and has no game status, so he plays with probability 0.60 and the simulation starts him in about 60% of games, with Jalon Daniels (QB2) in the rest. The books price only Jalon Daniels. Mayfield is charged 2.35 points in the baseline. The baseline and ML lines, the simulation and TB's passing numbers all rest on that 60%. P51 does not apply: it promotes a priced QB only when the depth-chart starter is ruled out. TB's quarterback props and TD picks are held out; the hold comes off once the official report confirms the starter."
-    ),
     "2026_05_BAL_ATL": (
         "Known issue (starting QB, P53 cross-check): Lamar Jackson is questionable on ESPN's feed (play probability 0.55; he left week 4 early and Tyler Huntley finished), and BAL's official week-5 report hasn't posted yet. The simulation starts Jackson in about 55% of games and Huntley in the rest. The books price only Huntley, who is BAL's QB3 on the nflverse depth chart behind Cooper Rush. Jackson is charged 2.38 points in the baseline. The baseline and ML lines, the simulation and BAL's passing numbers all rest on that 55%. P51 does not apply: it promotes a priced QB only when the depth-chart starter is ruled out. BAL's quarterback props and TD picks are held out; the hold comes off once the official report confirms the starter."
     ),
@@ -83,11 +80,73 @@ KNOWN_GAME_ISSUES = {
     ),
 }
 
+# Starting-QB labels that must stay true whichever way the official report
+# goes, so they state what this refresh actually used rather than a fixed
+# story: the simulation's QB split (each QB's share of projected attempts in
+# the stored pregame sim) and the QBs the books price in the current props
+# lines, followed by a fixed note. Display only. Remove an entry once the
+# starter is confirmed and its holds are retired.
+QB_STATUS_LABELS = {
+    "2026_05_TB_DAL": {
+        "team": "TB",
+        "note": ("TB's quarterback props and TD picks stay held until the starter is confirmed by an official "
+                 "source (the NFL's official injury report, or the Buccaneers' own inactive list). Until then "
+                 "the baseline and ML lines, the simulation and TB's passing numbers rest on the split above."),
+    },
+}
+
+
+def qb_status_label(game_id: str, team: str, note: str, sim: dict | None, lines: dict | None) -> str:
+    """The QB_STATUS_LABELS text for one game: split and priced QBs as of this refresh, then the note."""
+    from .ingest_injuries import player_key
+
+    head = "Known issue (starting QB, P53 cross-check): "
+    box = (sim or {}).get("box_score")
+    box = json.loads(box) if isinstance(box, str) else box
+    side = None
+    if box and sim:
+        side = "home" if sim.get("home_team") == team else "away" if sim.get("away_team") == team else None
+    qbs = []
+    if side:
+        for p in (box.get(side) or {}).get("players") or []:
+            att = ((p.get("passing") or {}).get("att") or {}).get("mean") or 0
+            if att > 0.5:
+                qbs.append((att, p["player"]))
+    total = sum(a for a, _ in qbs)
+    other = {player_key("", p["player"])[1] for s in ("home", "away") if s != side
+             for p in ((box or {}).get(s) or {}).get("players") or []}
+    players = (((lines or {}).get("games") or {}).get(game_id) or {}).get("players") or {}
+    priced = sorted(n for n, m in players.items() if "player_pass_yds" in m and player_key("", n)[1] not in other)
+    when = str((sim or {}).get("generated_at") or "")[:16].replace("T", " ")
+    if total > 0:
+        split = " and ".join(f"{n} in about {a / total:.0%}" for a, n in sorted(qbs, reverse=True))
+        sim_part = f"as of this refresh (simulation {when}Z) the simulation starts {split} of games"
+    else:
+        sim_part = "the simulation's starting-QB split is not available at this refresh"
+    books = (f"the books price {' and '.join(priced)} as {team}'s passer" if priced
+             else f"the books price no {team} quarterback yet")
+    return f"{head}{sim_part}; {books}. {note}"
+
+
 # How a graded week's picks were made, when that differs from the usual
 # window refreshes. Shown under the week on the Record page; no number changes.
 WEEK_NOTES = {
     (2026, 4): "Predicted 3–5 days before kickoff, before designations and inactive lists, except PIT @ CLE.",
 }
+
+
+def _qb_label(store, gid: str) -> str:
+    cfg = QB_STATUS_LABELS[gid]
+    try:
+        sims = store.select("game_simulations", {"game_id": gid})
+        sim = max(sims, key=lambda s: str(s.get("generated_at") or "")) if sims else None
+    except Exception:  # noqa: BLE001 - the label degrades to its note, the export goes on
+        sim = None
+    try:
+        lines = json.loads((config.DATA_DIR / "props_lines.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        lines = None
+    return qb_status_label(gid, cfg["team"], cfg["note"], sim, lines)
 
 
 def build(sport: str, explain: bool = True) -> dict:
@@ -154,7 +213,8 @@ def build(sport: str, explain: bool = True) -> dict:
                     "home": _injury_list(baseline, "home_injuries"),
                     "away": _injury_list(baseline, "away_injuries"),
                 },
-                "known_issue": KNOWN_GAME_ISSUES.get(gid),
+                "known_issue": (_qb_label(store, gid) if gid in QB_STATUS_LABELS
+                                else KNOWN_GAME_ISSUES.get(gid)),
             }
         )
 
