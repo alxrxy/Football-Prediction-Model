@@ -191,13 +191,17 @@ def refresh(window: Window, target: date, args) -> None:
     if not step("predict", lambda: _predict(target), critical=True):
         return
 
-    step("simulate", lambda: simulate_nfl.run(
-        dates=[target], n=args.sims, quiet=True, upcoming_only=True))
-
+    # Lines before the sim (P51): the sim reads this window's priced QBs from
+    # them, and one pulled after it only ever reached the next window's sim.
     if not args.skip_props:
         step("props: pull lines", lambda: ingest_props.run(
             cache_minutes=0 if args.fresh_odds else None,
             only_games={g["game_id"] for g in window.games}))
+
+    step("simulate", lambda: simulate_nfl.run(
+        dates=[target], n=args.sims, quiet=True, upcoming_only=True))
+
+    if not args.skip_props:
         step("props: rank", lambda: props.run(with_explanations=not args.no_explain))
 
     # P66: starting-QB scenarios for this window's games that qualify (an
