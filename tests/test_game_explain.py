@@ -68,8 +68,21 @@ def test_caveats():
     inj["away"][0]["practice"] = "limited"
     c = " ".join(ge.factors(game(injuries=inj), prior=0.88)["caveats"])
     check("questionable + limited practice is not called the flat default", "flat 55%" in c, False)
-    check("never says opponent-adjusted", "not adjusted for opponents" in c, True)
     check("prior share rounded to 10%", "about 90%" in c, True)
+    # P22: the caveat matches the rating actually served.
+    from src import config
+    saved = config.RATING_OPPONENT_ADJUST
+    try:
+        config.RATING_OPPONENT_ADJUST = True
+        c = " ".join(ge.factors(game(injuries=inj), prior=0.88)["caveats"])
+        check("P22 on: says adjusted for opponents", "adjusted for the opponents it has faced" in c, True)
+        check("P22 on: says last season is shrunk", "shrunk well toward average" in c, True)
+        check("P22 on: never says not adjusted", "not adjusted for opponents" in c, False)
+        config.RATING_OPPONENT_ADJUST = False
+        c = " ".join(ge.factors(game(injuries=inj), prior=0.88)["caveats"])
+        check("P22 off: old caveat", "not adjusted for opponents" in c, True)
+    finally:
+        config.RATING_OPPONENT_ADJUST = saved
 
 
 def test_prompt_names_the_team_each_factor_helps():
