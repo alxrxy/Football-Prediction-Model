@@ -240,14 +240,22 @@ PROP_HOLDOUTS: dict[tuple[str, str, str], str] = {}
 QB_MARKETS = {"player_pass_yds", "player_pass_tds", "player_pass_attempts",
               "player_pass_completions", "player_pass_interceptions"}
 
-# 2026-09-30, IND @ WAS: who starts at QB is unresolved (the sim has Daniels at
-# ~55% from ESPN's "questionable"; the books price Mariota), so every WAS
-# quarterback prop measures that disagreement, not the player. Held until WAS's
-# official week-4 report posts; remove then (see KNOWN_GAME_ISSUES).
-_WAS_QB_NOTE = ("Held out: WAS's starting QB is unresolved until the official week-4 report posts "
-                "(the simulation starts Daniels in ~55% of games; the books price Mariota).")
-PROP_HOLDOUTS.update({("2026_04_IND_WAS", qb, m): _WAS_QB_NOTE
-                      for qb in ("Marcus Mariota", "Jayden Daniels")
+# 2026-09-30 IND @ WAS and 2026-10-01 NYJ @ CHI entries retired 2026-10-07 after week 4
+# was graded (record in calibration-log.md, 2026-10-07 retirement entry).
+
+# 2026-10-07, week 5 (P53 cross-check, user ruling): the books price only the
+# backup, while the simulation starts the depth-chart QB1 at his play
+# probability. P51 does not fire because neither QB1 is ruled out. Remove each
+# game's entries once the official report confirms the starter (see
+# KNOWN_GAME_ISSUES).
+_TB_QB_NOTE = ("Held out: TB's starting QB is unresolved (the simulation starts Mayfield in ~60% of games; "
+               "the books price only Jalon Daniels). The hold comes off once the official report confirms the starter.")
+_BAL_QB_NOTE = ("Held out: BAL's starting QB is unresolved (the simulation starts Lamar Jackson in ~55% of games; "
+                "the books price only Tyler Huntley). The hold comes off once the official report confirms the starter.")
+PROP_HOLDOUTS.update({(gid, qb, m): note
+                      for gid, qbs, note in (("2026_05_TB_DAL", ("Baker Mayfield", "Jalon Daniels"), _TB_QB_NOTE),
+                                             ("2026_05_BAL_ATL", ("Lamar Jackson", "Tyler Huntley"), _BAL_QB_NOTE))
+                      for qb in qbs
                       for m in ("player_pass_yds", "player_rush_yds")})
 
 
@@ -276,35 +284,6 @@ def _starter_mismatch(market: str, position: str, line, q: dict) -> str | None:
 # and Strand are all inactive so Cooper Rush takes 100% of the passing rather
 # than the 60/40 split the ATL note described. Neither note was true any more,
 # and a stale caveat is worse than none.
-# 2026-10-01, NYJ @ CHI: the simulation starts Keenum (depth QB2, Williams
-# doubtful); the books price Bagent. The engine prices a team's passing at team
-# level, so a forced-Bagent run gave him Keenum's numbers (calibration-log,
-# 2026-10-01 NYJ @ CHI entry) and his 200.5 line looked like a 22.8-pt edge.
-# When the inactive list posts: if Keenum starts, remove both entries; if
-# Bagent starts, keep Bagent's (unreliable, not a pick) and drop Keenum's.
-_CHI_QB_NOTE = ("Held out: CHI's starting QB is unresolved (the simulation starts Keenum; the books price Bagent).")
-_CHI_BAGENT_NOTE = ("Held out as unreliable: the simulation gives any CHI starter the same team-level passing, "
-                    "so a Bagent line measures the missing quarterback-quality term, not the player. "
-                    "Stays held even if the inactive list confirms him.")
-PROP_HOLDOUTS.update({("2026_04_NYJ_CHI", qb, m): note
-                      for qb, note in (("Case Keenum", _CHI_QB_NOTE), ("Tyson Bagent", _CHI_BAGENT_NOTE))
-                      for m in ("player_pass_yds", "player_rush_yds")})
-
-# 2026-10-07, week 5 (P53 cross-check, user ruling): the books price only the
-# backup, while the simulation starts the depth-chart QB1 at his play
-# probability. P51 does not fire because neither QB1 is ruled out. Remove each
-# game's entries once the official report confirms the starter (see
-# KNOWN_GAME_ISSUES).
-_TB_QB_NOTE = ("Held out: TB's starting QB is unresolved (the simulation starts Mayfield in ~60% of games; "
-               "the books price only Jalon Daniels). The hold comes off once the official report confirms the starter.")
-_BAL_QB_NOTE = ("Held out: BAL's starting QB is unresolved (the simulation starts Lamar Jackson in ~55% of games; "
-                "the books price only Tyler Huntley). The hold comes off once the official report confirms the starter.")
-PROP_HOLDOUTS.update({(gid, qb, m): note
-                      for gid, qbs, note in (("2026_05_TB_DAL", ("Baker Mayfield", "Jalon Daniels"), _TB_QB_NOTE),
-                                             ("2026_05_BAL_ATL", ("Lamar Jackson", "Tyler Huntley"), _BAL_QB_NOTE))
-                      for qb in qbs
-                      for m in ("player_pass_yds", "player_rush_yds")})
-
 KNOWN_DEFECTS: dict[tuple[str, str], str] = {}
 
 
@@ -647,7 +626,8 @@ def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = Fa
         "structural_holdouts": [{"market": m, "position": pos, "note": note}
                                 for (m, pos), note in STRUCTURAL_HOLDOUTS.items()]
                                + [{"market": m, "player": who, "note": note}
-                                  for (_gid, who, m), note in PROP_HOLDOUTS.items()],
+                                  for (gid, who, m), note in PROP_HOLDOUTS.items()
+                                  if gid in (lines.get("games") or {})],
     }
     config.ensure_dirs()
     PROPS_JSON.write_text(json.dumps(payload), encoding="utf-8")
