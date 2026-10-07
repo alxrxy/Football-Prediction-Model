@@ -37,3 +37,12 @@ def pytest_runtest_call(item):
             failed = ": " + ", ".join(map(str, module.FAILED[before:after]))
         pytest.fail(f"{after - before} check(s) failed{failed} (see captured stdout)", pytrace=False)
     return result
+
+
+@pytest.fixture(autouse=True)
+def _raw_rosters_to_tmp(tmp_path, monkeypatch):
+    """P68's raw roster logger must never write test fixtures into data/inactives_raw/: tests that call
+    ingest_inactives.fetch (test_injury_report and others) would otherwise log their fake reads there."""
+    from src import inactives_raw
+
+    monkeypatch.setattr(inactives_raw, "RAW_DIR", tmp_path / "inactives_raw")
