@@ -140,6 +140,68 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-07 — P58 (NCAAF removal) built on its own branch; every NFL check identical; NOT merged, nothing deleted from Supabase
+
+**Where it lives.** Branch `p58-ncaaf-removal` in the worktree `Football Predictor p58`: **16dcd12** (the removal) and
+**2240b11** (NFL suspect-line test, committed by the user). **main stays at b74bf9c**, untouched. Nothing merged;
+nothing deleted from Supabase or the mirror.
+
+**Archive (done, read-only on every store).** `data/archive/ncaaf_2026/` (local, OneDrive-backed, not committed; 81 MB):
+every college row from Supabase and, separately, from the SQLite mirror, plus `training_ncaaf.csv`,
+`models/ncaaf_margin.json` / `.meta.json` and the college cache files; `manifest.json` has per-table row counts and
+sha256. **Supabase matches the P58 counts exactly:** games 331, predictions 166, clv_log 166, odds 1,859 + 69 orphans,
+odds_snapshots 555, weather 237, venues 806, teams 138, team_ratings 276, injuries 1.
+
+**Code removal, as scoped.** Deleted: `src/ingest_cfbd.py`, `calibration/analyze_slate.py`, `dashboard/src/SlateTable.jsx`,
+`GradedSlate.jsx`. College branches stripped from `run_pipeline.py` (NFL default, `--sport` kept as `nfl` only),
+`config.py`, `ingest_odds.py`, `names.py` (alias table emptied; `similarity` / `norm` kept), `market.py` (`median_price`
+kept), `clv.py` (Elo check kept), `grade.py` (NFL default), `features.py` (Elo fallback kept), `predict_baseline.py`,
+`predict_ml.py`, `train_model.py`, `build_training.py` (`both_fbs` column kept), `ingest_injuries.py`, `ingest_weather.py`,
+`export_dashboard.py`, dashboard `App.jsx` (no tab bar, NFL hub only) and `GameDetail.jsx`. Hidden imports fixed
+(`build_training.py`, `run_pipeline.py`). Schema file `db/PASTE_INTO_SUPABASE.sql`: **comments only**; every column kept.
+README, architecture, `no-key-data-sources.md`, dashboard README and `.env.example` made NFL-only, with college sections
+kept as dated history.
+
+**Checks (NFL must be identical).**
+
+| check | result |
+|---|---|
+| suite | main **280**; branch **280** (the college CLV test was replaced by an NFL test of the suspect-line cap: a 5.5-pt move is `suspect_line`, a 4-pt move counts) |
+| week-5 baseline predictions, 15 games, in memory | **identical** before / after (sha) |
+| week-5 ML predictions, 15 games | **identical** |
+| NFL section of an in-memory dashboard export | **identical** (sha) |
+| `match_events` on 4 cached NFL odds / events files (31 / 32 / 31 / 8 events) | **identical** assignments, 0 misses |
+| imports | 52 -> 51 modules (only `ingest_cfbd` gone), 0 failures |
+| commands | `run_pipeline` / `run_sunday` and 10 module `--help`s exit 0; `train_model.load('nfl')` 3,060 rows |
+| `training_nfl.csv` and `models/nfl_margin.*` | on-disk sha **identical** before / after; a full rebuild gives the **same sha** with branch and main code (3,092 rows) |
+| front-end build | **passes** (57 modules) |
+| NFL pages render, no console errors (preview on port 5175) | **pending** |
+
+The harness ran each tree's code against main's `.env` and data, read-only; it was run twice on the untouched tree and
+gave identical hashes, so it is deterministic.
+
+**Judgment calls (for review before the merge).** (1) `SLATE_START_UTC_HOUR` (11:00Z) **kept**, only its comment changed:
+NFL slate windows depend on it (00:15Z night games, the 13:30Z London game). (2) `fcs_proxy_applied_to` **kept** in the
+NFL rating detail, always None, so NFL prediction components keep one shape (removing it would change NFL output).
+`calibration/stage1_before_after.py` is kept as history, as decided, and can no longer be re-run for college.
+
+**Findings.** **Cache files: 116 found against 118 planned.** By name the cache holds exactly 116 college files (34
+`cfbd_`, 80 `espn_summary_ncaaf_`, 1 `espn_inj_ncaaf_`, 1 `odds_ncaaf_`), all archived; a wider pattern's 3 extra hits
+are NFL `espn_athlete_` files whose hash contains "cfb". The 9/30 count was not saved as a list, so the two are most
+likely files overwritten or expired since; nothing on the branch reads any college cache file. **The SQLite mirror is
+stale, not 'the same':** it holds fewer college rows (games 260, predictions 160, clv_log 160, odds 991, odds_snapshots
+0, weather 166, team_ratings 138; venues 806, teams 138, injuries 1 and orphans 69 equal). Nothing on the branch reads
+those rows today: `db.select_merged` adds a mirror row only when Supabase lacks its key, and every college row is still
+in Supabase; `grade` reads CLV filtered to NFL. The one unfiltered read, `python -m src.clv --report` without `--sport`,
+would surface the mirror's 160 college CLV rows **if Supabase's college rows were deleted first**.
+
+**Open items.** (1) Render check on port 5175 (pending). (2) **Merge only after the TNF window (10/8) and the raw-roster
+check.** (3) **Mirror cleanup together with or before the Supabase delete.** (4) **Supabase delete only after a stable
+game week and the user's explicit OK.** (5) P6, P7, P56 closed as 'retired: college removed' and the CFBD key revocation
+(user) at the merge, as decided 9/30.
+
+---
+
 ## 2026-10-07 — Correction: the 10/1 PIT @ CLE skip cleared three genuine absences; standing rule for manual overrides; skip retired
 
 **Correction (user, 10/7).** Three of the four flags the 10/1 skip treated as stale were genuine absences by snap counts:
