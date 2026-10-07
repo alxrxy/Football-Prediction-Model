@@ -140,3 +140,25 @@ def test_inputs_not_mutated_and_off_writes_nothing(monkeypatch, tmp_path):
     monkeypatch.setenv("ESPN_FEED_REPORT", "0")
     assert C.report(2026, 5, OFFICIAL, final, out_dir=tmp_path / "off", now=NOW, snaps=SNAPS) is None
     assert not (tmp_path / "off").exists()
+
+
+def test_official_report_posted_column(monkeypatch, tmp_path, capsys):
+    """official_report_posted = the team has >= 1 row on this week's official report in that refresh; set at first
+    flag and never rewritten; the review list shows only posted rows, with a count for the rest."""
+    monkeypatch.setenv("ESPN_FEED_REPORT", "1")
+    cle = {"player": "Cle Starter", "team": "CLE", "status": "out", "play_probability": 0.0, "position": "CB",
+           "snap_share": 0.8, "source": "espn", "season": 2026, "week": 5, "sport": "nfl"}
+    snaps = {**SNAPS, (4, "CLE", player_key("CLE", "Cle Starter")): 50}
+    C.report(2026, 5, OFFICIAL, OFFICIAL + ESPN + [cle], out_dir=tmp_path, now=NOW, snaps=snaps)
+    out = capsys.readouterr().out
+    rows = {r["player"]: r for r in csv.DictReader((tmp_path / "flags.csv").open(encoding="utf-8"))}
+    assert rows["Joey Porter Jr."]["official_report_posted"] == "True"     # PIT has a row on the official report
+    assert rows["Cle Starter"]["official_report_posted"] == "False"        # CLE has none
+    assert "Joey Porter Jr." in out and "Cle Starter" not in out
+    assert "1 on teams whose official report has posted, listed; 1 on teams without one" in out
+    # a later refresh where CLE's report has posted does not rewrite the column
+    cle_official = OFFICIAL + [{**cle, "player": "Other Cle", "source": "nflverse"}]
+    C.report(2026, 5, cle_official, cle_official + [cle], out_dir=tmp_path, now=NOW, snaps=snaps)
+    rows = {r["player"]: r for r in csv.DictReader((tmp_path / "flags.csv").open(encoding="utf-8"))}
+    assert rows["Cle Starter"]["official_report_posted"] == "False"
+    assert rows["Cle Starter"]["times_flagged"] == "2"
