@@ -290,6 +290,21 @@ PROP_HOLDOUTS.update({("2026_04_NYJ_CHI", qb, m): note
                       for qb, note in (("Case Keenum", _CHI_QB_NOTE), ("Tyson Bagent", _CHI_BAGENT_NOTE))
                       for m in ("player_pass_yds", "player_rush_yds")})
 
+# 2026-10-07, week 5 (P53 cross-check, user ruling): the books price only the
+# backup, while the simulation starts the depth-chart QB1 at his play
+# probability. P51 does not fire because neither QB1 is ruled out. Remove each
+# game's entries once the official report confirms the starter (see
+# KNOWN_GAME_ISSUES).
+_TB_QB_NOTE = ("Held out: TB's starting QB is unresolved (the simulation starts Mayfield in ~60% of games; "
+               "the books price only Jalon Daniels). The hold comes off once the official report confirms the starter.")
+_BAL_QB_NOTE = ("Held out: BAL's starting QB is unresolved (the simulation starts Lamar Jackson in ~55% of games; "
+                "the books price only Tyler Huntley). The hold comes off once the official report confirms the starter.")
+PROP_HOLDOUTS.update({(gid, qb, m): note
+                      for gid, qbs, note in (("2026_05_TB_DAL", ("Baker Mayfield", "Jalon Daniels"), _TB_QB_NOTE),
+                                             ("2026_05_BAL_ATL", ("Lamar Jackson", "Tyler Huntley"), _BAL_QB_NOTE))
+                      for qb in qbs
+                      for m in ("player_pass_yds", "player_rush_yds")})
+
 KNOWN_DEFECTS: dict[tuple[str, str], str] = {}
 
 
