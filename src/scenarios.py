@@ -96,7 +96,8 @@ def team_specs(team: str, depth: list[str], injuries: list[dict], warning: dict 
         specs.append({"key": f"{team}:{status_qb}:plays", "label": f"{status_qb} plays",
                       "changes": {status_qb: 1.0}, "starter": None})
         specs.append({"key": f"{team}:{status_qb}:out", "label": f"{status_qb} out" + (f" ({nxt} starts)" if nxt else ""),
-                      "changes": {status_qb: 0.0}, "starter": None, "next": nxt})
+                      "changes": {status_qb: 0.0}, "starter": None, "next": nxt, "named": nxt,
+                      "named_status": (_report_row(injuries, team, nxt) or {}).get("status") if nxt else None})
     if warning is not None:
         sim_qb1 = warning["qb1"]
         for priced in [p.strip() for p in warning["priced"].split(",") if p.strip()]:
@@ -106,12 +107,24 @@ def team_specs(team: str, depth: list[str], injuries: list[dict], warning: dict 
             out_spec = next((s for s in specs if s["key"].endswith(":out") and s.get("next") == priced), None)
             if out_spec is not None and not out_spec.get("starter"):
                 out_spec["label"] = f"{status_qb} out ({priced} starts, the books' QB)"
+                out_spec["named"] = priced
+                out_spec["named_status"] = (_report_row(injuries, team, priced) or {}).get("status")
                 continue
             specs.append({"key": f"{team}:{priced}:starts", "label": f"{priced} starts (the books' QB)",
                           "changes": changes, "starter": priced})
     for s in specs:
         s.pop("next", None)
     return specs[:MAX_PER_TEAM]
+
+
+def actual_label(label: str, named: str | None, named_status: str | None, simulated: str | None) -> str:
+    """Display only: a label that names a QB as starting must name the QB the simulation actually started.
+    The label is written from the depth chart before the run; a Doubtful or Out backup is skipped by the sim,
+    which then starts the next available QB (NYG @ WAS, 10/7: 'Mariota starts' simulated Kaliakmanis)."""
+    if not named or not simulated or named == simulated:
+        return label
+    why = f"{named} is {named_status}" if named_status else f"{named} is not the simulation's starter"
+    return re.sub(r"\(" + re.escape(named) + r" starts[^)]*\)", f"({simulated} starts in the simulation; {why})", label)
 
 
 def _warnings(sim_row: dict | None) -> dict[str, dict]:
@@ -256,6 +269,7 @@ def run_game(gid: str, store, ctx: FeatureContext, inputs, n: int | None, lines:
                                qb_check=qbc)
             sm = summarize(row, game)
             starter = (sm["sim_qbs"].get(team) or {}).get("player")
+            label = actual_label(spec["label"], spec.get("named"), spec.get("named_status"), starter)
             moved = []
             if lines_game:
                 sp = _p_over(lines_game, gid, sm["_view"])
@@ -268,7 +282,7 @@ def run_game(gid: str, store, ctx: FeatureContext, inputs, n: int | None, lines:
                                   "unreliable": bool(unreliable)})
                 moved.sort(key=lambda m: (not m["unreliable"], -abs(m["delta"] or 0)))
             result["scenarios"].append({
-                "key": spec["key"], "team": team, "label": spec["label"], "changes": spec["changes"],
+                "key": spec["key"], "team": team, "label": label, "changes": spec["changes"],
                 "starter_override": spec["starter"], "baseline_margin": margin,
                 "injury_points": round(charged, 2), "injury_cap_binds": raw > charged + 0.005,
                 "margin_change": round(margin - (served_anchor or 0), 2) if served_anchor is not None else None,
@@ -398,10 +412,50 @@ def format_report(out: dict) -> str:
     return "\n".join(lines)
 
 
+def relabel(payload: dict, statuses: dict) -> int:
+    """Display only, no sims: rewrite stored scenario labels to name the QB each scenario actually simulated
+    (`actual_label`). `statuses` maps (team, player) -> report status. Returns the number of labels changed."""
+    changed = 0
+    for g in (payload.get("games") or {}).values():
+        for s in g.get("scenarios") or []:
+            m = re.search(r"\(([^;()]+?) starts", s.get("label") or "")
+            simulated = ((s.get("sim_qbs") or {}).get(s.get("team")) or {}).get("player")
+            if not m:
+                continue
+            named = m.group(1)
+            new = actual_label(s["label"], named, statuses.get((s.get("team"), named)), simulated)
+            if new != s["label"]:
+                s["label"], changed = new, changed + 1
+    return changed
+
+
+def relabel_published() -> int:
+    """`relabel` on data/scenarios.json and its dashboard copy, statuses from the current report. No sim runs."""
+    from .features import latest_injury_report
+
+    payload = json.loads(OUT_JSON.read_text(encoding="utf-8"))
+    store = ReadOnlyStore(db.get_store())
+    try:
+        report = latest_injury_report(store.select("injuries", {"sport": "nfl"}))
+    finally:
+        store.close()
+    statuses = {(r["team"], r["player"]): r.get("status") for r in report}
+    n = relabel(payload, statuses)
+    OUT_JSON.write_text(json.dumps(payload, default=str), encoding="utf-8")
+    if PUBLIC_JSON.parent.exists():
+        shutil.copy(OUT_JSON, PUBLIC_JSON)
+    return n
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="QB scenarios for games with an unresolved starter (P66).")
     ap.add_argument("--game")
     ap.add_argument("--sims", type=int)
     ap.add_argument("--publish", action="store_true", help="write data/scenarios.json and the dashboard copy")
+    ap.add_argument("--relabel", action="store_true",
+                    help="display only: rename stored labels to the QB actually simulated; runs no sim")
     args = ap.parse_args()
+    if args.relabel:
+        print(f"relabelled {relabel_published()} scenario label(s); no simulation run")
+        raise SystemExit(0)
     print(format_report(run(args.game, args.sims, args.publish)))

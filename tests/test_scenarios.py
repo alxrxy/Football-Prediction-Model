@@ -169,3 +169,33 @@ if __name__ == "__main__":
         t()
     print(f"\n{PASS} passed, {FAIL} failed")
     sys.exit(1 if FAIL else 0)
+
+
+def test_label_names_the_qb_actually_simulated():
+    """Display only (10/7): 'Daniels out (Mariota starts)' simulated Kaliakmanis, because Mariota is doubtful;
+    the label must name the QB the simulation started and say why the named one did not."""
+    from src.scenarios import actual_label
+
+    got = actual_label("Jayden Daniels out (Marcus Mariota starts)", "Marcus Mariota", "doubtful", "Athan Kaliakmanis")
+    check("names the simulated QB and why", got,
+          "Jayden Daniels out (Athan Kaliakmanis starts in the simulation; Marcus Mariota is doubtful)")
+    got = actual_label("Baker Mayfield out (Jalon Daniels starts, the books' QB)", "Jalon Daniels", "out", "Teddy Bridgewater")
+    check("books' QB case relabelled too", got,
+          "Baker Mayfield out (Teddy Bridgewater starts in the simulation; Jalon Daniels is out)")
+    same = "Baker Mayfield out (Jalon Daniels starts, the books' QB)"
+    check("unchanged when the named QB is simulated", actual_label(same, "Jalon Daniels", None, "Jalon Daniels"), same)
+    check("unchanged when nothing is simulated", actual_label(same, "Jalon Daniels", None, None), same)
+
+
+def test_relabel_stored_payload_without_sims():
+    from src.scenarios import relabel
+
+    payload = {"games": {"2026_05_NYG_WAS": {"scenarios": [
+        {"team": "WAS", "label": "Jayden Daniels plays", "sim_qbs": {"WAS": {"player": "Jayden Daniels"}}},
+        {"team": "WAS", "label": "Jayden Daniels out (Marcus Mariota starts)",
+         "sim_qbs": {"WAS": {"player": "Athan Kaliakmanis"}}}]}}}
+    n = relabel(payload, {("WAS", "Marcus Mariota"): "doubtful"})
+    labels = [s["label"] for s in payload["games"]["2026_05_NYG_WAS"]["scenarios"]]
+    check("one label changed", n, 1)
+    check("stored labels", labels, ["Jayden Daniels plays",
+          "Jayden Daniels out (Athan Kaliakmanis starts in the simulation; Marcus Mariota is doubtful)"])
