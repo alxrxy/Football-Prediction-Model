@@ -140,6 +140,32 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-07 — Correction: the 10/1 PIT @ CLE skip cleared three genuine absences; standing rule for manual overrides; skip retired
+
+**Correction (user, 10/7).** Three of the four flags the 10/1 skip treated as stale were genuine absences by snap counts:
+**Joey Porter Jr. (PIT CB), Spencer Anderson (PIT G), Parker Brailsford (CLE OL) took no snaps in week 4; only Tyson
+Campbell (CLE CB) played** (71 defensive + 3 special-teams snaps). The 10/1 clearing relied on a **projection and an
+aggregator list, not an official Steelers inactive list**. On CLE, the Browns' official article was read: it omitted
+Campbell (who played) and Brailsford, who took no snaps and is did-not-play on ESPN's post-game roster, so he may have
+dressed unused; by snaps alone he counts as an absence here, and that one case is not settled by an official source. The 10/1 sensitivity figure 'PIT by ~1.7' is
+**superseded**. **Week 4 stays graded as served** (PIT by 3.2; CLE won 27-24).
+
+**Sensitivity re-run (read-only, same `score_injuries`, served inputs otherwise).** Pre-injury margin +0.04 (home).
+
+| scenario | CLE | PIT | net | margin |
+|---|---|---|---|---|
+| served (re-scored; reproduces exactly) | -4.72 | -1.52 | -3.20 | **PIT by 3.2** |
+| **corrected:** Porter Jr. 1.59 + Anderson 1.18 charged out, Brailsford out (no snap share on record, so 0, as the pipeline charges him), Campbell active, Green and Jefferson's phantom charges removed | -2.20 | -4.29 | +2.09 | **CLE by 2.1** |
+| corrected + PIT's list genuine, so its unlisted Questionables (Ramsey, Black, Echols) promoted to 1.0 | -2.20 | -3.22 | +1.02 | CLE by 1.1 |
+
+Market PIT -2.5; final CLE by 3. The served number had the wrong side; the corrected inputs put the baseline on CLE's side.
+
+**Standing rule (user, 10/7).** A manual override clears an inactive flag **only when the team's own official inactive
+article has been read and omits the player**; otherwise the flag stays and the doubt is noted. **Every
+`INACTIVES_SKIP_GAMES` entry cites that source in this log and expires once the game is graded.**
+
+---
+
 ## 2026-10-07 — P68 replay run (read-only): defense/ST selects R3 under both bounds (lower margin +0.01 pts); skill, OL, QB keep today's behaviour; D does not qualify; 10/1 PIT @ CLE premise was 3/4 wrong
 
 Run as decided (decisions 1-6, logged first). `research/p68/p68_replay.py`; output `research/p68/p68_replay_results.md`.
@@ -547,7 +573,7 @@ RB 0.45, Black DE 0.25 (Q), Echols CB 0.06 (Q).
 | Served, Ramsey / Echols / Black active (as the real lists say) | -4.72 | -0.45 | -4.27 | PIT 4.2 |
 | **Both: phantom charges removed and the three Questionables active** | -2.20 | -0.45 | -1.75 | **PIT ~1.7** |
 
-Read: removing the two zero-snap charges and counting PIT's three Questionables as active per the real lists moves the
+**SUPERSEDED 2026-10-07 (see the 10/7 correction entry): three of the four flags this entry treated as stale were genuine absences by snap counts; the corrected re-run gives CLE by 2.1 (CLE by 1.1 with PIT's Questionables promoted).** Read: removing the two zero-snap charges and counting PIT's three Questionables as active per the real lists moves the
 baseline from PIT by 3.2 to roughly **PIT by 1.7**, much closer to the market's 2.5. The skip itself moved the
 margin little (2.9 -> 3.2: Campbell 1.47 against Porter Jr. 1.59 + Anderson 1.18 largely offset); the manual file's
 certain Outs and the removal of Porter Jr.'s stale Out account for most of the 1.0 -> 3.2 move. Real-football notes:
@@ -562,6 +588,8 @@ either way, and the ~1.7 is a sensitivity rerun, not a validated number. See P48
 ---
 
 ## 2026-10-01 — TNF PIT @ CLE: ESPN's inactive lists were last week's; skipped for the game (user ruling)
+
+**CORRECTED 2026-10-07:** by nflverse snap counts, Joey Porter Jr., Spencer Anderson and Parker Brailsford took no snaps in week 4 (genuine absences); only Tyson Campbell played (71 defensive snaps). The PIT clearing relied on a projection and an aggregator list (the 'second source'), not an official Steelers inactive list. See the 2026-10-07 correction entry.
 
 **Found** at the 22:54Z ingest (T-80m) while checking the week-4 manual file: ESPN flagged CLE CB Tyson Campbell inactive,
 while the official report had him FP with no status. User asked for a diagnosis before any change.
