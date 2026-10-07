@@ -88,6 +88,14 @@ DEVIG_METHOD = os.getenv("DEVIG_METHOD", "shin").strip().lower()
 # built differently from the ones it was trained on.
 QB_CONDITIONAL_PRIOR = os.getenv("QB_CONDITIONAL_PRIOR", "0").strip().lower() in ("1", "true", "yes")
 
+# P22: the NFL power rating is opponent-adjusted (a ridge fit of play EPA on
+# offense, defense and home) and carries less of last season (0.459 offense,
+# 0.394 defense, against 0.75 for both before). Settings frozen from the
+# 2026-09-30 phase-1 walk-forward (research/p22). Only the live Layer 1 and the
+# sim read it; the ML model's epa_diff is built separately (build_training)
+# and is unaffected. RATING_OPPONENT_ADJUST=0 restores the old rating exactly.
+RATING_OPPONENT_ADJUST = os.getenv("RATING_OPPONENT_ADJUST", "1").strip().lower() in ("1", "true", "yes")
+
 # A nullified penalty replays the down instead of consuming one
 # (src/simulate.py). Measured 2026-09-16: real football replays 69.8% of them
 # and consumes almost none, while the engine consumes 71.7%, which shortens
