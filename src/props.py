@@ -252,8 +252,11 @@ _TB_QB_NOTE = ("Held out: TB's starting QB is unresolved (the simulation starts 
                "the books price only Jalon Daniels). The hold comes off once the official report confirms the starter.")
 _BAL_QB_NOTE = ("Held out: BAL's starting QB is unresolved (the simulation starts Lamar Jackson in ~55% of games; "
                 "the books price only Tyler Huntley). The hold comes off once the official report confirms the starter.")
+_TB_DANIELS_NOTE = ("Held out as unreliable: Baker Mayfield is ruled out, and the simulation gives any TB starter the "
+                     "same team-level passing, so a Jalon Daniels line measures the missing quarterback-quality term, "
+                     "not the player (the 10/1 Bagent precedent).")
 PROP_HOLDOUTS.update({(gid, qb, m): note
-                      for gid, qbs, note in (("2026_05_TB_DAL", ("Baker Mayfield", "Jalon Daniels"), _TB_QB_NOTE),
+                      for gid, qbs, note in (("2026_05_TB_DAL", ("Jalon Daniels",), _TB_DANIELS_NOTE),
                                              ("2026_05_BAL_ATL", ("Lamar Jackson", "Tyler Huntley"), _BAL_QB_NOTE))
                       for qb in qbs
                       for m in ("player_pass_yds", "player_rush_yds")})

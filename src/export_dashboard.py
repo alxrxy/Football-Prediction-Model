@@ -89,9 +89,9 @@ KNOWN_GAME_ISSUES = {
 QB_STATUS_LABELS = {
     "2026_05_TB_DAL": {
         "team": "TB",
-        "note": ("TB's quarterback props and TD picks stay held until the starter is confirmed by an official "
-                 "source (the NFL's official injury report, or the Buccaneers' own inactive list). Until then "
-                 "the baseline and ML lines, the simulation and TB's passing numbers rest on the split above."),
+        "note": ("Baker Mayfield is ruled out on the official report, so Jalon Daniels starts. Daniels' props and "
+                 "TD picks stay held as unreliable: the simulation gives any TB starter the team's passing, so his "
+                 "line measures the missing quarterback-quality term, not the player (the 10/1 Bagent precedent)."),
     },
 }
 
