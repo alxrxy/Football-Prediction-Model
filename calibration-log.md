@@ -98,6 +98,7 @@ status only when its adoption test is met.
 | P68 | Inactives: extend P49's scrutiny to non-QB positions; ESPN's pregame lists carry last week's inactives forward for every position, and only QBs are held today | data validation | 2026-10-01 | **TNF PIT @ CLE, read at T-80m (inside the P33 gate):** two stale carry-over cases on one game, both non-QB starters. CLE's list = its 5 week-3 inactives + 2 new; Tyson Campbell (CB, 0.875 snaps) and Parker Brailsford flagged though the Browns' official article (6:45 PM ET) lists neither; Campbell's roster entry byte-identical to week 3's. PIT's list = its week-3 list exactly (8/8); Joey Porter Jr. (CB, 0.946) and Spencer Anderson (G, 0.98) flagged though a second source lists neither. Porter Jr. also had a stale ESPN **injury-feed** `out` row (a second path, not the inactive list). Handled for that game only, by hand (`INACTIVES_SKIP_GAMES` + manual file; c536e27). Prior evidence: P49's 9/28 diagnosis measured an all-positions guard on weeks 1-3: R2 (not on the final report, or no game status) caught 59/65 false flags and wrongly held 29/204 genuine; R3 (on the prior week's list and not ruled out this week) 52/65 and 23/204; the all-positions version was parked until the cost of a wrong hold on a skill player is measured. R2 and R3 would both have held all four flags tonight. New tonight: a whole team list identical to the prior week's (PIT) is a list-level signal P49 did not test | to be set with the user at scoping, before any replay (process rule). Questions the scoping must answer: (1) rule: R2 / R3 / both / a list-level 'identical to last week' test, per position group; (2) the cost of a wrong hold on a non-QB (a genuine inactive kept active: sim usage to a player who is out; baseline charge missed), measured on graded games, against the cost of a false flag applied; (3) what a held flag does to the P33 rule that promotes a posted team's unlisted questionables to 1.0 (a team with held flags may not count as fully posted); (4) the ESPN injury-feed path (a stale `out` with no official-report entry), in or out of scope; (5) store the raw roster responses (today only parsed rows are kept, so a disputed read cannot be re-examined); (6) replay over every stored week 1-4 list incl. tonight's, with the per-position catch / wrong-hold table; (7) how `INACTIVES_SKIP_GAMES` retires once a guard ships | **proposed 2026-10-01 (user: a real tracked item, not built); queued for the post-10/5 batch, scoping first.** Until then nothing automatic covers non-QB carry-overs: a starter flagged inactive with no official-report status is checked by hand against the prior week's list and an official team source before a refresh, as on 10/1 **10/7: decision 1 set (four-candidate replay per group, selection fixed in advance, >= 10 false flags per group else pooled non-QB rule, simpler rule within noise, list-identical as a team-level flag with its false-alarm rate measured first). Decision 5 BUILT: raw roster responses logged (`src/inactives_raw.py`), byte-identical outputs on / off / failing. Decisions 2-4, 6, 7 open. See the 2026-10-07 P68 entry.** **Decision 2 DECIDED 10/7: option (b): points decide OL and defense; skill must not lose on points or sim usage, disagreement goes to the user.** **Decision 3 DECIDED 10/7: B + D (held player keeps report probability; team-level identical-list flag applies nothing and promotes no one), D only if its false-alarm rate is low and promotion loss is costed, B only if it beats A by more than noise on held-player Brier, QBs reported separately and changed live only after their own validation at a boundary.** **Decision 4 DECIDED 10/7: C (report-only log of ESPN-only out/doubtful rows for players who played last week; persistent file incl. later snap outcome; byte-identical on/off; not built until approved) + B as replay candidate needing >= 5 stale charged cases, closed if < 5 by end of week 10.** **Decision 6 DECIDED 10/7: replay now (wks 2-3 + PIT @ CLE) and again on wks 5-6; false-flag range (any pregame read / latest stored read), a candidate must win under both; genuine = no snaps + post-game did-not-play, else third bucket; ships only if the wk 5-6 re-run picks the same rule.** **Replay run 10/7 (read-only): defense/ST -> R3 under both bounds (lower margin +0.01 pts); skill, OL keep today's behaviour; QBs stay on P49; D does not qualify (its one firing vs the post-game list, PIT wk4, was genuine); B vs A within noise (A stays); 0 stale ESPN-feed cases. Ships only if the wk 5-6 re-run agrees. Also: 3 of the 4 flags the 10/1 PIT @ CLE skip treated as stale were genuine by snaps.** **STATUS 10/7 (user): no guard supported on weeks 2-4 evidence; weeks 5-6 re-run decides; C running to build the case count. Decision 7 done (PIT @ CLE skip retired; week-4 outputs identical). C built, report-only (`src/espn_feed_report.py`).** |
 | P70 | Injuries: the same player stored under two name spellings (e.g. `Derwin James` manual / `Derwin James Jr.` ESPN) keeps an older row beside the current one | data hygiene | 2026-10-12 | 6 week-5 player keys hold two rows (LAC Derwin James, DET D.J. Wonnum, WAS Deatrich Wise, CIN Dexter Lawrence, PIT Michael Pittman, ARI Walter Nolen): the table's key is the raw name, so a suffix or initials variant is a second row. The old row is from an earlier ESPN pull, and `latest_injury_report` reads only each source's latest pull, so it is never charged: **margin effect 0** (DEN @ LAC charged Derwin James once, inactive, 0.00). The risk is to anything that reads the table without that filter (a diagnostic did on 10/11) | pending, next boundary: see the 2026-10-12 'MNF diagnosis' entry, item 4d | **pending (logged 2026-10-12, nothing built; no Supabase rows deleted)** |
 | P69 | Odds API quota: at the week-5 cadence the remaining credits do not reach the 11/1 reset | budget | 2026-10-07 | 289 left after the 10/7 refresh. Measured rates: game-lines pull 3, props ~3 per game (4 nominal), TD 1 per game. Week 5 spent 121 by 10/7 (ship 58, refresh 63); its remaining windows project ~141 (Thu 7, Fri full 63, Sun 64, Mon 7), leaving ~148 for weeks 6-8. Weeks 6-8 at today's practice ~396 (~133 / ~133 / ~130); (a) Friday game lines only + props and TD inside each window ~228; (b) (a) without TD for games with no props ~226 (no real saving). Neither reaches week 8 | n/a (operating rule, not a model change) | **Rule (user, 2026-10-07):** weeks 5 and 6 run at the current cadence (Friday full refresh, plus a fresh game-lines pull and props and TD for each window's games); no quota optimisation in the meantime. **Week 7's plan is made when week 7 is being prepared, after week 6, not before.** **Checks:** (1) after MNF 10/12, read the remaining quota with the free `/sports` call and report week 5's actual spend against the 141 projection; if the remaining credits are under the week-6 projection (~133), tell the user before Thursday of week 6, and week 6 switches to game lines on Friday and props inside the windows. (2) At each refresh, print the remaining quota; if it is below the cost of the windows still to run that week, stop and tell the user before pulling. No code or schedule change |
+| P71 | Process: a game can reach kickoff with no pregame prediction because no window runs unless started by hand | process | 2026-10-16 | Week-6 TNF SEA @ DEN (00:15Z 10/16) kicked off with no prediction, sim, props, TD list or scenario; the window was never run. Its model record is lost and cannot be rebuilt honestly (post-kickoff inputs). Thursday is the exposed slot: a lone game midweek, outside the Friday-refresh / Sunday-watch routine. See the 2026-10-16 'Process gap' entry | (proposed, confirm with user before building) (1) **reminder first**: a scheduled pregame check (Task Scheduler, the P61 headless launcher) at T-4h and T-90m for every NFL game, which raises a desktop alert + `data/live/alerts.log` line when the game has no stored prediction, reads only the store, makes no API call and writes nothing else; (2) **automation as a separate later step**, only if the user asks: the check starts the game's window itself, with P69's quota check gating any pull; (3) tested by a dry run against a past slate (fires for SEA @ DEN-like states, silent when a prediction exists) and byte-identical predictions with it on or off; (4) caveat: neither runs while the laptop sleeps (WakeToRun off, 10/7), so the reminder is only as reliable as the machine being awake | **proposed 2026-10-16 (user: log it, don't implement); nothing built** |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -139,6 +140,236 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-10-16 — TNF SEA @ DEN final (DEN 17-14 OT): NOT A GRADED MODEL PREDICTION (no pregame prediction existed)
+
+Everything in this entry is **not a graded model prediction (no pregame prediction existed)**. It enters no model
+record (baseline, ML, sim, props, TD, scenarios, P67): there is nothing to grade, and none was created after the fact.
+Read at 03:3xZ 10/16; nothing predicted, simulated or pulled (no odds, no props).
+
+**Final, verified.** ESPN (event 401872995): Final/OT, DEN 17, SEA 14. nflverse schedule: 17-14, `overtime` 1. The
+store had `completed` false and no score until the normal results refresh (`python -m src.ingest_nflverse`, the one
+Supabase write allowed, 03:38Z) set DEN 17 / SEA 14, `completed` true. That refresh also upserted, as it always does,
+the season's games / teams / venues, the week-6 `team_ratings` rows and 104 `nflverse_close` odds rows (from the
+nflverse schedule file; no Odds API call).
+
+**Market line vs result (not a closing line).** The last stored Odds API lines are from the MNF refresh, 10/12
+23:31:57Z, about 2.5 days before kickoff (00:15Z 10/16); 10 books, all DEN +3 (SEA -3), total 40.5-41.5 (median 41),
+consensus moneyline DEN +132 / SEA -155 (no-vig DEN ~0.42). Result: DEN by 3, so **DEN +3 covered by 6** (SEA -3
+lost) and the **total went under by 10** (31 vs 41); the moneyline underdog won (market Brier on DEN, 0.34).
+nflverse's close (written by tonight's refresh, its own source): DEN +2.5, 40.5; DEN covered by 5.5, under by 9.5.
+
+**Live tracker (live calibration, one game; not a model record).** PID 20084, started 01:22Z, i.e. **2:24 left in the
+2nd quarter**: nothing before that was tracked. 52 polls (~150 s) to 5:40 of OT; it exited by itself after the final.
+- Win-probability path for DEN (the eventual winner): 0.93-0.94 through the 2nd quarter and halftime (3-14); 0.88-0.96
+  in the 3rd; 0.94-0.98 from 15:00 to 5:41 of the 4th (3-14); 0.77-0.87 after SEA's TD + 2 (11-14, 5:41 to 1:59);
+  **1.00 at 1:25 and 1:16 (11-14)**; 0.90 / 0.81 at 0:57 / 0:25; 0.44 after SEA's tying FG (14-14, 0:03); 0.50 at the
+  end of regulation; 0.42-0.61 in OT.
+- Mean over the 52 polls: p(DEN) 0.879, Brier 0.036, log loss 0.148. The polls are one game's autocorrelated path,
+  so these numbers are descriptive only; they calibrate nothing.
+- **Data point for the live model:** 1.00 with a 3-point lead and 1:25 left was followed by a tie at 0:03. The tracker
+  log line carries no possession or timeouts, so whether 1.00 was wrong for the actual state (e.g. DEN ball, SEA out
+  of timeouts) cannot be read from the log; live drive / start-state is a known gap (2026-09-21 entry). Noted, nothing
+  proposed on one game.
+- **Labelling caveat:** with no stored prediction or simulation, the tracker built an in-memory simulation at its
+  first poll (01:22Z, after kickoff), anchored to a margin of 0 because no pregame prediction existed. Its log prints
+  that as "pregame pick'em, simulated median SEA 18-23 DEN" and its NOTABLE alert as "pregame median 41". Neither is
+  a pregame prediction: built after kickoff, never stored (0 `game_simulations`, 0 `predictions` rows for the game),
+  and the live win probability above sits on that post-kickoff baseline.
+
+**Official inactives vs the 01:23:53Z ESPN capture (P68 stale-flag study, extra data point).** Official articles:
+Seahawks.com "Seahawks at Broncos Week 6 Inactives" (10/15 03:46 PM) and DenverBroncos.com "CB Riley Moss active for
+Broncos' Week 6 game vs. Seahawks" (10/15 04:45 PM). **14 of 14 match, no stale flags, nothing missing:**
+- SEA, 7/7: Jalen Milroe (QB, emergency third), Avery Smith, Drake Thomas, Robert Henry Jr., Chazz Surratt, Montorie
+  Foster Jr., Brandon Pili.
+- DEN, 7/7: Pat Surtain II, Talanoa Hufanga, Sam Ehlinger (QB, emergency third), Kage Casey, Dallen Bentley,
+  Jordan Jackson, Tyler Onyedim.
+
+Caveat for P68: this read came about 70 min **after** kickoff, when ESPN's list is the game's own, so it says nothing
+about pregame carry-over (the failure P68 studies). Count it as a post-kickoff agreement, not as a pregame read.
+Snap counts for week 6 are not posted yet (nflverse play-by-play ends at week 5), so a played / did-not-play check
+waits.
+
+**Ratings (P22): did the result reach them?** The normal pipeline step is `ingest_nflverse.run` (also what
+`grade --refresh` calls), and it ran tonight. Week-6 rows before -> after:
+
+| Team | power_rating | off_epa | def_epa | Elo |
+|---|---|---|---|---|
+| DEN | 1.769 -> 1.769 | 0.00286 -> 0.00286 | -0.02504 -> -0.02504 | 1597.4 -> **1612.4** (+15.0) |
+| SEA | 3.472 -> 3.472 | 0.00643 -> 0.00643 | -0.04850 -> -0.04850 | 1670.9 -> **1655.8** (-15.1) |
+
+- **Elo took the result automatically** (it reads the schedule's final score).
+- **The P22 opponent-adjusted EPA rating did not, and could not yet:** it is fitted on nflverse play-by-play, which
+  ends at week 5 (0 plays for `2026_06_SEA_DEN` at 03:3xZ). No power rating moved anywhere in the league (max change
+  0.0 over 32 teams). It takes the game at the first `ingest_nflverse.run` after nflverse posts the week-6
+  play-by-play (normally the next morning), e.g. at the next refresh before week 6's Sunday window. No ratings were
+  computed by hand; this needs no code change.
+
+---
+
+## 2026-10-16 — Process gap: the week-6 TNF window was not run before kickoff (P71 proposed; nothing built)
+
+SEA @ DEN kicked off at 00:15Z 10/16 with no pregame prediction, simulation, props / TD ranking or scenario: the
+Thursday window (`run_sunday` for the game) was never run. Nothing schedules it. Windows are started by hand, and
+`run_sunday --watch` is a terminal process, not a scheduled task (2026-09-30 P61 entry). The only reminders are
+memory and the dashboard. The loss is the game's whole model record (baseline, ML, sim, props, TD, P67 list) and
+it cannot be recovered: a post-hoc prediction would use post-kickoff inputs (rule: never re-sim a finished week,
+no as-of cutoff). Week 6's budget is unaffected (no pull made). Proposed as **P71** (tracker row), not built.
+
+---
+
+## 2026-10-15 — Status reads after week-5 grading: P68 raw rosters, P62 shadow, Odds API quota (read-only)
+
+**P68 raw-roster check, week 5's newer reads** (10/11 19:55Z window: DEN @ LAC, DET @ ARI, SF @ SEA; MNF BUF @ LA, three
+reads per team 23:16-23:31Z). Every file has its index row with matching fields, and every latest read re-parses to
+exactly the stored `inactives` rows (21 / 20 / 21 / 24); no list rejected. **Stored inactives who took week-5 snaps
+(any phase, nflverse):** DEN @ LAC 5 of 21 (Tillman 51, Harkey 67, Kolar 57, Tomlinson 19, Waxter 13), DET @ ARI 7 of 20
+(Taylor-Demerson 59, Devin White 16, Virgil 13, Fryar 8, Conklin 8, Dobbs 3, McLaughlin 3), SF @ SEA 5 of 21 (Okada 56,
+Prysock 20, Jordan James 15, Avery Smith 16, Pili 11), BUF @ LA 8 of 24, **including all five the skip excluded**
+(Benford 77, Sanders 53, Parkinson 53, Watson 65, Donald 44) plus Kilgore 16, Bell 39, Grable 52, which the skip also
+dropped. Reads were T-10 to T-58 min, inside the window P33 trusts. Information for P68; no guard proposed here.
+
+**P62 shadow:** window to 2026-10-20T12:00Z. S1 PASS, S2 PASS, S3 INSUFFICIENT (4 of 6 gameday pull pairs), S4 STOP
+(the one unexplained change is Harris; the week-5 test shows displacement explains it, but S4 stays STOP until a
+`displaced` cause exists and passes on every saved pull), S5 UNMEASURED. No pull tonight. Trial ends 10/30.
+
+**Odds API (P69), free `/sports` call, 10/16 01:4xZ:** `x-requests-remaining` **500**, `used` 0. That does not fit
+P69's projection (~148 left after week 5, no reset before 11/1), so the account's quota changed (reset, plan or key);
+cause not checked. Week 5's actual spend cannot be read from it. No pull tonight.
+
+---
+
+## 2026-10-15 — Week-5 error analysis and fix test RESULTS (read-only; criteria in the entry below, set first)
+
+**Method note found while running:** the stored `components` breakdown keeps only each team's top 6 charges, so the
+shown rows undercount a team with more. Counterfactuals therefore start from the stored team total (exact when the
+team is under the 8.0 cap; a range when it was capped, since its raw total is not stored).
+
+**Sim misses over 10 points (8 of 15). The market missed every one of them too (by 7.5 to 25), so variance is the
+main story; the model-specific parts are named where they exist.**
+- **TB @ DAL** (sim DAL +3.5, actual TB by 8; market -17.5): QB right (Mayfield Out charged 5.88, Jalon Daniels
+  started). ESPN's TNF lists carried three players who played (DAL Tyler Smith 1.18, 62 snaps; TB Rueben Bain Jr. 0.74,
+  35; TB Dan Feeney 1.00, 3). TB's charge was capped, so only Smith's moved the margin, toward TB (helped). **Variance**;
+  the model was 6 points closer than the market.
+- **CHI @ GB** (sim GB +3.2, actual GB by 24; market +25): **QB, partly.** Predicted 65 h out, Caleb Williams carried
+  DNP / no status (play prob 0.60, 2.23 pts); he did not play. Fully out (5.58) would have taken CHI from 6.97 to the
+  8.0 cap, only about 1.0 more to GB. Bagent started and was relieved by Keenum (21 / 19 att), an in-game change nothing models. The rest is
+  variance.
+- **HOU @ TEN** (sim HOU +3.5, actual HOU by 23; market -15.5): both starters played, small charges, light rain risk
+  (32%, wind 6). **Variance**; the rating had HOU 3.8 points weaker than the market did.
+- **IND @ PIT** (sim PIT +0.8, actual PIT by 12; market +9.5): no QB issue; rain (78%) with a total of 56 against 44.
+  **Variance.**
+- **LV @ NE** (sim NE +7.2, actual NE by 28; market +24.5): Cousins started (Mendoza 8 att late). **Variance**; the
+  model was 3.7 points closer than the market.
+- **MIN @ NO** (sim NO +1.9, actual MIN by 10; market -7.5): NO's starter Shough played and carried a 0.90 practice
+  charge (limited, no status); the sim's QB1 was Rattler (P53 warning) but the margin is anchored, so that moved
+  nothing. **Variance**, plus a baseline 4.2 points more NO than the market (the ML had MIN by 3.5).
+- **DET @ ARI** (sim DET +1.5, actual DET by 24; market -18.5): **backup-QB charge** Carson Beck 2.10 (default share) sat
+  on ARI and pushed the margin the right way; removing it makes this miss 2.1 worse. **Variance.**
+- **BAL @ ATL** (sim ATL +6.7, actual BAL by 7 in OT; market -10.25): **QB charge size.** Lamar Out was charged 5.28
+  (right player: Huntley started), and BAL was at the 8.0 cap; the baseline was 3.3 points more ATL than the market.
+  This is the generic starter-out value (P28 replacement value, rejected twice; not re-proposed). Plus variance (OT).
+- Not over 10, for the record: **SF @ SEA** (sim SEA +3.3, actual SF by 3): the **Lock charge** (5.70 on SEA) pointed
+  the right way by accident; Okada (SEA, inactive 0.71) played 56 snaps. No game's miss traces to the weather input.
+
+**Fix (a), zero-snap QB charge (P48 M1 scope: no 2026 snaps, team's snap leader not ruled out).** Six served charges
+in five games, **a1 PASS: all six took 0 snaps**; a2 PASS: no QB with 2026 snaps is touched. The four `default`
+charges are 4a's narrow scope (no snaps in either season); the two `prior` charges are added by M1.
+
+| Game | QB (team, source) | Charge | Home margin served -> fix | Abs error | ATS |
+|---|---|---|---|---|---|
+| CLE @ NYJ | Dillon Gabriel (CLE, prior, IR) | 3.37 | +2.13 -> -1.24 | 2.87 -> 6.24 | W -> L |
+| DEN @ LAC | Trey Lance (LAC, prior, out) + Sam Ehlinger (DEN, default) | 2.27 + 2.10 | -0.79 -> -2.89 to -1.16 (LAC capped) | 5.21 -> 3.11 to 4.84 | L -> L |
+| DET @ ARI | Carson Beck (ARI, default) | 2.10 | -1.33 -> +0.77 | 22.67 -> 24.77 | L -> L |
+| SF @ SEA | Kurtis Rourke (SF, default) | 2.10 | +3.37 -> +1.27 | 6.37 -> 4.27 | L -> W |
+| BUF @ LA | Ty Simpson (LA, default) | 2.10 | +3.71 -> +5.81 | 6.71 -> 8.81 | L -> L |
+
+Week-5 baseline (and anchored sim) MAE: M1 scope +0.22 to +0.34 worse, ATS unchanged (5-10); narrow scope (4 default
+charges) MAE unchanged, ATS 6-9. Wrong charges removed: 14.04 pts (M1), 8.40 (narrow). The direction of each outcome is
+noise on 5 games; the gate is the snap check.
+
+**Fix (b), hold a flagged QB when the books price a different healthy QB.** One week-5 case (run logs: the only
+`unresolved ... books price` decision): SEA Drew Lock. **b1 PASS** (Lock 0 snaps), **b2 PASS** (Darnold started,
+29 att, 63 snaps). Held, Lock keeps his report row (ESPN `questionable`, 0.55) at 2.56 instead of 5.70: SEA 7.13 ->
+3.99, home margin **+3.37 -> +6.51**, abs error 6.37 -> 9.51, ATS L -> L, week-5 MAE +0.21. Wrong points removed:
+3.14, in one game; 2.56 stays charged on a QB who did not play.
+
+**Fix (c), S4 `displaced` (shadow only).** **c1 PASS:** on pull `20261011T195603Z` Tre' Harris (receptions o4.5) is
+25th on the Odds API list and 27th on Sportradar's; three props crossed above him on Sportradar's list, each a book-mix
+move by S4's own shared-books test (Omarion Hampton rec 28 -> 25, Sam LaPorta rec 26 -> 22, Michael Wilson rec
+27 -> 23), and one prop above him on the Odds API list is not on Sportradar's at all (Kaelon Black rush yds, rank 3):
+net +2, equal to his drop. **c2:** no other `unexplained` S4 change in the window (30 changes: 29 book mix, 1 Harris).
+**c3:** margin effect 0.
+
+**Fix (d), P70.** **d1:** 6 week-5 keys hold two spellings (DET D.J. Wonnum, WAS Deatrich Wise, LAC Derwin James, CIN
+Dexter Lawrence, PIT Michael Pittman, ARI Walter Nolen; each an older ESPN row beside a 10/12 manual / nflverse row).
+**d2: 0 double charges** in the 15 served breakdowns. **d3:** margin effect 0.
+
+**Recommendation for the boundary's one engine change (by the rule set first): fix (a), at the P48 M1 scope.** It
+and (b) both pass their gates; (a) removes 14.04 points charged against six QBs who took no snaps, in five games,
+against 3.14 points in one game for (b). (c) and (d) change no served number. Before it ships, the 10/12 adoption
+criteria for 4a still apply (weeks 1-5 replay, 100% zero-snap check, logged cases before / after, suite). Also seen,
+not covered by any fix: WAS Marcus Mariota (current-season share 0.537, DNP / no status, 1.29 pts) did not play;
+Jayden Daniels did. The decision is the user's.
+
+**Correction to the 2026-10-12 MNF diagnosis, item 4b (sign error).** It said that without Lock's 5.70 charge SF @ SEA
+would read "about -2.3 (SF by 2.3)". SEA is the home team, so removing a SEA charge raises the home margin: **+3.37 ->
++9.07 (SEA by 9.1)** with the charge removed entirely, or +6.51 under fix (b), which keeps his questionable row.
+Item 4a's BUF @ LA arithmetic (+1.87 toward LA) has the right sign.
+
+---
+
+## 2026-10-15 — Week-5 test of the four pending fixes (4a-4d): criteria, written BEFORE anything is run
+
+User (10/15): error analysis of every game whose sim mean missed by more than 10, then test the four pending fixes from
+the 2026-10-12 MNF diagnosis against week 5's results. **No engine change, nothing re-predicted or re-simulated.** This
+is a week-5 read, not adoption: the 10/12 criteria (weeks 1-5 replays) stay the adoption criteria for whichever fix
+takes the boundary slot, and that choice is the user's.
+
+**Method (all fixes).** Unit: the 15 graded week-5 baseline predictions, from their stored `components` (the served
+per-player breakdown). A counterfactual edits only the affected rows and recomputes each team's charge exactly as
+`score_injuries` does (top snap shares fill the starter slots, cost = weight x share x (1 - play prob) x 6, rows
+under 0.05 dropped, team cap 8.0). Delta home margin = delta home points - delta away points. The anchored sim moves
+by the same delta (approximation: the sim is anchored to the baseline margin; its own noise is not re-drawn). The ML
+is not changed (all four fixes are baseline-path only; P48 Q4). When a QB charge is removed, the QB slot passes to the
+next QB on that team's stored week-5 report (latest pull per source; it may postdate the prediction, noted) and that
+QB's charge is added. Ground truth: nflverse week-5 snap counts and ESPN box scores (pass attempts).
+
+**(a) Zero-snap QB charge (4a / P48 M1, extended).** Cases: every served week-5 QB charge whose `share_source` is
+`default` or `prior` (no 2026 snaps), on a team whose 2026 QB snap leader (weeks 1-4) is not charged out / IR /
+doubtful / inactive in the same breakdown. Counterfactual: share 0 (no charge, no slot).
+- a1 (correctness, gate): every QB whose charge is removed took **0** offensive snaps in week 5. 100% required.
+- a2 (scope): no charge changes for a QB with >= 1 2026 snap (listed).
+- a3 (reported, not gated): per game served vs counterfactual margin, absolute error, ATS; week-5 baseline MAE delta.
+
+**(b) Hold a flagged QB when the books price a different, healthy QB of his team (4b).** Cases: every week-5 QB
+flag `_qb_hold` returned `unresolved` with "the books price <other QB>" (from the run logs), where that other QB
+is not ruled out. Counterfactual: the flagged QB keeps his injury-report row (report status and practice -> play
+probability; no report row -> no charge).
+- b1 (correctness, gate): every QB the rule would hold took **0** offensive snaps in week 5. 100% required.
+- b2 (gate): in every case the priced QB started (most pass attempts).
+- b3 (reported, not gated): served vs counterfactual margin, error, ATS.
+
+**(c) P62 S4 'displaced' cause (4c).** Shadow only, no served number. Read-only check on the saved P62 pulls:
+- c1: Tre' Harris's rank change (25 -> 27) equals the number of props that crossed him for an attributed cause.
+- c2: every other S4 `unexplained` change in week 5's saved pulls listed, each marked fully explained by
+  displacement or not.
+- c3: margin effect 0 (stated, by construction).
+
+**(d) P70 name-variant duplicates (4d).**
+- d1: count the week-5 player keys with more than one injury row (as stored now).
+- d2: across the 15 served breakdowns, any player charged twice under two spellings (same team, same `player_key`
+  after suffix and initial normalisation); expected 0 (BUF @ LA's Palmer was fixed in the CSV before serving).
+- d3: margin effect = the points of any double charge found in d2.
+
+**Which fix is worth the boundary's one engine change (decision rule, set now).** A fix qualifies only if (i) its
+correctness gate passes at 100% on week 5 and (ii) it changes at least one served week-5 number. Qualifiers are ranked
+by the total served points it removes that were charged against a QB who took 0 snaps (wrong by construction), not by
+ATS or MAE (15 games; reported for context only). (c) and (d) change no served number, so neither can qualify as the
+engine change; (c) is shadow tooling and (d) data hygiene, each schedulable on its own. The recommendation is mine;
+the decision is the user's.
 
 ---
 
@@ -314,7 +545,8 @@ Simpson) shown before / after; (4) margin MAE on weeks 1-5 reported, not gated; 
 ESPN listed Lock `questionable` (stored 2026 snap share 0.95; why it is that high not checked) and inactive on 10/11. `_qb_hold` found him the
 depth chart's projected starter, saw the books price Sam Darnold, and returned `unresolved`, which **applies** the
 flag: SEA charged **5.70 pts** (SEA total 7.13, under the cap, so the full 5.70 counts). The sim started Darnold.
-Served SF @ SEA baseline +3.37 (SEA by 3.4); without the charge about **-2.3 (SF by 2.3)**; market SEA -3. Game final;
+Served SF @ SEA baseline +3.37 (SEA by 3.4); without the charge about **-2.3 (SF by 2.3)** [**WRONG SIGN, corrected
+2026-10-15: +9.07, SEA by 9.1**; see the week-5 results entry]; market SEA -3. Game final;
 not re-predicted. Darnold as the starter rests on the books' pricing and the sim's own QB1; no official team source
 has been read yet (an NFL.com / Seahawks inactives citation should be added once checked).
 `INACTIVES_SKIP_GAMES` was not used: it drops a game's whole inactive list for both teams (`features.py:455`,
