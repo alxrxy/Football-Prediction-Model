@@ -717,6 +717,7 @@ class Tracker:
         self.live = None                     # LiveSimulator, built on first use
         self.live_sims = live_sims
         self.live_history: dict[str, list[dict]] = {}
+        self.score_memory: dict = {}         # game_id -> live_sim.ScoreMemory (P73 guard), this process only
         self.local_tables: set[str] = set()  # tables written to the local mirror this session
         self.cycle_seconds = 0.0
         self.finals_this_cycle = 0
@@ -1058,7 +1059,7 @@ class Tracker:
             return None, None            # regulation is over and someone won
         gid = game["game_id"]
         try:
-            from .live_sim import LIVE_SIM_VERSION, LiveSimulator, describe, live_start
+            from .live_sim import LIVE_SIM_VERSION, LiveSimulator, describe, kickoff_guard, live_start
 
             if self.live is None:
                 if self.sim_inputs is None:
@@ -1074,6 +1075,7 @@ class Tracker:
             halftime = s.status == "STATUS_HALFTIME" or (s.period == 2 and s.clock_seconds <= 0)
             start, source = live_start(elapsed, halftime, s.home_score, s.away_score,
                                        s.situation, summary, side_by_id)
+            start, source, self.score_memory[gid] = kickoff_guard(start, source, self.score_memory.get(gid))
             fields, extra = self.live.run(game_id=gid, home=s.home, away=s.away, offense=offense,
                                           start=start, summary=summary, side_by_id=side_by_id)
         except Exception as exc:  # noqa: BLE001

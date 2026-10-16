@@ -100,7 +100,7 @@ status only when its adoption test is met.
 | P69 | Odds API quota: at the week-5 cadence the remaining credits do not reach the 11/1 reset | budget | 2026-10-07 | 289 left after the 10/7 refresh. Measured rates: game-lines pull 3, props ~3 per game (4 nominal), TD 1 per game. Week 5 spent 121 by 10/7 (ship 58, refresh 63); its remaining windows project ~141 (Thu 7, Fri full 63, Sun 64, Mon 7), leaving ~148 for weeks 6-8. Weeks 6-8 at today's practice ~396 (~133 / ~133 / ~130); (a) Friday game lines only + props and TD inside each window ~228; (b) (a) without TD for games with no props ~226 (no real saving). Neither reaches week 8 | n/a (operating rule, not a model change) | **Rule (user, 2026-10-07):** weeks 5 and 6 run at the current cadence (Friday full refresh, plus a fresh game-lines pull and props and TD for each window's games); no quota optimisation in the meantime. **Week 7's plan is made when week 7 is being prepared, after week 6, not before.** **Checks:** (1) after MNF 10/12, read the remaining quota with the free `/sports` call and report week 5's actual spend against the 141 projection; if the remaining credits are under the week-6 projection (~133), tell the user before Thursday of week 6, and week 6 switches to game lines on Friday and props inside the windows. (2) At each refresh, print the remaining quota; if it is below the cost of the windows still to run that week, stop and tell the user before pulling. No code or schedule change |
 | P71 | Process: a game can reach kickoff with no pregame prediction because no window runs unless started by hand | process | 2026-10-16 | Week-6 TNF SEA @ DEN (00:15Z 10/16) kicked off with no prediction, sim, props, TD list or scenario; the window was never run. Its model record is lost and cannot be rebuilt honestly (post-kickoff inputs). Thursday is the exposed slot: a lone game midweek, outside the Friday-refresh / Sunday-watch routine. See the 2026-10-16 'Process gap' entry | (proposed, confirm with user before building) (1) **reminder first**: a scheduled pregame check (Task Scheduler, the P61 headless launcher) at T-4h and T-90m for every NFL game, which raises a desktop alert + `data/live/alerts.log` line when the game has no stored prediction, reads only the store, makes no API call and writes nothing else; (2) **automation as a separate later step**, only if the user asks: the check starts the game's window itself, with P69's quota check gating any pull; (3) tested by a dry run against a past slate (fires for SEA @ DEN-like states, silent when a prediction exists) and byte-identical predictions with it on or off; (4) caveat: neither runs while the laptop sleeps (WakeToRun off, 10/7), so the reminder is only as reliable as the machine being awake | **proposed 2026-10-16 (user: log it, don't implement); nothing built** |
 | P72 | Live win probability: the tracker showed DEN **100%** up 3 with ~1:20 left in SEA @ DEN, and SEA tied it at 0:03 | live model / calibration | 2026-10-16 | Tracker log: 03:09:31Z (1:25, Q4) and 03:11:52Z (1:16), SEA 11-14 DEN, "now DEN 100%"; then 90% at 0:57, 81% at 0:25, SEA's tying FG at 0:03; DEN won 17-14 in OT. **The tracker log line records neither possession nor timeouts.** The stored `live_tracking` snapshots (read-only, 10/16) do carry possession and down/distance, but **not timeouts**: at both 100% readings DEN had the ball (1st & 10 at DEN 31; 3rd & 8 at DEN 33), and ESPN's own win probability in the same rows was 0.911 and 0.893. The live-resume engine (`live_sim` -> `simulate.LiveStart`) starts from possession, down and yard line but has no timeout state at all (no `timeout` anywhere in `src/simulate.py`), so a trailing team's ability to stop the clock is not modelled; whether that explains the 1.00 is a hypothesis, not checked. 1.00 means every one of the 10,000 resumed simulations had DEN winning. Caveats: one game; the in-game sim here was built after kickoff on a margin-0 anchor (no pregame prediction existed; see the 2026-10-16 SEA @ DEN entry) | (proposed, set with the user before any work) (1) read-only first: over every stored `live_tracking` poll this season, compare the tracker's win probability with ESPN's and with the outcome, by time left and score margin, with the share of polls at >= 0.99 / <= 0.01 that were wrong; (2) list the late-game states (<= 2:00, one-score margin) where the two differ by >= 0.10; (3) only then decide whether timeouts / clock management are in scope; no engine change from this item without its own criteria | **pending (logged 2026-10-16, user); nothing built.** **Read done 2026-10-16** (see the 'P72 read ... P73 count' entry): 39 games / 2,285 polls (31 games with ESPN); overall accuracy no different from ESPN (Brier +0.004, game-bootstrap CI -0.027 to +0.034), but the tracker is more extreme than ESPN on 76% of polls and overconfident at both ends; >= 0.99 wrong 5/249 polls in 2 games (3/235, 1 game, without P73 polls) vs ESPN 0/94. First fix proposed: display-level time-band calibration fitted after P73, criteria C1-C6 |
-| P73 | Live start state contradicts the score: the engine resumes from a situation that the score already contradicts | live model / data | 2026-10-16 | Found in the P72 read (WAS @ PHI 1:01, HOU @ IND 1:48). Counted over all 2,285 stored `live-v2` polls: **K** kickoff placeholder (ESPN shows the kicking team in possession during the kickoff; `live_start` trusts the scoreboard first, so the scorer gets the ball) 55 polls in 24 games; **S** stale pre-score snap (the scoring snap itself, from the scoreboard (3) or a summary that lags the scoreboard (12)) 15 polls in 14 games; together 70 polls (3.1%) in 25 of 39 games; |p - next poll| >= 0.25 in 5. See the 2026-10-16 'P72 read ... P73 count' entry | V1-V4 in that entry (unit cases from the stored polls; byte-identical on the 2,285 stored start states except the 70; the 12 ambiguous K polls reviewed; a re-simulation of stored states only with user approval; 0 K/S polls in the first live window) | **pending (logged 2026-10-16, user); first fix proposed (a kickoff guard in `live_start`), nothing built.** Comes before P72's calibration fit |
+| P73 | Live start state contradicts the score: the engine resumes from a situation that the score already contradicts | live model / data | 2026-10-16 | Found in the P72 read (WAS @ PHI 1:01, HOU @ IND 1:48). Counted over all 2,285 stored `live-v2` polls: **K** kickoff placeholder (ESPN shows the kicking team in possession during the kickoff; `live_start` trusts the scoreboard first, so the scorer gets the ball) 55 polls in 24 games; **S** stale pre-score snap (the scoring snap itself, from the scoreboard (3) or a summary that lags the scoreboard (12)) 15 polls in 14 games; together 70 polls (3.1%) in 25 of 39 games; |p - next poll| >= 0.25 in 5. See the 2026-10-16 'P72 read ... P73 count' entry | V1-V4 in that entry (unit cases from the stored polls; byte-identical on the 2,285 stored start states except the 70; the 12 ambiguous K polls reviewed; a re-simulation of stored states only with user approval; 0 K/S polls in the first live window) | **pending (logged 2026-10-16, user); first fix proposed (a kickoff guard in `live_start`), nothing built.** Comes before P72's calibration fit. **SHIPPED 2026-10-16 (user-approved narrower rule a + b): V1 PASS, V2 PASS (exactly the 61; rows 6-14 and all other readings identical), suite 292; V3: gap to the next poll 0.052 -> 0.005 median. V4 (hand review of every firing) due after Sunday 10/18; a wrong firing sends the guard to display-only.** Note on the count above: 70 flagged became 61 after the 10/16 review (9 genuine possessions) |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -142,6 +142,125 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-10-16 — P73 build approved: review of the 14 weakly flagged readings, the rule, and V1 / V2 / V4 criteria (written BEFORE building)
+
+**Approval (user, 2026-10-16):** build P73 in the live tracker's start-state code only (no pregame engine, no served
+prediction, no Supabase write, no pull); V1 and V2 written here first and run on stored data; ship only if both pass
+with the full suite green; commit on main, no push; must be merged and tested before Sunday 10/18 13:30Z, otherwise
+the tracker runs Sunday on the current code. V3 (re-simulating stored start states in a scratch copy) approved as
+read-only. P72's display adjustment stays pending until >= 40 games.
+
+**Review of the 70 flagged readings (user and assistant agree on all 14).** 56 rest on a score change since the
+previous poll (41 kickoff placeholders, 40 at own 35 and LA @ DEN 0:47 at own 40 after a kickoff penalty; 15 stale
+scoring snaps). 14 rested only on "the other side was never seen snapping", which misses possessions between polls
+and the second-half kickoff:
+- **Placeholders (to be changed):**
+  1. BAL @ ATL wk5 Q3 6:53;
+  2. TB @ DAL wk5 Q4 5:26;
+  3. WAS @ PHI wk1 Q4 1:01 (**pattern only**: the last stored poll of that game, so its effect cannot be measured);
+  4. LV @ NO wk3 Q3 3:20;
+  5. LV @ NO wk3 Q4 9:21.
+- **Genuine possessions (must stay identical):**
+  6. SF @ SEA wk5 Q1 4:40;
+  7. SF @ SEA wk5 Q1 4:40, second poll;
+  8. DET @ ARI wk5 Q2 8:29;
+  9. DET @ ARI wk5 Q2 8:03;
+  10. BAL @ ATL wk5 OT 2:05 (**effectively decided**: ATL's OT possession came between polls; the last stored poll);
+  11. DET @ BUF wk2 Q3 15:00;
+  12. BAL @ DAL wk3 Q3 14:20;
+  13. LV @ NO wk3 Q3 13:41;
+  14. SEA @ WAS wk3 Q3 14:54 (11-14 are second-half kickoffs).
+
+  No onside kick among them.
+- **Expected changed list = 61** (the 56 + rows 1-5), fixed as `p73_expected_61.json` (game_id, polled_at) in the
+  session scratchpad before any code is run.
+
+**Rule (narrower, user-approved), as a pure function the tracker calls after `live_start`, with per-game memory
+held in the tracker process only (not stored, not seeded on restart):** let the last scorer be the side whose points
+rose at the poll where the score last changed. The guard fires, and the start becomes a kickoff to the other side,
+when:
+- **(a)** the score changed since the previous poll and the start state puts the scorer on offence (possession + a
+  down), or
+- **(b)** the score is unchanged, the start state is the scorer at its kickoff spot (1st down at own 35, or own 40
+  after a kickoff penalty), and the game clock has not moved since the poll where the score changed.
+
+The guard never fires on a halftime / kickoff / unknown start (no possession), or on a first poll with no memory.
+Added before any run: nor at elapsed exactly 30:00 or 60:00 (start of the second half / overtime). A score first seen
+there may belong to the previous half, and the scorer may legitimately be receiving.
+A conversion is left pending for the scorer only under (a), when its points rose by exactly 6 and the start is not
+at the kickoff spot (a stale touchdown snap whose try has not been seen).
+
+**V1 (unit, no network), all must pass:**
+- the stored cases rebuilt as LiveStarts with their previous-poll scores fire, as kickoffs to the right side:
+  - HOU @ IND 1:48 (K, rule a);
+  - WAS @ PHI 1:01 stale snap (S, rule a, try pending for WAS);
+  - WAS @ PHI 1:01 own-35 placeholder (row 3, rule b);
+  - SEA @ WAS 2:55 (S);
+  - DAL @ NYG 5:44 `last play` stale snap (S);
+  - LA @ DEN 0:47 own 40 (K);
+  - BAL @ ATL 6:53 repeat placeholder (row 1, rule b);
+- the genuine cases do not fire:
+  - rows 6, 8 and 10 (clock moved since the score);
+  - row 11 (second-half kickoff);
+  - a first poll with no memory;
+  - a halftime start;
+  - a both-sides-scored change;
+  - a placeholder after the clock has moved;
+- a non-firing call returns the start object unchanged;
+- memory is per game;
+- the full suite passes.
+
+**V2 (stored data, read-only), all must hold:** the guard is replayed in poll order over all 2,285 stored `live-v2`
+start states (memory carried per game as the tracker would). Then:
+- (i) the set of readings it changes equals the 61 exactly: no missing, no extra;
+- (ii) every other reading's start state is identical field for field;
+- (iii) each changed reading becomes a kickoff to the side that did not score, with the score and clock unchanged;
+- (iv) none of the 61 mentions an onside kick.
+
+  Check (1), done 2026-10-16 before building: no stored live field holds last-play text, only scoring-play text
+  (`recent_scoring`); a scan of every field of all 2,404 `live_tracking` and 2,293 `live_simulations` rows finds
+  **0** mentions of "onside", so none of the 61 does. The limit: an onside kick that was not a scoring play would
+  not appear in stored text at all.
+
+**Ship rule:** V1 and V2 pass and the full suite is green, or it does not ship (no criterion relaxed after a run).
+
+**V3 (read-only, after V2):** the 61 changed start states re-simulated in a scratch copy (nothing written to any
+table). Reported: |p - next poll| and |p - ESPN| before / after on the readings that have them, and how many are
+>= 0.25 from ESPN (3 before).
+
+**RESULTS 2026-10-16 (built after the criteria above; `src/live_sim.py` `kickoff_guard` + `ScoreMemory`, called in
+`src/live_tracker.py` `_live_simulation` right after `live_start`; nothing else changed):**
+- **V1 PASS.** 7 new tests in `tests/test_live_sim.py` (every case listed above, incl. the 30:00 / 60:00 starts);
+  `python -m tests.test_live_sim` 63 checks, 0 failed. **Full suite: 292 passed** (285 + 7).
+- **V2 PASS** (`p73_v2.py`, replaying the shipped function over the stored data):
+  - (i) the guard fired on exactly the 61, missing 0, extra 0 (56 by rule a, 5 by rule b);
+  - (ii) the other 2,224 start states are identical field for field;
+  - (iii) all 61 become a kickoff to the side that did not score, with score and clock kept;
+  - a conversion was left pending on 11 (stale touchdown snaps);
+  - (iv) 0 onside mentions (stored-text scan above).
+- **V3 (read-only, in memory; nothing written).**
+  - Method: each of the 61 re-simulated raw and guarded, with 10,000 sims, the tracker's seed and the stored pregame
+    team strengths. Team level only: the ESPN summary is not stored, so there were no player pools or live usage.
+  - Re-run fidelity: the raw re-sim is within 0.003 of the stored value (median; max 0.017).
+  - **Against the next poll (60 readings):** median gap 0.052 raw -> **0.005 guarded**; guarded closer on 46, further
+    on 11; >= 0.25 off: 5 -> 1. The one left (SEA @ WAS 20:12) is measured against a next poll that is itself one of
+    the 61 (the stale SEA snap stored at 0.151), so the reference is wrong, not the guard.
+  - **Against ESPN (only 22 readings have it):** median gap 0.099 raw -> 0.108 guarded (closer on 12, further on 10);
+    >= 0.25 off: 3 -> **1, not the 0 the 10/16 proposal expected**. The one left is WAS @ PHI 1:01 (row 3, own-35
+    placeholder): guarded PHI 1.000, receiving 2 up with 1:01 left, vs ESPN 0.647. That is P72's overconfidence once
+    the state is right, not a guard error (PHI won).
+  - V3 was not a ship gate.
+  - Largest corrections: WAS @ PHI stale snap 0.08 -> 0.98 (next poll 0.94); SEA @ WAS stale snap 0.15 -> 0.95 (next
+    0.95); ARI @ SF 0.67 -> 0.98 (next 0.99); NYJ @ DET 0.50 -> 0.75 (next 0.91).
+- **Shipped** on main (no push), before Sunday 10/18 13:30Z. The next tracker start runs it; the memory starts empty
+  each run, so the first poll of each game after a restart is never guarded.
+
+**V4 (after Sunday 10/18's games):** list every reading the guard fired on, with the previous-poll score, last
+scorer and clock, for hand review with the user. If any firing is wrong, the guard goes display-only: the simulation
+runs from the raw start state again, and the guard's verdict is only reported beside it.
 
 ---
 

@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from src import db
-from src.live_sim import blend_usage, describe, game_usage, live_start
+from src.live_sim import ScoreMemory, blend_usage, describe, game_usage, kickoff_guard, live_start
 from src.simulate import LiveStart, Offense, simulate_game
 from tests.test_simulate import tables
 
@@ -156,6 +156,117 @@ def test_describe():
           "kickoff to MIA, LV extra point still to come")
 
 
+# --- P73: the kickoff guard --------------------------------------------------
+# Cases rebuilt from stored live polls (live_simulations, live-v2): the start
+# state each poll used, and the score at the poll before. Side 0 home, 1 away.
+
+def snap(t, h, a, pos, yl, down, togo=10):
+    return LiveStart(elapsed_seconds=t, home_points=h, away_points=a, possession=pos, yardline_100=yl,
+                     down=down, togo=togo, second_half_receiver=0)
+
+
+def guarded(start, memory, source="scoreboard"):
+    out, src, mem = kickoff_guard(start, source, memory)
+    return out, src, mem
+
+
+def kicked(out):
+    return (out.possession, out.down, out.kickoff_receiver, out.pending_conversion,
+            out.home_points, out.away_points, out.elapsed_seconds)
+
+
+def test_guard_kickoff_placeholder_after_a_score():
+    # HOU @ IND wk3, 1:48 Q4: HOU (away) kicks a FG to lead 17-16; the scoreboard
+    # shows HOU "1st & 10 at own 35" while it lines up to kick off.
+    out, src, mem = guarded(snap(3492.0, 16, 17, 1, 65, 1), ScoreMemory(16, 10))
+    check("HOU @ IND: kickoff to IND, no try pending", kicked(out), (None, None, 0, None, 16, 17, 3492.0))
+    check("rule a named in the source", "P73 guard a" in src, True)
+    check("memory: HOU scored 7 at 3492", (mem.scorer, mem.scored_at, mem.gained), (1, 3492.0, 7))
+    # LA @ DEN wk3, 0:47 Q4: DEN (home) TD to 30-26, kicking from its own 40 after a penalty.
+    out, _, _ = guarded(snap(3553.2, 30, 26, 0, 60, 1, 5), ScoreMemory(23, 26))
+    check("LA @ DEN: own-40 placeholder becomes a kickoff to LA", kicked(out), (None, None, 1, None, 30, 26, 3553.2))
+
+
+def test_guard_stale_scoring_snap():
+    # WAS @ PHI wk1, 1:01 Q4: the score shows WAS's TD (16 -> 22), the situation is still the 3rd & goal at the 1.
+    out, _, mem = guarded(snap(3538.8, 24, 22, 1, 1, 3, 1), ScoreMemory(24, 16))
+    check("WAS @ PHI: kickoff to PHI, WAS try still to come", kicked(out), (None, None, 0, 1, 24, 22, 3538.8))
+    # SEA @ WAS wk3, 2:55 Q4: SEA's TD (24 -> 30) on the board, still 1st & goal at the 7.
+    out, _, _ = guarded(snap(3424.8, 33, 30, 1, 7, 1, 7), ScoreMemory(33, 24, 0, 3363.0, 6))
+    check("SEA @ WAS: kickoff to WAS, SEA try still to come", kicked(out), (None, None, 0, 1, 33, 30, 3424.8))
+    # DAL @ NYG wk1, 5:44 Q2: the summary lags; `last play` still shows DAL 2nd & goal at the 1.
+    out, src, _ = guarded(snap(1456.2, 7, 6, 1, 1, 2, 1), ScoreMemory(7, 0), source="last play")
+    check("DAL @ NYG: kickoff to NYG, DAL try still to come", kicked(out), (None, None, 0, 1, 7, 6, 1456.2))
+    check("the original source is named", "last play showed the scorer" in src, True)
+
+
+def test_guard_placeholder_repeated_at_the_same_clock():
+    # WAS @ PHI wk1 (row 3): the poll after the stale snap, same clock, WAS at its own 35.
+    out, _, mem = guarded(snap(3538.8, 24, 22, 1, 1, 3, 1), ScoreMemory(24, 16))
+    out2, src2, _ = guarded(snap(3538.7999999999997, 24, 22, 1, 65, 1), mem)
+    check("WAS @ PHI own 35, same clock: rule b, kickoff to PHI", kicked(out2),
+          (None, None, 0, None, 24, 22, 3538.7999999999997))
+    check("rule b named", "P73 guard b" in src2, True)
+    # BAL @ ATL wk5 (row 1): BAL FG to 15-17 at 6:53 Q3, shown at its own 35 on two polls.
+    _, _, mem = guarded(snap(2287.2, 17, 15, 1, 65, 1), ScoreMemory(17, 9))
+    out, _, _ = guarded(snap(2287.2, 17, 15, 1, 65, 1), mem)
+    check("BAL @ ATL 6:53 repeat: kickoff to ATL", kicked(out), (None, None, 0, None, 17, 15, 2287.2))
+
+
+def test_guard_leaves_genuine_possessions_alone():
+    # SF @ SEA wk5 (row 6): SEA TD at 556.8, then SEA ball at own 18 at 619.8 (SF's possession came between polls).
+    _, _, mem = guarded(snap(556.8, 7, 7, 0, 65, 1), ScoreMemory(0, 7))
+    start = snap(619.8, 7, 7, 0, 82, 1)
+    out, src, _ = guarded(start, mem)
+    check("SF @ SEA own 18 after the clock moved: unchanged", (out is start, src), (True, "scoreboard"))
+    # DET @ ARI wk5 (row 8): DET TD, a kickoff to ARI, then DET ball at its own 24 a minute later.
+    mem = ScoreMemory(7, 14, 1, 1230.0, 7)
+    start = snap(1291.2, 7, 14, 1, 76, 1)
+    check("DET @ ARI own 24: unchanged", guarded(start, mem)[0] is start, True)
+    # BAL @ ATL wk5 OT (row 10): BAL TD at 4023.0, then BAL ball at its own 42 at 4075.2.
+    mem = ScoreMemory(23, 30, 1, 4023.0, 7)
+    start = snap(4075.2, 23, 30, 1, 58, 1)
+    check("BAL @ ATL OT own 42: unchanged", guarded(start, mem)[0] is start, True)
+    # A placeholder spot after the clock has moved is a real possession too.
+    start = snap(2400.0, 17, 15, 1, 65, 1)
+    check("own 35 after the clock moved: unchanged", guarded(start, ScoreMemory(17, 15, 1, 2287.2, 6))[0] is start, True)
+
+
+def test_guard_second_half_and_overtime_starts():
+    # DET @ BUF wk2 (row 11): DET receives the second half; DET scored last, before halftime.
+    start = snap(1800.0, 27, 10, 1, 72, 2, 8)
+    check("DET @ BUF Q3 15:00: unchanged", guarded(start, ScoreMemory(27, 10, 1, 1500.0, 7))[0] is start, True)
+    # A score first seen at the start of the half, its scorer receiving: never guarded at 30:00 or 60:00.
+    for t in (1800.0, 3600.0):
+        start = snap(t, 10, 3, 0, 65, 1)
+        check(f"score first seen at {t:.0f}s: unchanged", guarded(start, ScoreMemory(7, 3))[0] is start, True)
+
+
+def test_guard_needs_memory_and_a_single_scorer():
+    start = snap(3492.0, 16, 17, 1, 65, 1)
+    out, src, mem = guarded(start, None)
+    check("first poll, no memory: unchanged", (out is start, src), (True, "scoreboard"))
+    check("and memory starts from this score", (mem.home_points, mem.away_points, mem.scorer), (16, 17, None))
+    out, _, mem = guarded(start, ScoreMemory(13, 10))
+    check("both sides scored between polls: unchanged", out is start, True)
+    check("and no scorer is remembered", mem.scorer, None)
+    kick = LiveStart(elapsed_seconds=1800.0, home_points=13, away_points=6, kickoff_receiver=0, second_half_receiver=0)
+    check("halftime start: unchanged", guarded(kick, ScoreMemory(13, 6, 0, 1700.0, 3), "halftime")[0] is kick, True)
+    after = LiveStart(elapsed_seconds=1700.0, home_points=16, away_points=3, kickoff_receiver=1, pending_conversion=0)
+    check("kickoff after a score: unchanged", guarded(after, ScoreMemory(10, 3), "kickoff after a score")[0] is after, True)
+
+
+def test_guard_memory_is_per_game():
+    memory: dict = {}
+    for gid, start in (("A", snap(3000.0, 7, 0, 0, 30, 2)), ("B", snap(3000.0, 0, 0, 1, 40, 1))):
+        _, _, memory[gid] = kickoff_guard(start, "scoreboard", memory.get(gid))
+    # Game B's next poll: a placeholder for side 0 with A's score would fire if memory leaked across games.
+    start = snap(3000.0, 0, 0, 0, 65, 1)
+    out, _, _ = kickoff_guard(start, "scoreboard", memory.get("B"))
+    check("game B never saw a score: unchanged", out is start, True)
+    check("game A remembers only its own score", (memory["A"].home_points, memory["A"].away_points), (7, 0))
+
+
 # --- usage so far ----------------------------------------------------------
 
 RUSH_KEYS = ["rushingAttempts", "rushingYards", "yardsPerRushAttempt", "rushingTouchdowns", "longRushing"]
@@ -232,6 +343,10 @@ if __name__ == "__main__":
         test_scoreboard_situation_wins, test_timeout_falls_back_to_the_last_snap,
         test_touchdown_with_the_try_to_come, test_touchdown_with_the_try_done,
         test_safety_free_kick_goes_to_the_scorer, test_halftime, test_nothing_known, test_describe,
+        test_guard_kickoff_placeholder_after_a_score, test_guard_stale_scoring_snap,
+        test_guard_placeholder_repeated_at_the_same_clock, test_guard_leaves_genuine_possessions_alone,
+        test_guard_second_half_and_overtime_starts, test_guard_needs_memory_and_a_single_scorer,
+        test_guard_memory_is_per_game,
         test_game_usage, test_blend_leans_toward_who_is_getting_the_ball,
         test_blend_adds_a_player_the_depth_chart_missed, test_storage_roundtrip,
     ]:

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import time
 import zlib
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -169,6 +170,70 @@ def live_start(elapsed_seconds: float, halftime: bool, home_points: int, away_po
         return LiveStart(elapsed_seconds=t, possession=side, yardline_100=yl, down=down, togo=togo,
                          **base), "last play"
     return LiveStart(elapsed_seconds=t, **base), "state unknown: kickoff to a coin-flip receiver"
+
+
+# --- P73: a start state the score has already overtaken ----------------------
+
+# Where the kicking side stands while ESPN shows it "in possession" for a
+# kickoff: its own 35, or its own 40 after a five-yard penalty on the kick.
+KICKOFF_SPOTS = (65, 60)
+SAME_CLOCK_SECONDS = 0.5
+# The start of the second half and of overtime: a score first seen there may
+# belong to the period before, and its scorer may be the side receiving.
+PERIOD_STARTS = (1800.0, 3600.0)
+
+
+@dataclass
+class ScoreMemory:
+    """What the guard keeps about one game between polls (tracker memory only)."""
+
+    home_points: int
+    away_points: int
+    scorer: int | None = None        # side whose points rose when the score last changed
+    scored_at: float | None = None   # elapsed seconds at that poll
+    gained: int = 0                  # the scorer's points at that change
+
+
+def kickoff_guard(start: LiveStart, source: str,
+                  memory: ScoreMemory | None) -> tuple[LiveStart, str, ScoreMemory]:
+    """Start from a kickoff when the side that just scored is shown on offence (P73).
+
+    While a team lines up to kick off, ESPN's scoreboard shows it in
+    possession at 1st & 10 on its own 35, and a summary that lags the
+    scoreboard can still end on the scoring snap; `live_start` trusts both,
+    so the scorer would get the ball again. Fires on (a) the first poll after
+    a score, when the scorer is shown on offence, or (b) a later poll at the
+    same game clock still showing the scorer at its kickoff spot. A clock that
+    has moved means a possession may have come and gone between polls, so (b)
+    leaves it alone. Returns the start (the same object unless the guard
+    fires), its source, and the memory for the game's next poll.
+    """
+    h, a, t = int(start.home_points), int(start.away_points), float(start.elapsed_seconds)
+    if memory is None:
+        return start, source, ScoreMemory(h, a)
+    up_home, up_away = h - memory.home_points, a - memory.away_points
+    rule = None
+    if up_home == 0 and up_away == 0:
+        new = memory
+        if (new.scorer is not None and new.scored_at is not None and start.possession == new.scorer
+                and start.down == 1 and start.yardline_100 in KICKOFF_SPOTS
+                and abs(t - new.scored_at) <= SAME_CLOCK_SECONDS):
+            rule = "b"
+    elif min(up_home, up_away) == 0 and max(up_home, up_away) > 0:
+        scorer = 0 if up_home > 0 else 1
+        new = ScoreMemory(h, a, scorer, t, max(up_home, up_away))
+        if start.possession == scorer and start.down:
+            rule = "a"
+    else:
+        new = ScoreMemory(h, a)      # both sides scored between polls, or a score was corrected
+    if rule is None or any(abs(t - p) <= SAME_CLOCK_SECONDS for p in PERIOD_STARTS):
+        return start, source, new
+    # A touchdown whose snap is still showing has not had its try seen yet.
+    pending = new.scorer if rule == "a" and new.gained == 6 and start.yardline_100 not in KICKOFF_SPOTS else None
+    guarded = LiveStart(elapsed_seconds=start.elapsed_seconds, home_points=start.home_points,
+                        away_points=start.away_points, kickoff_receiver=1 - new.scorer,
+                        second_half_receiver=start.second_half_receiver, pending_conversion=pending)
+    return guarded, f"kickoff after a score (P73 guard {rule}: {source} showed the scorer on offence)", new
 
 
 def _ordinal(n: int) -> str:
