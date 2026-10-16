@@ -99,7 +99,8 @@ status only when its adoption test is met.
 | P70 | Injuries: the same player stored under two name spellings (e.g. `Derwin James` manual / `Derwin James Jr.` ESPN) keeps an older row beside the current one | data hygiene | 2026-10-12 | 6 week-5 player keys hold two rows (LAC Derwin James, DET D.J. Wonnum, WAS Deatrich Wise, CIN Dexter Lawrence, PIT Michael Pittman, ARI Walter Nolen): the table's key is the raw name, so a suffix or initials variant is a second row. The old row is from an earlier ESPN pull, and `latest_injury_report` reads only each source's latest pull, so it is never charged: **margin effect 0** (DEN @ LAC charged Derwin James once, inactive, 0.00). The risk is to anything that reads the table without that filter (a diagnostic did on 10/11) | pending, next boundary: see the 2026-10-12 'MNF diagnosis' entry, item 4d | **pending (logged 2026-10-12, nothing built; no Supabase rows deleted)** |
 | P69 | Odds API quota: at the week-5 cadence the remaining credits do not reach the 11/1 reset | budget | 2026-10-07 | 289 left after the 10/7 refresh. Measured rates: game-lines pull 3, props ~3 per game (4 nominal), TD 1 per game. Week 5 spent 121 by 10/7 (ship 58, refresh 63); its remaining windows project ~141 (Thu 7, Fri full 63, Sun 64, Mon 7), leaving ~148 for weeks 6-8. Weeks 6-8 at today's practice ~396 (~133 / ~133 / ~130); (a) Friday game lines only + props and TD inside each window ~228; (b) (a) without TD for games with no props ~226 (no real saving). Neither reaches week 8 | n/a (operating rule, not a model change) | **Rule (user, 2026-10-07):** weeks 5 and 6 run at the current cadence (Friday full refresh, plus a fresh game-lines pull and props and TD for each window's games); no quota optimisation in the meantime. **Week 7's plan is made when week 7 is being prepared, after week 6, not before.** **Checks:** (1) after MNF 10/12, read the remaining quota with the free `/sports` call and report week 5's actual spend against the 141 projection; if the remaining credits are under the week-6 projection (~133), tell the user before Thursday of week 6, and week 6 switches to game lines on Friday and props inside the windows. (2) At each refresh, print the remaining quota; if it is below the cost of the windows still to run that week, stop and tell the user before pulling. No code or schedule change |
 | P71 | Process: a game can reach kickoff with no pregame prediction because no window runs unless started by hand | process | 2026-10-16 | Week-6 TNF SEA @ DEN (00:15Z 10/16) kicked off with no prediction, sim, props, TD list or scenario; the window was never run. Its model record is lost and cannot be rebuilt honestly (post-kickoff inputs). Thursday is the exposed slot: a lone game midweek, outside the Friday-refresh / Sunday-watch routine. See the 2026-10-16 'Process gap' entry | (proposed, confirm with user before building) (1) **reminder first**: a scheduled pregame check (Task Scheduler, the P61 headless launcher) at T-4h and T-90m for every NFL game, which raises a desktop alert + `data/live/alerts.log` line when the game has no stored prediction, reads only the store, makes no API call and writes nothing else; (2) **automation as a separate later step**, only if the user asks: the check starts the game's window itself, with P69's quota check gating any pull; (3) tested by a dry run against a past slate (fires for SEA @ DEN-like states, silent when a prediction exists) and byte-identical predictions with it on or off; (4) caveat: neither runs while the laptop sleeps (WakeToRun off, 10/7), so the reminder is only as reliable as the machine being awake | **proposed 2026-10-16 (user: log it, don't implement); nothing built** |
-| P72 | Live win probability: the tracker showed DEN **100%** up 3 with ~1:20 left in SEA @ DEN, and SEA tied it at 0:03 | live model / calibration | 2026-10-16 | Tracker log: 03:09:31Z (1:25, Q4) and 03:11:52Z (1:16), SEA 11-14 DEN, "now DEN 100%"; then 90% at 0:57, 81% at 0:25, SEA's tying FG at 0:03; DEN won 17-14 in OT. **The tracker log line records neither possession nor timeouts.** The stored `live_tracking` snapshots (read-only, 10/16) do carry possession and down/distance, but **not timeouts**: at both 100% readings DEN had the ball (1st & 10 at DEN 31; 3rd & 8 at DEN 33), and ESPN's own win probability in the same rows was 0.911 and 0.893. The live-resume engine (`live_sim` -> `simulate.LiveStart`) starts from possession, down and yard line but has no timeout state at all (no `timeout` anywhere in `src/simulate.py`), so a trailing team's ability to stop the clock is not modelled; whether that explains the 1.00 is a hypothesis, not checked. 1.00 means every one of the 10,000 resumed simulations had DEN winning. Caveats: one game; the in-game sim here was built after kickoff on a margin-0 anchor (no pregame prediction existed; see the 2026-10-16 SEA @ DEN entry) | (proposed, set with the user before any work) (1) read-only first: over every stored `live_tracking` poll this season, compare the tracker's win probability with ESPN's and with the outcome, by time left and score margin, with the share of polls at >= 0.99 / <= 0.01 that were wrong; (2) list the late-game states (<= 2:00, one-score margin) where the two differ by >= 0.10; (3) only then decide whether timeouts / clock management are in scope; no engine change from this item without its own criteria | **pending (logged 2026-10-16, user); nothing built, nothing run beyond the read above** |
+| P72 | Live win probability: the tracker showed DEN **100%** up 3 with ~1:20 left in SEA @ DEN, and SEA tied it at 0:03 | live model / calibration | 2026-10-16 | Tracker log: 03:09:31Z (1:25, Q4) and 03:11:52Z (1:16), SEA 11-14 DEN, "now DEN 100%"; then 90% at 0:57, 81% at 0:25, SEA's tying FG at 0:03; DEN won 17-14 in OT. **The tracker log line records neither possession nor timeouts.** The stored `live_tracking` snapshots (read-only, 10/16) do carry possession and down/distance, but **not timeouts**: at both 100% readings DEN had the ball (1st & 10 at DEN 31; 3rd & 8 at DEN 33), and ESPN's own win probability in the same rows was 0.911 and 0.893. The live-resume engine (`live_sim` -> `simulate.LiveStart`) starts from possession, down and yard line but has no timeout state at all (no `timeout` anywhere in `src/simulate.py`), so a trailing team's ability to stop the clock is not modelled; whether that explains the 1.00 is a hypothesis, not checked. 1.00 means every one of the 10,000 resumed simulations had DEN winning. Caveats: one game; the in-game sim here was built after kickoff on a margin-0 anchor (no pregame prediction existed; see the 2026-10-16 SEA @ DEN entry) | (proposed, set with the user before any work) (1) read-only first: over every stored `live_tracking` poll this season, compare the tracker's win probability with ESPN's and with the outcome, by time left and score margin, with the share of polls at >= 0.99 / <= 0.01 that were wrong; (2) list the late-game states (<= 2:00, one-score margin) where the two differ by >= 0.10; (3) only then decide whether timeouts / clock management are in scope; no engine change from this item without its own criteria | **pending (logged 2026-10-16, user); nothing built.** **Read done 2026-10-16** (see the 'P72 read ... P73 count' entry): 39 games / 2,285 polls (31 games with ESPN); overall accuracy no different from ESPN (Brier +0.004, game-bootstrap CI -0.027 to +0.034), but the tracker is more extreme than ESPN on 76% of polls and overconfident at both ends; >= 0.99 wrong 5/249 polls in 2 games (3/235, 1 game, without P73 polls) vs ESPN 0/94. First fix proposed: display-level time-band calibration fitted after P73, criteria C1-C6 |
+| P73 | Live start state contradicts the score: the engine resumes from a situation that the score already contradicts | live model / data | 2026-10-16 | Found in the P72 read (WAS @ PHI 1:01, HOU @ IND 1:48). Counted over all 2,285 stored `live-v2` polls: **K** kickoff placeholder (ESPN shows the kicking team in possession during the kickoff; `live_start` trusts the scoreboard first, so the scorer gets the ball) 55 polls in 24 games; **S** stale pre-score snap (the scoring snap itself, from the scoreboard (3) or a summary that lags the scoreboard (12)) 15 polls in 14 games; together 70 polls (3.1%) in 25 of 39 games; |p - next poll| >= 0.25 in 5. See the 2026-10-16 'P72 read ... P73 count' entry | V1-V4 in that entry (unit cases from the stored polls; byte-identical on the 2,285 stored start states except the 70; the 12 ambiguous K polls reviewed; a re-simulation of stored states only with user approval; 0 K/S polls in the first live window) | **pending (logged 2026-10-16, user); first fix proposed (a kickoff guard in `live_start`), nothing built.** Comes before P72's calibration fit |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -141,6 +142,140 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-10-16 — P72 read (live win probability vs ESPN vs outcomes) and P73 count (start states that contradict the score). Read-only; nothing changed
+
+**Data.** Every stored `live_simulations` row of the current engine (`live-v2`; the 8 retired `live-v1` rows from
+9/13 excluded), each paired to the `live_tracking` row of the same poll (all 2,285 matched within 60 s), outcome from
+`games`. Tracker p(home) = `home_win_prob` + half of `tie_prob`; outcome home win 1, tie 0.5. ESPN's own
+`espn_home_win_prob` is present on 1,898 polls (31 games). Scripts: session scratchpad `p72_read.py`, `p73_count.py`,
+`p73_classes.py`.
+
+**Caveats that bound everything below.**
+- **Effective sample is games, not polls.** 2,285 polls but 39 games (31 with ESPN). Polls ~150 s apart within a game
+  move together, so per-poll counts overstate the evidence; the only interval reported is a bootstrap over games.
+- **Which games:** only those the tracker happened to be running: week 1 5, week 2 9, week 3 16, week 4 1, week 5 7,
+  week 6 1 (SEA @ DEN, tracked from 2:24 of Q2 only). Weeks 3 and 2 are two-thirds of the sample; week 4 is nearly
+  absent. Many games are partial (the tracker started or stopped mid-game).
+- ESPN's value is missing on 387 polls (where they fall was not measured; among P73's K polls it is missing on
+  38 of 55, so the paired comparison under-represents the moments right after a score).
+- ESPN shows 0.500 at a tie at the end of regulation (a placeholder), and those polls are included.
+- 70 polls (25 games) start from a state that contradicts the score (P73, below). The results are given with them
+  and, where it matters, without them.
+
+**P72 results, all polls.**
+
+| Segment (paired polls) | Polls | Games | Brier tracker | Brier ESPN | Log loss tracker | Log loss ESPN |
+|---|---|---|---|---|---|---|
+| All | 1,898 | 31 | 0.195 | 0.190 | 0.580 | 0.557 |
+| Q1 | 321 | 25 | 0.299 | 0.276 | 0.823 | 0.757 |
+| Q2 | 631 | 26 | 0.211 | 0.208 | 0.619 | 0.611 |
+| Q3 | 381 | 29 | 0.180 | 0.178 | 0.556 | 0.532 |
+| Q4 | 538 | 29 | 0.126 | 0.129 | 0.405 | 0.386 |
+| OT | 27 | 4 | 0.131 | 0.145 | 0.628 | 0.673 |
+| Q4 last 5:00 | 226 | 29 | 0.099 | 0.106 | 0.388 | 0.337 |
+| Q4 last 2:00 | 132 | 29 | 0.081 | 0.091 | 0.288 | 0.287 |
+| One-score (margin <= 8), Q4 | 357 | 23 | 0.189 | 0.190 | 0.601 | 0.555 |
+| One-score, Q4 last 2:00 | 105 | 20 | 0.102 | 0.114 | 0.363 | 0.360 |
+| Margin >= 9 | 505 | 23 | 0.083 | 0.087 | 0.284 | 0.296 |
+
+- ESPN is a little better overall and clearly better in Q1; in the last 2:00 the two are level (tracker better on
+  Brier, tied on log loss). **Without the 70 P73 polls** (1,867 paired): Brier 0.194 vs 0.191, log loss 0.577 vs
+  0.559; **Brier difference +0.004, 95% CI -0.027 to +0.034 by bootstrap over games: no detectable difference in
+  overall accuracy.**
+- **The tracker is more extreme than ESPN:** further from 0.5 on 1,438 of 1,898 paired polls (75.8%; 75.7% without
+  P73 polls).
+
+Calibration (home-win probability bins, paired polls; "actual" = home win rate, ties 0.5):
+
+| Bin | Tracker polls / games | Tracker mean p | Actual | ESPN polls / games | ESPN mean p | Actual |
+|---|---|---|---|---|---|---|
+| 0.00-0.05 | 122 / 12 | 0.013 | 0.074 | 86 / 10 | 0.017 | 0.000 |
+| 0.05-0.20 | 169 / 19 | 0.127 | 0.393 | 164 / 15 | 0.122 | 0.293 |
+| 0.20-0.40 | 248 / 20 | 0.305 | 0.315 | 339 / 26 | 0.314 | 0.308 |
+| 0.40-0.60 | 353 / 24 | 0.512 | 0.445 | 460 / 26 | 0.504 | 0.582 |
+| 0.60-0.80 | 404 / 29 | 0.701 | 0.610 | 391 / 26 | 0.698 | 0.653 |
+| 0.80-0.95 | 335 / 20 | 0.878 | 0.773 | 301 / 23 | 0.870 | 0.802 |
+| 0.95-1.00 | 267 / 18 | 0.981 | 0.963 | 157 / 14 | 0.976 | 0.994 |
+
+The tracker is overconfident at both ends (0.80-0.95 says 0.88, wins 0.77; 0.05-0.20 says 0.13, wins 0.39; < 0.05
+says 0.013, wins 0.074). ESPN's 0.05-0.20 bin is also off (0.12 vs 0.29); bins hold 10-29 games each, so every bin
+is noisy. Excluding P73 polls moves the four outer tracker bins (the only ones recomputed) by at most 0.004.
+
+**Readings at >= 0.99 for either side (all polls, the tracker's in every row; ESPN where present):**
+
+| Source | Polls >= 0.99 | Wrong | Games | Wrong games | Polls >= 0.999 | Wrong | Polls >= 0.95 | Wrong |
+|---|---|---|---|---|---|---|---|---|
+| Tracker | 249 | 5 (2.0%) | 32 | 2 | 164 | 2 (1.2%) | 560 | 20 (3.6%), 4 games |
+| ESPN | 94 | 0 | 17 | 0 | 55 | 0 | 243 | 1 (0.4%), 1 game |
+
+- **BAL @ ATL wk 5 (4 polls):** ATL up 8 from 2:31 of Q4, tracker 0.996-1.000, ESPN 0.91-0.98 at the same moments;
+  BAL tied and won in OT. One of the four started from the field-goal snap already on the board (P73 class S).
+- **HOU @ IND wk 3 (1 poll):** IND 0.008 trailing by 1 at 1:48, from a start state giving HOU the ball (P73 class K);
+  next poll, correct possession, 0.165 (ESPN 0.36). IND won.
+- **Without P73 polls:** 235 polls >= 0.99, 3 wrong, all BAL @ ATL (1 of 31 games).
+- When the tracker read >= 0.99 (162 polls with ESPN), ESPN's median on the same side was 0.996, but ESPN was below 0.95
+  on 19 polls in 9 games (ARI @ LAC, WAS @ PHI, ARI @ SF, CAR @ CLE, SEA @ WAS, PIT @ CLE, BAL @ ATL, TB @ DAL,
+  SEA @ DEN); the tracker's side won in 8 of the 9 (not BAL @ ATL).
+- Q4 <= 2:00, one-score, tracker and ESPN >= 0.10 apart: 35 polls in 15 games; the tracker was usually the more
+  extreme, except where a P73 start state pulled it the wrong way.
+- **Timeouts:** recorded nowhere (`live_tracking` has possession and down/distance, not timeouts), and the engine has
+  no timeout state, so this data cannot test them. Overconfidence also appears away from late, clock-managed states
+  (Q1, the 0.80-0.95 band), so timeouts are at most part of it.
+
+**P72 first fix proposed (nothing built), confirm with the user before any work:** a display-level calibration of
+the tracker's live win probability, leaving the simulation engine untouched: the log-odds scaled by a factor fitted
+per game-time band (Q1, Q2, Q3, Q4 before 5:00, last 5:00 and OT), **fitted only after P73's fix ships** (P73 polls
+contaminate the fit). Criteria, set before fitting:
+- (C1) fitted and judged leave-one-game-out on stored polls; the unit for every comparison is the game (bootstrap over
+  games);
+- (C2) log loss better than raw, with the game-bootstrap 95% CI excluding 0, and no band worse by more than 0.01;
+- (C3) readings >= 0.99 wrong in <= 1% of polls and in no more games than raw;
+- (C4) every calibration bin holding >= 10 games within 0.05 of its actual rate, or closer than raw;
+- (C5) stop rule: under 40 games in the fit, report and do not ship;
+- (C6) the stored engine output (`home_win_prob`) is unchanged; the calibrated value is a separate displayed field.
+
+Timeouts / clock management are out of scope for this first fix; they would be a separate engine item with its own
+criteria.
+
+**P73 count: start states that contradict the score** (2,285 polls; 1,571 start from a snap situation; sources:
+scoreboard 1,486, kickoff after a score 224, state unknown 317, halftime 173, last play 85). Two classes:
+- **K, kickoff placeholder: 55 polls (2.41%) in 24 games.** The side that scored last is on offence in its own half
+  (almost always "1st & 10 at own 35"), before the other side has snapped. ESPN's scoreboard shows the **kicking** team
+  in possession during the kickoff, and `live_start` trusts the scoreboard first (`src/live_sim.py:158`), so the engine
+  gives the scorer the ball instead of kicking off. HOU @ IND 1:48 is this (HOU ball at own 35, p(IND) 0.008; next
+  poll IND ball, 0.165). In 43 of 55 the next poll shows the other side's ball or a kickoff; the other 12 still show the
+  scorer (a slow kickoff, or a genuine change such as an onside recovery; unreviewed).
+  - Effect: |p - next poll| median 0.044, >= 0.10 in 11, >= 0.25 in 3 (SEA @ WAS 0.999 -> 0.151, NYJ @ DET
+    0.493 -> 0.907, ARI @ SF 0.656 -> 0.99).
+  - This is an upper bound: real plays also happen between polls.
+  - ESPN is present on only 17 of the 55; |p - ESPN| >= 0.25 on 1.
+- **S, stale pre-score snap: 15 polls (0.66%) in 14 games.** The score already includes a score, but the start state is
+  the scoring snap itself ("WAS 3rd & goal at PHI 1" at 22-24), so the engine can score it again.
+  - Source: 3 from the scoreboard (WAS @ PHI, SEA @ WAS, BUF @ LA). 12 come from `last play`: the summary's drive
+    lags the scoreboard, so `_after_score` does not yet see the scoring play and falls through to the pre-score snap.
+  - Effect: |p - next| >= 0.25 in 2 (WAS @ PHI 0.066 vs ESPN 0.795; SEA @ WAS 0.151 vs ESPN 0.763).
+- **Together: 70 polls (3.06%) in 25 of 39 games.** Other checks run: a score that moved while the situation stayed
+  identical, 2 polls (both inside S). Possession flipping at the same clock and score, 7 polls in 6 games, a mixed
+  bag including HOU @ IND (K) and legitimate punts or turnovers; not counted as defects.
+- The tracking row cannot arbitrate, since it reads the same scoreboard (HOU @ IND's tracking row also said HOU).
+
+**P73 first fix proposed (nothing built), confirm with the user before any work:** a consistency guard in
+`live_start`, using only what the poll already has plus the previous poll's score. When the score is higher than at
+the previous poll, or the last scorer has not yet been followed by a snap from the other side, and the situation
+(scoreboard or last play) puts **the last scorer** on offence, start from a kickoff to the other side instead. A
+pending conversion applies when the latest score is a touchdown whose try is not yet in the text, as
+`_after_score` already does. Criteria, set before building:
+- (V1) unit tests for K and S states built from the stored cases (HOU @ IND 1:48, WAS @ PHI 1:01, SEA @ WAS 2:55, a
+  `last play` case) start from a kickoff to the right side, and the suite passes;
+- (V2) applied as a pure function to all 2,285 stored start states, it changes exactly the 70 K/S polls and no other
+  (byte-identical elsewhere); the 12 K polls whose next poll still shows the scorer are reviewed one by one before
+  shipping, and any genuine possession (e.g. onside recovery) is listed;
+- (V3) only if the user approves re-simulating those stored states (finished games; nothing written to the live
+  tables): on the 70 polls, |p - next poll| and |p - ESPN| fall, and polls >= 0.25 from ESPN go from 3 to 0;
+- (V4) first live window after shipping: 0 K/S polls in the new rows, checked by the same classifier.
 
 ---
 
