@@ -179,6 +179,41 @@ def snap_share_sources(season: int) -> dict[tuple[str, str], tuple[str, float]]:
     return share_sources(frames, season)
 
 
+def qb_snap_context(season: int) -> dict:
+    """Inputs for P48's narrow QB rule (`features.zero_unsnapped_backup_qbs`).
+
+    'snapped': every player (name key, any team) with an offensive snap this
+    season or last. 'leaders': each team's QB with the most offensive snaps
+    this season. Empty if either season's feed fails, which turns the rule off
+    rather than zeroing on half the data."""
+    import nfl_data_py as nfl
+
+    frames = {}
+    for year in (season, season - 1):
+        try:
+            frames[year] = nfl.import_snap_counts([year])
+        except Exception as exc:  # noqa: BLE001 - no data means no rule, never a wrong zero
+            print(f"  [warn] snap counts {year} unavailable ({exc}); P48 QB rule off")
+            return {}
+    return qb_snap_context_from(frames, season)
+
+
+def qb_snap_context_from(frames_by_year: dict[int, object], season: int) -> dict:
+    snapped: set[str] = set()
+    for df in frames_by_year.values():
+        played = df[df["offense_snaps"].fillna(0) > 0]
+        snapped.update(player_key("", p)[1] for p in played["player"])
+    current = frames_by_year.get(season)
+    leaders: dict[str, str] = {}
+    if current is not None and len(current):
+        qbs = current[(current["position"] == "QB") & (current["game_type"] == "REG")]
+        totals = qbs.groupby(["team", "player"])["offense_snaps"].sum()
+        for (team, player), snaps in totals.items():
+            if snaps > 0 and (team not in leaders or snaps > totals[(team, leaders[team])]):
+                leaders[team] = player
+    return {"snapped": snapped, "leaders": leaders}
+
+
 def merge_snap_shares(frames) -> dict[tuple[str, str], float]:
     """Mean snap share per (team, player), taking each player from the first
     (most recent) frame that has him."""

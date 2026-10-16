@@ -180,8 +180,11 @@ def run(target: date | None = None, sport: str = "ncaaf", all_upcoming: bool = F
     if sport == "nfl" and games:
         # P48 labels: tag each stored injury row with where its snap share
         # came from. Display only; no number reads it.
-        from .ingest_injuries import snap_share_sources
-        ctx.share_sources = snap_share_sources(max(int(g["season"]) for g in games))
+        from .ingest_injuries import qb_snap_context, snap_share_sources
+        season = max(int(g["season"]) for g in games)
+        ctx.share_sources = snap_share_sources(season)
+        # P48 narrow rule: no-snap backup QBs carry no charge.
+        ctx.qb_snaps = qb_snap_context(season)
 
     predictions, skipped = [], []
     for game in games:
@@ -203,6 +206,8 @@ def run(target: date | None = None, sport: str = "ncaaf", all_upcoming: bool = F
     store.close()
 
     print(f"[predict] {label}: {len(predictions)} predictions written ({store.backend})")
+    if ctx.qb_zeroed:
+        print("  P48 no-snap backup QBs, no charge: " + ", ".join(f"{t} {p}" for t, p in ctx.qb_zeroed))
     if skipped:
         print(f"  skipped {len(skipped)}:")
         for line in skipped[:5]:

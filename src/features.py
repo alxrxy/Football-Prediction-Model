@@ -150,6 +150,46 @@ def share_source(team, player, share, sources: dict) -> str | None:
     return label if abs(float(share) - value) <= SHARE_MATCH_TOLERANCE else None
 
 
+# A team's snap-leading QB under one of these is not available, so its backups
+# keep their charges (P48 narrow rule).
+LEADER_RULED_STATUSES = ("out", "ir", "doubtful", "inactive", "suspended")
+
+
+def zero_unsnapped_backup_qbs(team: str, rows: list[dict], qb_snaps: dict) -> tuple[list[dict], list[str]]:
+    """P48, narrow rule (user, 2026-10-16): a QB with no snaps this season or
+    last, whose team's snap-leading QB this season is not ruled out, gets a
+    snap share of 0: no charge and no QB slot.
+
+    ESPN's feed lists third / emergency QBs `out`; with no share on record they
+    took the 0.35 default at full QB weight (2.10 pts) though they never play.
+    Weeks 1-5 replay: 13 such charges, all on QBs who took 0 snaps. Only a row
+    with no share at all is touched, so a QB with any snaps on record, or a
+    team whose leader is out, is unchanged. Baseline only (P48 Q4): the ML and
+    `score_injuries` are untouched. `qb_snaps` is
+    `ingest_injuries.qb_snap_context`; empty turns the rule off. Returns the
+    rows and the players zeroed."""
+    from .ingest_injuries import player_key
+
+    leader = (qb_snaps.get("leaders") or {}).get(team) if qb_snaps and config.QB_ZERO_SNAP_RULE else None
+    if not leader:
+        return rows, []
+    lead = player_key(team, leader)[1]
+    is_qb = lambda r: (r.get("position") or "").upper() == "QB"  # noqa: E731
+    if any(is_qb(r) and player_key(team, r.get("player"))[1] == lead
+           and (r.get("status") or "").lower() in LEADER_RULED_STATUSES for r in rows):
+        return rows, []
+    snapped = qb_snaps.get("snapped") or set()
+    out, zeroed = [], []
+    for r in rows:
+        name = player_key(team, r.get("player"))[1]
+        if is_qb(r) and r.get("snap_share") is None and name != lead and name not in snapped:
+            out.append({**r, "snap_share": 0.0})
+            zeroed.append(r.get("player"))
+        else:
+            out.append(r)
+    return out, zeroed
+
+
 def score_injuries(rows: list[dict], sport: str) -> tuple[float, list[dict]]:
     """Cost of one team's injury report, in points. Negative = weakened.
 
@@ -519,6 +559,10 @@ class FeatureContext:
         # caller that stores a breakdown (predict_baseline), so the live
         # tracker and the sim never fetch it; empty leaves rows unlabelled.
         self.share_sources: dict = {}
+        # P48 narrow QB rule inputs (`ingest_injuries.qb_snap_context`), filled
+        # by the pregame callers; empty leaves the rule off (ML, live tracker).
+        self.qb_snaps: dict = {}
+        self.qb_zeroed: list[tuple[str, str]] = []
         if sport == "nfl":
             self.qb_holds: list[dict] = []
             self.injuries = apply_inactives(self.injuries, db.select_merged(store, "inactives"),
@@ -680,6 +724,9 @@ class FeatureContext:
                 for i in self.injuries if i.get("team") == team]
         if not rows:
             return 0.0, False, []
+        if getattr(self, "qb_snaps", None):
+            rows, zeroed = zero_unsnapped_backup_qbs(team, rows, self.qb_snaps)
+            self.qb_zeroed += [(team, p) for p in zeroed if (team, p) not in self.qb_zeroed]
         points, breakdown = score_injuries(rows, self.sport)
         return points, True, breakdown
 

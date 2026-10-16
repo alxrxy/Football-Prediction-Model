@@ -339,6 +339,9 @@ def run(game_id: str | None = None, n: int | None = None, publish: bool = False,
         ctx = FeatureContext(store, "nfl")
         now = datetime.now(timezone.utc)
         season = now.year
+        # The served baseline applies P48's narrow QB rule; scenarios match it.
+        from .ingest_injuries import qb_snap_context
+        ctx.qb_snaps = qb_snap_context(season)
         week = _infer_week(store, "nfl", season)
         games = [g for g in ctx.games if g.get("season") == season and int(g.get("week") or 0) == week
                  and (k := parse_dt(g.get("kickoff_time"))) and k > now]

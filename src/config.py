@@ -148,6 +148,13 @@ QB_EXPECTED_STARTER = os.getenv("QB_EXPECTED_STARTER", "0").strip().lower() in (
 # INACTIVES_QB_HOLD=0 for the old behaviour (every flag applied).
 INACTIVES_QB_HOLD = os.getenv("INACTIVES_QB_HOLD", "1").strip().lower() in ("1", "true", "yes")
 
+# P48, narrow rule (user, 2026-10-16): a QB with no snaps this season or last,
+# whose team's snap-leading QB is not ruled out, carries no injury charge and
+# takes no QB slot (features.zero_unsnapped_backup_qbs). Baseline only; the ML
+# is unchanged. Weeks 1-5 replay: 13 charges removed, all on QBs who took 0
+# snaps. QB_ZERO_SNAP_RULE=0 for the old behaviour.
+QB_ZERO_SNAP_RULE = os.getenv("QB_ZERO_SNAP_RULE", "1").strip().lower() in ("1", "true", "yes")
+
 # Games whose ESPN gameday inactive list is not applied at all (the rows stay
 # stored as evidence); the teams fall back to the injury report, including the
 # manual file. Standing rule (user, 2026-10-07): an entry needs the team's own
