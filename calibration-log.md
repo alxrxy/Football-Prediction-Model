@@ -145,6 +145,89 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-16 — PRELIMINARY week-6 run (13 games still to kick off): predicted and simulated before the official reports
+
+**What ran (user-approved), 04:2x-04:4xZ 10/16:**
+- weather;
+- **one game-lines Odds API pull** (24 events, 209 odds rows, 185 snapshots; quota 500 -> 497);
+- baseline + ML predictions for the 10/18 and 10/19 slates (13 each);
+- simulations for the same 13 games (10,000 each);
+- export (no Claude notes: `--no-explain`, usage log unchanged).
+
+**Not run:** injury ingest, props / TD pulls, P66 scenarios. The props lines on file are week 5's.
+
+**Run note:** the first simulation pass was killed after HOU @ JAX by a truncated output pipe in my command (nothing
+stored); it was rerun cleanly, and all 13 sims were written.
+
+**Injuries: no adjustment at all.** The only week-6 injury rows stored are SEA / DEN's post-kickoff capture, and the
+injury layer does not carry week 5's statuses forward (`latest_injury_report`, P19). So every one of the 13 games has
+an injury adjustment of 0 ("NO DATA for this slate"), and the new P48 rule had nothing to act on. That is the largest
+known gap in these numbers.
+
+**Served (PRELIMINARY), home lines; negative = home favoured:**
+
+| Game | Baseline | ML | Market |
+|---|---|---|---|
+| HOU @ JAX (London) | -1.3 | -3.4 | -2.5 |
+| BAL @ CLE | +1.7 | +4.3 | +4 |
+| CAR @ PHI | -2 | -4.7 | +3.5 |
+| CHI @ ATL | -0.8 | +1.1 | +1 |
+| NO @ NYG | -2.5 | -3.4 | +1 |
+| NYJ @ NE | -9.2 | -10.1 | -7 |
+| PIT @ TB | -3 | -2.5 | +2.5 |
+| TEN @ IND | -7.5 | -6.7 | -7 |
+| ARI @ LA | -8.8 | -11.6 | -12.5 |
+| BUF @ LV | +3.5 | +9.3 | +4.5 |
+| LAC @ KC | -6.2 | -8.2 | -8 |
+| DAL @ GB | -5.3 | -3.7 | -1 |
+| WAS @ SF | -8.2 | -9.4 | -7.5 |
+
+0 value flags. The two largest baseline-market gaps (CAR @ PHI 5.5, PIT @ TB 5.5) are the games where the research
+below finds a starting QB reported out or doubtful, which the market prices and these predictions cannot.
+
+**Dashboard:** every one of the 13 games carries a PRELIMINARY chip, and the games page and each game page show the
+notice (`export_dashboard.PRELIMINARY_WEEKS`, display only; it disappears per game at kickoff).
+
+**Untouched, verified:** the before / after fingerprints of every stored prediction (154 rows) and simulation (77
+rows) for weeks 1-5 and every game that has kicked off (80 games) are identical; SEA @ DEN still has no prediction or
+simulation; nothing was re-predicted for a started game.
+
+### Research report: likely Out / Doubtful / Questionable, week 6 (WEB READING ONLY; NOT fed to the engine, NOT written to any injury table)
+
+Read 10/16 ~04:3xZ, from news and aggregator pages. The official Wednesday / Thursday reports were only partly
+visible, and Friday's game statuses are not out. Single-source items are marked, and low-quality sites were not
+relied on.
+- **PHI:** QB **Jalen Hurts OUT** (calf blood clot; Sportskeeda, Yahoo live blog); RB Saquon Barkley DNP / reported
+  doubtful (hamstring; NFL.com DNP, Sportsbook Review doubtful).
+- **TB:** QB **Baker Mayfield DNP (thumb), reported doubtful** (CBS; SBR); S Antoine Winfield Jr. (rib) and RB Sean
+  Tucker (quad) DNP.
+- **HOU:** RB David Montgomery, S Jalen Pitre and WR Tank Dell reported out (one source; the sim still has Montgomery
+  as RB1); long-term absences listed (Dell, Higgins, Mertz, Ingram, Speed on PUP). Marvin Harrison Jr. traded in,
+  available.
+- **BAL:** QB Lamar Jackson (ankle) questionable, "real chance" to return (Yahoo; CBS tracker). Unofficial.
+- **CHI:** QB Caleb Williams (hamstring) full participant Wednesday per Yahoo (one source says questionable); LB T.J.
+  Edwards, DT Grady Jarrett, RB Kyle Monangai, G Joe Thuney DNP (NFL.com).
+- **ATL:** QB Michael Penix Jr. (ribs) questionable (single aggregator).
+- **PIT:** RB Rico Dowdle (toe) questionable (single aggregator).
+- **NYJ:** RB Breece Hall (quad), WR Adonai Mitchell (finger), EDGE Joseph Ossai (ankle), OL Dylan Parham (knee) DNP
+  (Patriots.com report).
+- **NE:** CBs Carlton Davis III (neck), Karon Prunty (hamstring) DNP; RB TreVeyon Henderson reported out (ankle; SBR).
+- **KC:** WR Rashee Rice (hamstring / knee) DNP (CBS).
+- **TEN:** RB Tyjae Spears (knee); CBs Flott, J. Williams full (CBS).
+- **SF:** WR Deebo Samuel expected to miss an extended stretch (hamstring; single aggregator).
+- **No usable 2026 week-6 information found:** JAX, CLE, CAR, NO, NYG, IND, ARI, LA, BUF, LV, LAC, DAL, GB, WAS.
+
+Sources: [NFL.com injuries](https://www.nfl.com/injuries/), [CBS Sports](https://www.cbssports.com/nfl/news/nfl-week-6-injury-report-broncos-patrick-surtain-talanoa-hufanga-ruled-out/),
+[Yahoo live](https://sports.yahoo.com/nfl/live/nfl-news-injury-updates-live-week-6-152344178.html),
+[Sportskeeda (Hurts)](https://www.sportskeeda.com/nfl/news-jalen-hurts-injury-eagles-qb-ruled-week-6-game-concerning-leg-issue),
+[Sportsbook Review](https://www.sportsbookreview.com/picks/nfl/injury-report-injuries-betting-impact-week-6-2026/),
+[Patriots.com](https://www.patriots.com/news/week-6-injury-report-patriots-vs-jets),
+[DraftKings Network](https://dknetwork.draftkings.com/2026/10/13/nfl-injury-report-week-6/),
+[Football Nation USA](https://www.footballnationusa.com/post/nfl-week-6-injury-report-2026-penix-deebo-shipley),
+[SI (HOU @ JAX)](https://www.si.com/betting/texans-vs-jaguars-prediction-odds-spread-injuries-trends-for-nfl-week-6-2026).
+
+---
+
 ## 2026-10-16 — Decisions (user): new Odds API key, P69 re-planned from 500; P48 narrow rule SHIPPED; P61 amended definitions; preliminary week-6 run
 
 **(1) Odds API (P69).** The user confirms a new key was obtained on 10/15, so 500 is real. Full response headers of the

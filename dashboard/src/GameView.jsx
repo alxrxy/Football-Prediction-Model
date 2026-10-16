@@ -46,6 +46,7 @@ export default function GameView({ sport, gameId, feed, onBack, onPast }) {
       ) : null}
       <div className="split">
         <div className="split-main">
+          {game?.preliminary ? <div className="caveat preliminary-notice">{game.preliminary}</div> : null}
           {game?.known_issue ? <div className="caveat">{game.known_issue}</div> : null}
           {game ? <ScenarioPanel gameId={gameId} /> : null}
           {game ? <WhyBox explanation={game.explanation} /> : null}

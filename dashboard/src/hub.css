@@ -410,3 +410,7 @@ ul.scoring li:last-child { border-bottom: 0; }
 @media (max-width: 640px) { .p62-criteria > li { grid-template-columns: 1fr; gap: 4px; } }
 .p62 th.num { font-family: inherit; }
 .p62-slot .sub { display: block; font-style: normal; font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* Week predicted early (export_dashboard.PRELIMINARY_WEEKS); display only. */
+.preliminary-notice { background: var(--warn-bg); color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); font-weight: 600; }
+.prelim-chip { color: var(--warn); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }

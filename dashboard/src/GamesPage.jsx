@@ -26,6 +26,7 @@ export default function GamesPage({ sport, feed, onOpen }) {
         title={sport.slate_label ? `${sport.slate_label}` : 'This week'}
         sub={`${sport.slate_end ? `${shortDate(sport.slate_date)} – ${shortDate(sport.slate_end)} · ` : ''}${games.length} games · ${flagged ? `${flagged} flagged by the Stage 1 test${labelled(trust) ? ` (${UNVALIDATED_TEXT})` : ''}` : 'none pass the Stage 1 value test'} · click a game for its simulation and Q&A`}
       />
+      {sport.notice ? <div className="caveat preliminary-notice">{sport.notice}</div> : null}
       {!games.length && <p className="muted">No games loaded. Run the pipeline, then python -m src.export_dashboard.</p>}
       {days.map((d) => (
         <section key={d.day} className="day">
@@ -78,7 +79,12 @@ function GameCard({ game, sim, lg, onOpen, trust }) {
       aria-label={`${team(away).name} at ${team(home).name}`}
     >
       <div className="gc-top">
-        <span className="gc-time">{kickoffLabel(game.kickoff)}</span>
+        <span className="gc-time">
+          {kickoffLabel(game.kickoff)}
+          {game.preliminary && !live && !final ? (
+            <strong className="prelim-chip" title={game.preliminary}> · PRELIMINARY</strong>
+          ) : null}
+        </span>
         <StatusChip status={live ? 'live' : final ? 'final' : 'scheduled'} detail={live ? lg.detail : null} />
       </div>
       <div className="gc-teams">

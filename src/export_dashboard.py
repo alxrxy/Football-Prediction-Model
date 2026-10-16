@@ -135,6 +135,17 @@ WEEK_NOTES = {
 }
 
 
+# Weeks whose upcoming predictions were made early, before the official
+# reports and that week's data. Shown as a banner on the games page and a chip
+# on each such game until it kicks off; display only, no number changes.
+PRELIMINARY_WEEKS = {
+    (2026, 6): ("PRELIMINARY: predicted and simulated on Fri 10/16, before week 6's official injury reports, "
+                "inactive lists and nflverse week-6 data. No week-6 injury report was stored for these teams, "
+                "so no injury adjustment is applied (0 for every team). These numbers will change at the "
+                "window refreshes."),
+}
+
+
 def _qb_label(store, gid: str) -> str:
     cfg = QB_STATUS_LABELS[gid]
     try:
@@ -215,6 +226,9 @@ def build(sport: str, explain: bool = True) -> dict:
                 },
                 "known_issue": (_qb_label(store, gid) if gid in QB_STATUS_LABELS
                                 else KNOWN_GAME_ISSUES.get(gid)),
+                "preliminary": (PRELIMINARY_WEEKS.get((int(game.get("season") or 0), int(game.get("week") or 0)))
+                                if (k := parse_dt(game.get("kickoff_time"))) and k > datetime.now(timezone.utc)
+                                else None),
             }
         )
 
@@ -242,6 +256,7 @@ def build(sport: str, explain: bool = True) -> dict:
         "slate_date": slate_date,
         "slate_label": slate_extra.get("label"),
         "slate_end": slate_extra.get("end"),
+        "notice": next((g["preliminary"] for g in out_games if g.get("preliminary")), None),
         "games": out_games,
         "results": results,
         "backtest": _backtest_summary(meta),
