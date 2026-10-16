@@ -155,6 +155,7 @@ INACTIVES_QB_HOLD = os.getenv("INACTIVES_QB_HOLD", "1").strip().lower() in ("1",
 # calibration-log.md, and it expires once the game is graded.
 # Retired 2026-10-07 (P68 decision 7): 2026_04_PIT_CLE, graded; three of its
 # four 'stale' flags were genuine absences by snap counts (see the log).
+# Retired 2026-10-15: 2026_05_BUF_LA, graded (an exception to the rule above; see the log).
 INACTIVES_SKIP_GAMES: set[str] = set()
 
 # Claude API: the one metered piece of the stack. Low effort suits short,
