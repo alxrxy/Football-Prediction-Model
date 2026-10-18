@@ -102,7 +102,7 @@ status only when its adoption test is met.
 | P72 | Live win probability: the tracker showed DEN **100%** up 3 with ~1:20 left in SEA @ DEN, and SEA tied it at 0:03 | live model / calibration | 2026-10-16 | Tracker log: 03:09:31Z (1:25, Q4) and 03:11:52Z (1:16), SEA 11-14 DEN, "now DEN 100%"; then 90% at 0:57, 81% at 0:25, SEA's tying FG at 0:03; DEN won 17-14 in OT. **The tracker log line records neither possession nor timeouts.** The stored `live_tracking` snapshots (read-only, 10/16) do carry possession and down/distance, but **not timeouts**: at both 100% readings DEN had the ball (1st & 10 at DEN 31; 3rd & 8 at DEN 33), and ESPN's own win probability in the same rows was 0.911 and 0.893. The live-resume engine (`live_sim` -> `simulate.LiveStart`) starts from possession, down and yard line but has no timeout state at all (no `timeout` anywhere in `src/simulate.py`), so a trailing team's ability to stop the clock is not modelled; whether that explains the 1.00 is a hypothesis, not checked. 1.00 means every one of the 10,000 resumed simulations had DEN winning. Caveats: one game; the in-game sim here was built after kickoff on a margin-0 anchor (no pregame prediction existed; see the 2026-10-16 SEA @ DEN entry) | (proposed, set with the user before any work) (1) read-only first: over every stored `live_tracking` poll this season, compare the tracker's win probability with ESPN's and with the outcome, by time left and score margin, with the share of polls at >= 0.99 / <= 0.01 that were wrong; (2) list the late-game states (<= 2:00, one-score margin) where the two differ by >= 0.10; (3) only then decide whether timeouts / clock management are in scope; no engine change from this item without its own criteria | **pending (logged 2026-10-16, user); nothing built.** **Read done 2026-10-16** (see the 'P72 read ... P73 count' entry): 39 games / 2,285 polls (31 games with ESPN); overall accuracy no different from ESPN (Brier +0.004, game-bootstrap CI -0.027 to +0.034), but the tracker is more extreme than ESPN on 76% of polls and overconfident at both ends; >= 0.99 wrong 5/249 polls in 2 games (3/235, 1 game, without P73 polls) vs ESPN 0/94. First fix proposed: display-level time-band calibration fitted after P73, criteria C1-C6 |
 | P73 | Live start state contradicts the score: the engine resumes from a situation that the score already contradicts | live model / data | 2026-10-16 | Found in the P72 read (WAS @ PHI 1:01, HOU @ IND 1:48). Counted over all 2,285 stored `live-v2` polls: **K** kickoff placeholder (ESPN shows the kicking team in possession during the kickoff; `live_start` trusts the scoreboard first, so the scorer gets the ball) 55 polls in 24 games; **S** stale pre-score snap (the scoring snap itself, from the scoreboard (3) or a summary that lags the scoreboard (12)) 15 polls in 14 games; together 70 polls (3.1%) in 25 of 39 games; |p - next poll| >= 0.25 in 5. See the 2026-10-16 'P72 read ... P73 count' entry | V1-V4 in that entry (unit cases from the stored polls; byte-identical on the 2,285 stored start states except the 70; the 12 ambiguous K polls reviewed; a re-simulation of stored states only with user approval; 0 K/S polls in the first live window) | **pending (logged 2026-10-16, user); first fix proposed (a kickoff guard in `live_start`), nothing built.** Comes before P72's calibration fit. **SHIPPED 2026-10-16 (user-approved narrower rule a + b): V1 PASS, V2 PASS (exactly the 61; rows 6-14 and all other readings identical), suite 292; V3: gap to the next poll 0.052 -> 0.005 median. V4 (hand review of every firing) due after Sunday 10/18; a wrong firing sends the guard to display-only.** Note on the count above: 70 flagged became 61 after the 10/16 review (9 genuine possessions) |
 | P74 | Injury layer: a healthy manual row for the starting QB (blank status + FP) clears him from the report, so `score_injuries` promotes the next QB into the single QB slot and charges that backup's ESPN 'out' row as if he started | logic | 2026-10-18 | Week-6 noon refresh: ATL charged 4.74 for Cooper Rush, then 2.52 for Jack Strand, with Penix starting; IND 2.36 (Riley Leonard), NO 2.10 (Zach Wilson). Worked around in `2026-wk06.csv` (no-status rows for the backups, user-approved); see the 2026-10-18 noon entry | open, nothing built |
-| P75 | `ingest_props.run` raises KeyError 'players' on its summary line when a carried-forward game has no `players` key; the file is already written, so only the printout fails | bug | 2026-10-18 | Noon props pull 10/18 16:24Z: file written (7 games priced), crash at `priced = sum(...)` | open |
+| P75 | `ingest_props.run` raises KeyError 'players' on its summary line when a carried-forward game has no `players` key; the file is already written, so only the printout fails | bug | 2026-10-18 | Noon props pull 10/18 16:24Z: file written (7 games priced), crash at `priced = sum(...)`. 10/18 SNF: cause found. A targeted pull (`only_games`) carries a game with no prior entry forward as a stub holding only `pulled_at` (never-pulled ARI_LA, BUF_LV, LAC_KC, WAS_SF), and `props.rank` crashes on the same stub (`g["players"]`), so ranking fails too, not just the printout. Worked around in-process for SNF only (stubs filtered before `rank`); that wrapper skipped the P62 shadow refresh (nothing served) | open, cause known, nothing built |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -144,6 +144,39 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-10-18 — Week-6 official inactive lists: CAR @ PHI, PIT @ TB (11:53 CDT) and DAL @ GB SNF (18:14 CDT)
+
+**Noon (11:53 CDT).** Official lists were found for CAR @ PHI (philadelphiaeagles.com) and PIT @ TB (buccaneers.com), both posted 10:30. Each game's stored ESPN rows were deleted (backup `data/snapshots/pre-wk6-refresh_2026-10-18/espn_inactives_pit_tb_car_phi.json`) and replaced with the official rows (source `official_team_article`). Both games came off INACTIVES_SKIP_GAMES and were re-predicted and re-simulated by 11:54:27.
+- CAR @ PHI: baseline -0.1 -> +0.6, sim -0.2 -> +0.3.
+- PIT @ TB: baseline -1.2 -> +0.8, sim -1.1 -> +1.4.
+- ESPN had listed PIT's Dean and Dowdle inactive; both were active.
+- No complete official list was found for BAL @ CLE (CLE only), CHI @ ATL, NO @ NYG, NYJ @ NE or TEN @ IND. Those five were left unchanged and stay skipped.
+
+**SNF DAL @ GB (18:14 CDT, 65 min before kickoff).**
+- **Source.** The official lists are from packers.com ("Oct 18, 2026 at 05:50 PM", both teams); DAL's is confirmed by dallascowboys.com's 5:50 update.
+  - DAL: Overshown, Durant, Alijah Clark, Demercado, Houston, Shelton, Camden Brown.
+  - GB: St-Juste, Jager Burton, Aaron Banks, Donovan Jennings.
+- **ESPN skipped as stale.**
+  - DAL: ESPN has 10 names, over the max of 7, and 9 of them are on its week-5 list. Porter Jr., Sam Howell and Cornelius are on ESPN's list but active.
+  - GB: ESPN has 6 names, including all 4 of its week-5 list. Campbell and Monk are on ESPN's list but active.
+  - ESPN's week-6 rows were never stored for this game (replay read only). The 11 official rows were stored through the manual path, source `official_team_article`.
+- **Cross-check against `2026-wk06.csv`.**
+  - Durant, Shelton and St-Juste: CSV Out, inactive.
+  - Overshown and Banks: CSV Q, inactive.
+  - Porter Jr., Speed, Campbell, Monk, Savion Williams and Cisse: CSV Q, active.
+  - Clark and Houston: no CSV designation, inactive.
+  - Demercado, Brown, Burton and Jennings: not in the CSV, inactive.
+  - GB Ford, Hargrave and Moore (CSV Out) and Riley (CSV Doubtful) are not on GB's 4-name list, most likely reserve moves (Hargrave's Achilles is season-ending). Their flags were not cleared.
+- **QBs.** Prescott and Love start; no QB is inactive on either list. The books price both, and both are in the sim. No QB rows are charged on either side, so P74 did not appear.
+- **Re-run.** Game lines were stale (16:24Z) and pulled once; the market moved from DAL -1 (GB +1) to pick'em.
+  - Baseline -2.04 -> -3.48; ML -4.18 -> -4.17; sim margin GB +3.8, GB win 61%.
+  - Props pulled for this game (quota 456 after) and ranked; TD lines pulled (455), not ranked (TD route held).
+  - P75 hit ranking; cause logged on the tracker row.
+  - Claude API key rejected, so explanations were skipped.
+- **Charges outside the official list.** GB still carries ESPN long-term Outs for Parsons (1.4) and Jacobs (0.64), on file every week since weeks 1-2 (2025 shares). This is unchanged behaviour, not tonight's lists.
 
 ---
 

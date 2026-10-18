@@ -139,13 +139,33 @@ WEEK_NOTES = {
 # reports and that week's data. Shown as a banner on the games page and a chip
 # on each such game until it kicks off; display only, no number changes.
 PRELIMINARY_WEEKS = {
-    (2026, 6): ("PRE-INACTIVES, official reports pending: predicted and simulated on Sun 10/18 ~08:30Z from the "
-                "nflverse injury report (10/18 06:01Z) plus ESPN, play-by-play through SEA @ DEN and fresh game "
-                "lines. No inactive list has posted and the hand-checked report file is still empty, so these "
-                "numbers will change at the window refreshes."),
+    (2026, 6): ("OFFICIAL REPORTS IN · INACTIVES PENDING: predicted and simulated on Sun 10/18 from the official "
+                "Friday reports (hand-checked file 2026-wk06.csv plus nflverse), play-by-play through SEA @ DEN and "
+                "fresh game lines. This game has not yet been re-run on its own official inactive list, so the "
+                "numbers can still change at its window refresh."),
 }
 # The short chip shown on each such game; "PRELIMINARY" when a week has none.
-PRELIMINARY_CHIPS = {(2026, 6): "PRE-INACTIVES"}
+PRELIMINARY_CHIPS = {(2026, 6): "OFFICIAL REPORTS IN · INACTIVES PENDING"}
+# Games the week's label does not fit: (notice, chip). WAS @ SF is not in 2026-wk06.csv.
+PRELIMINARY_GAMES = {
+    "2026_06_WAS_SF": ("PRE-INACTIVES, official reports pending: predicted and simulated on Sun 10/18 ~08:30Z from "
+                       "the nflverse injury report (10/18 06:01Z) plus ESPN; this game is not in the hand-checked "
+                       "report file yet, and no inactive list has posted.", "PRE-INACTIVES"),
+}
+
+
+def _rerun_on_inactives(game: dict, baseline: dict | None, inactives: list[dict]) -> bool:
+    """True once this game's prediction was made after both teams' gameday
+    inactive lists were stored and the lists were applied (not skipped).
+    Display only: it retires the chip, it changes no number."""
+    gid = game["game_id"]
+    if not baseline or gid in config.INACTIVES_SKIP_GAMES:
+        return False
+    rows = [r for r in inactives if r.get("game_id") == gid]
+    if {r.get("team") for r in rows} < {game["home_team"], game["away_team"]}:
+        return False
+    posted = max(r.get("first_seen_at") or r.get("pulled_at") or "" for r in rows)
+    return (baseline.get("generated_at") or "") > posted
 
 
 def _qb_label(store, gid: str) -> str:
@@ -191,8 +211,9 @@ def build(sport: str, explain: bool = True) -> dict:
 
     injuries: dict[str, list[dict]] = {}
     report = latest_injury_report(store.select("injuries", {"sport": sport}))
+    inactives = db.select_merged(store, "inactives") if sport == "nfl" else []
     if sport == "nfl":
-        report = apply_inactives(report, db.select_merged(store, "inactives"), qb=qb_context(store))
+        report = apply_inactives(report, inactives, qb=qb_context(store))
     for row in report:
         injuries.setdefault(row["team"], []).append(row)
 
@@ -228,10 +249,13 @@ def build(sport: str, explain: bool = True) -> dict:
                 },
                 "known_issue": (_qb_label(store, gid) if gid in QB_STATUS_LABELS
                                 else KNOWN_GAME_ISSUES.get(gid)),
-                "preliminary": (PRELIMINARY_WEEKS.get((int(game.get("season") or 0), int(game.get("week") or 0)))
+                "preliminary": ((PRELIMINARY_GAMES[gid][0] if gid in PRELIMINARY_GAMES else
+                                 PRELIMINARY_WEEKS.get((int(game.get("season") or 0), int(game.get("week") or 0))))
                                 if (k := parse_dt(game.get("kickoff_time"))) and k > datetime.now(timezone.utc)
+                                and not _rerun_on_inactives(game, baseline, inactives)
                                 else None),
-                "preliminary_chip": PRELIMINARY_CHIPS.get((int(game.get("season") or 0), int(game.get("week") or 0))),
+                "preliminary_chip": (PRELIMINARY_GAMES[gid][1] if gid in PRELIMINARY_GAMES else
+                                     PRELIMINARY_CHIPS.get((int(game.get("season") or 0), int(game.get("week") or 0)))),
             }
         )
 

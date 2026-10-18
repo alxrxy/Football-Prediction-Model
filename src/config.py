@@ -167,9 +167,12 @@ QB_ZERO_SNAP_RULE = os.getenv("QB_ZERO_SNAP_RULE", "1").strip().lower() in ("1",
 # forward (each holds all of that team's week-5 list: CLE 7/7, NYG 6/6, NYJ 6/6, NE 6/6, PIT 7/7, CHI 6/7,
 # TB 7/10, IND 4/5); see the log. Revert once these games are graded.
 INACTIVES_SKIP_GAMES: set[str] = {
-    "2026_06_BAL_CLE", "2026_06_CAR_PHI", "2026_06_CHI_ATL", "2026_06_NO_NYG",
-    "2026_06_NYJ_NE", "2026_06_PIT_TB", "2026_06_TEN_IND",
+    "2026_06_BAL_CLE", "2026_06_CHI_ATL", "2026_06_NO_NYG", "2026_06_NYJ_NE", "2026_06_TEN_IND",
 }
+# CAR @ PHI and PIT @ TB left the skip at 11:53 CDT 10/18: their stored lists were replaced with the teams'
+# official articles (buccaneers.com, philadelphiaeagles.com; source 'official_team_article').
+# DAL @ GB (SNF) never stored ESPN's week-6 lists (stale: DAL 10 names, 9 from week 5; GB 4/4 of week 5 plus
+# Campbell/Monk, both active); its stored rows are packers.com's official lists (source 'official_team_article').
 
 # Claude API: the one metered piece of the stack. Low effort suits short,
 # data-grounded answers; the daily cap stops a runaway page or loop from
