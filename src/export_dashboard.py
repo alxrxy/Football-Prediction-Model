@@ -139,11 +139,13 @@ WEEK_NOTES = {
 # reports and that week's data. Shown as a banner on the games page and a chip
 # on each such game until it kicks off; display only, no number changes.
 PRELIMINARY_WEEKS = {
-    (2026, 6): ("PRELIMINARY: predicted and simulated on Fri 10/16, before week 6's official injury reports, "
-                "inactive lists and nflverse week-6 data. No week-6 injury report was stored for these teams, "
-                "so no injury adjustment is applied (0 for every team). These numbers will change at the "
-                "window refreshes."),
+    (2026, 6): ("PRE-INACTIVES, official reports pending: predicted and simulated on Sun 10/18 ~08:30Z from the "
+                "nflverse injury report (10/18 06:01Z) plus ESPN, play-by-play through SEA @ DEN and fresh game "
+                "lines. No inactive list has posted and the hand-checked report file is still empty, so these "
+                "numbers will change at the window refreshes."),
 }
+# The short chip shown on each such game; "PRELIMINARY" when a week has none.
+PRELIMINARY_CHIPS = {(2026, 6): "PRE-INACTIVES"}
 
 
 def _qb_label(store, gid: str) -> str:
@@ -229,6 +231,7 @@ def build(sport: str, explain: bool = True) -> dict:
                 "preliminary": (PRELIMINARY_WEEKS.get((int(game.get("season") or 0), int(game.get("week") or 0)))
                                 if (k := parse_dt(game.get("kickoff_time"))) and k > datetime.now(timezone.utc)
                                 else None),
+                "preliminary_chip": PRELIMINARY_CHIPS.get((int(game.get("season") or 0), int(game.get("week") or 0))),
             }
         )
 

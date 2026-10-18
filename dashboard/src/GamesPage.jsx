@@ -82,7 +82,7 @@ function GameCard({ game, sim, lg, onOpen, trust }) {
         <span className="gc-time">
           {kickoffLabel(game.kickoff)}
           {game.preliminary && !live && !final ? (
-            <strong className="prelim-chip" title={game.preliminary}> · PRELIMINARY</strong>
+            <strong className="prelim-chip" title={game.preliminary}> · {game.preliminary_chip || 'PRELIMINARY'}</strong>
           ) : null}
         </span>
         <StatusChip status={live ? 'live' : final ? 'final' : 'scheduled'} detail={live ? lg.detail : null} />

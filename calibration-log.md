@@ -145,6 +145,53 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-18 — PRE-INACTIVES week-6 refresh (13 games still to kick off): official reports in, inactive lists and manual file pending
+
+**What ran (user-approved), 08:05-08:15Z 10/18; no engine change:** Friday's full refresh had not run (nothing
+stored after the 10/16 preliminary run).
+- nflverse ingest: play-by-play through SEA @ DEN (release 10/17 12:57Z), P22 ratings rebuilt for week 6. SEA -0.07,
+  DEN -0.09; every one of the 13 teams still to play moved <= 0.01. Elo unchanged.
+- injuries: nflverse report (release 10/18 06:01Z) + ESPN, 291 rows, 32/32 teams, 101 ruled out; 19 ESPN-IR vs
+  official conflicts, official kept. `2026-wk06.csv` present with 0 rows (user fills it later). Inactives: 0 lists
+  posted (P33 gate). P48 narrow rule: ARI Carson Beck, no charge.
+- weather; **one game-lines Odds API pull** (24 events, 209 odds rows, 185 snapshots; quota 497 -> 494). No props
+  or TD pulls; the props lines on file are still week 5's.
+- baseline + ML predictions and simulations (10,000 each) for the 13 games; export with `explain=False`.
+- Not run: grading, props rank, P66 scenarios.
+
+**Stored QB statuses:** BAL Lamar Jackson out (DNP), CLE Dillon Gabriel out (FP), PHI Jalen Hurts out (DNP), TB Baker
+Mayfield out (DNP), WAS Marcus Mariota out (DNP), CHI Caleb Williams questionable (FP, play prob 0.80), ARI Carson
+Beck no status (LP). The injury cap (8.0) binds for BAL, PHI and TB.
+
+**Margins, home lines (negative = home favoured): preliminary 10/16 -> now**
+
+| Game | Baseline | ML | Sim mean | Market |
+|---|---|---|---|---|
+| HOU @ JAX (London) | -1.3 -> -1.1 | -3.4 -> -3.5 | -1.2 -> -1.0 | -2.5 -> -2.5 |
+| BAL @ CLE | +1.7 -> -0.8 | +4.3 -> +3.6 | +2.0 -> -0.7 | +4 -> +3 |
+| CAR @ PHI | -2.0 -> +1.0 | -4.7 -> -5.2 | -1.8 -> +0.8 | +3.5 -> +3 |
+| CHI @ ATL | -0.8 -> -3.3 | +1.1 -> -0.6 | -1.3 -> -3.3 | +1 -> +1 |
+| NO @ NYG | -2.5 -> +0.2 | -3.4 -> -2.6 | -2.5 -> +0.4 | +1 -> +0.5 |
+| NYJ @ NE | -9.2 -> -9.9 | -10.1 -> -10.9 | -9.2 -> -9.9 | -7 -> -7 |
+| PIT @ TB | -3.0 -> +0.1 | -2.5 -> -1.3 | -3.0 -> +0.3 | +2.5 -> +2.5 |
+| TEN @ IND | -7.5 -> -5.7 | -6.7 -> -6.9 | -7.6 -> -5.5 | -7 -> -6.5 |
+| ARI @ LA | -8.8 -> -8.3 | -11.6 -> -11.3 | -8.9 -> -8.2 | -12.5 -> -12.5 |
+| BUF @ LV | +3.5 -> +2.9 | +9.3 -> +8.4 | +3.1 -> +2.7 | +4.5 -> +4.5 |
+| LAC @ KC | -6.2 -> -9.7 | -8.2 -> -8.5 | -6.1 -> -9.4 | -8 -> -7.5 |
+| DAL @ GB | -5.3 -> -2.2 | -3.7 -> -4.2 | -5.3 -> -2.3 | -1 -> -1 |
+| WAS @ SF | -8.2 -> -9.1 | -9.4 -> -9.8 | -8.1 -> -9.0 | -7.5 -> -7.5 |
+
+0 value flags (baseline and ML).
+
+**Dashboard:** notice and chip now read PRE-INACTIVES, official reports pending (`PRELIMINARY_WEEKS` text and a new
+`PRELIMINARY_CHIPS`, display only).
+
+**Untouched, verified:** before / after fingerprints of every stored prediction (154 rows) and simulation (77 rows)
+for the 80 games that have kicked off are identical; SEA @ DEN still has no prediction or simulation. Pre-run copy of
+the week-6 rows: `data/snapshots/pre-wk6-refresh_2026-10-18/before.json`. Suite 298 passed.
+
+---
+
 ## 2026-10-16 — PRELIMINARY week-6 run (13 games still to kick off): predicted and simulated before the official reports
 
 **What ran (user-approved), 04:2x-04:4xZ 10/16:**
