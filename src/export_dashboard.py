@@ -156,6 +156,11 @@ PRELIMINARY_GAMES = {
     "2026_06_WAS_SF": ("PRE-INACTIVES, official reports pending: predicted and simulated on Sun 10/18 ~08:30Z from "
                        "the nflverse injury report (10/18 06:01Z) plus ESPN; this game is not in the hand-checked "
                        "report file yet, and no inactive list has posted.", "PRE-INACTIVES"),
+    **{gid: ("OFFICIAL REPORTS IN · INACTIVES PENDING: predicted and simulated on Sun 10/25 ~11:30 CDT from the "
+             "official Friday reports (nflverse) plus the hand-checked file 2026-wk07.csv, ratings through week 6 "
+             "and fresh lines; this game's inactive list has not posted, so the numbers can still change at its "
+             "window refresh.", "OFFICIAL REPORTS IN · INACTIVES PENDING")
+       for gid in ("2026_07_DEN_ARI", "2026_07_GB_DET", "2026_07_LA_LV", "2026_07_KC_SEA", "2026_07_DAL_PHI")},
 }
 
 

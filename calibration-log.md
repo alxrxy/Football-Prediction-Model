@@ -149,6 +149,50 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-25 — Late / SNF / MNF games (5) re-predicted at ~11:30 CDT on official reports + merged manual file; INACTIVES PENDING
+
+**Merge.** `2026-wk07_new.csv` (user; NFL.com screenshots; replaced at 11:05 with 288 rows, 24 teams, now including DAL, IND and MIN) was merged into `2026-wk07.csv`:
+- 107 late / SNF / MNF rows were added. With Gabriel, the validator passes 108 rows; no K / P / LS row was rejected, and those exist only in noon teams anyway.
+- The 180 noon-team rows were kept as `# XCHECK` comments: not ingested, and no noon game was re-run.
+- **Conflicts, where my workaround rows win:**
+  1. CLE Gabriel: my `none,-,-,-,` row kept over the file's `Back,FP,FP,FP,`. Both clear him.
+  2. SEA Lock: the file's Questionable row was replaced by the P74 workaround row (the books check is below).
+- Pre-merge copy: the session scratchpad `2026-wk07.before-merge.csv`.
+
+**nflverse completeness check** (the noon rows: Out / Doubtful / Questionable, or last practice DNP / LP):
+- **0 players missing** from the nflverse week-7 report.
+- 6 status differences:
+  - CIN Allen, Hill and Lawrence are Out in the CSV ("per Alex") but have no status in nflverse. They are NIR-rest, and bengals.com's official list does not include them, so nflverse is right.
+  - **CLE Delpit and Sampson are Questionable in the CSV but have no game status in nflverse.** Those are designations nflverse missed.
+  - NYG Holland is Questionable in the CSV but Out in nflverse; he was inactive on the official list.
+- Late teams: KC has 1 nflverse row not in the CSV, and it stays, because the merge is per player (`manual_injuries.merge`). DAL is now covered by the file.
+
+**QB checks** (books = Odds API pass-yds lines pulled 11:26 CDT for the 5 games; 27 credits, **397 left**):
+- **SEA:** the books price Darnold and Mahomes, and seahawks.com has Lock as the backup (Questionable, elbow). This is a backup charged while the starter is healthy, so the **P74 workaround is applied** and Lock is cleared (2.56 → 0).
+- **PHI:** the books price McKee and Prescott. **Hurts is charged Out by the user's row (5.90, as in week 6)**: he is the starter the rating is built on, so the charge is real and not zeroed. Milton is no longer on PHI's report.
+- **ARI:** the books price Brissett and Nix. Beck (Questionable, DNP Thu / Fri, third QB per azcardinals.com) is already uncharged by the P48 no-snap rule, so no workaround is needed.
+- Left as is: SEA Jalen Milroe (out, prior share) carries a **0.12** charge, the same P74 pattern at negligible size.
+- Every sim QB1 matches the priced QB: Prescott / McKee, Nix / Brissett, Love / Goff, Mahomes / Darnold, Stafford / Cousins.
+
+**Run.**
+- Injuries: nflverse + merged manual file (no ESPN feed, no ESPN inactives).
+- Then weather, baseline + ML **for the 5 games only**: the slate was filtered in-process, and it was asserted that no other game was written.
+- Then a sim per game (10,000 runs), props rank (archived `2026_w07/20261025T163231Z.json`), and export.
+- Clock checked before every step; the first late kickoff was 2.6 h away.
+- Label: "OFFICIAL REPORTS IN · INACTIVES PENDING" (`PRELIMINARY_GAMES`, display only).
+
+| Game | Market (home) / total | Baseline | ML | Sim (home WP) | Baseline edge |
+|---|---|---|---|---|---|
+| DEN @ ARI | +4.5 / 43.5 | −1.8 | −8.7 | −1.8 (0.44) | +2.8 |
+| GB @ DET | −3.5 / 55.5 | +5.4 | +0.2 | +5.6 (0.67) | +1.9 |
+| LA @ LV | +3.5 / 48.5 | −1.6 | −3.8 | −1.5 (0.45) | +1.9 |
+| KC @ SEA | −3.0 / 42.5 | +5.4 | +5.6 | +5.4 (0.67) | +2.4 |
+| DAL @ PHI | +4.5 / 44 | −3.2 | −0.5 | −3.7 (0.38) | +1.3 |
+
+Sources: [azcardinals.com injury report](https://www.azcardinals.com/news/injury-report-week-7-vs-broncos), [Covers DEN @ ARI](https://covers.com/nfl/broncos-vs-cardinals-prediction-picks-oct-25-2026), [seahawks.com](https://www.seahawks.com/news/2026-week-7-injury-report-chiefs-at-seahawks).
+
+---
+
 ## 2026-10-25 — Week-7 noon window (7 games, 12:00 CDT): official inactive lists applied, re-predicted and re-simulated by 10:50 CDT
 
 **User decisions (10/25, recorded):**
