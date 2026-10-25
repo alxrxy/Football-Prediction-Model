@@ -148,6 +148,138 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-25 — Step 3: upgrade backlog, DIAGNOSE AND PROPOSE ONLY (criteria written before any replay; no code built)
+
+This entry holds the user's rules, the boundary timing, a read-only diagnosis for every item, each item's criteria (set before any replay or build), and a recommendation for the one engine change.
+
+**Rules (user):**
+- One pregame-engine change per weekly boundary, and none is built until the user picks it.
+- Display, ops and logging items do not count against that limit, but each needs the user's OK before it is built.
+- Week 7 is already under way (TNF played; PIT @ NO kicked off), so **the next boundary is after MNF 10/26, and whatever is picked serves week 8.**
+
+**Read-only diagnosis run for this entry:** `p74_scope` over every served baseline breakdown in weeks 1-7, with nflverse 2025-26 snap counts. Nothing was written.
+
+### P74: a backup QB charged in the single QB slot when the starter is healthy (engine, baseline injury layer) — LEADING CANDIDATE
+
+- *Diagnosis.* The 10/18 manual-file case is one instance of a general rule.
+  - `score_injuries` fills the team's QB slot from the QB rows **on the report**. A healthy starter has no row: nflverse skips status-none / full-practice rows, and a blank + FP manual row clears him.
+  - So any injured backup on the report is charged as if he started.
+  - In weeks 1-6, **45 served QB charges** went to a QB who was not his team's pre-game expected starter (most 2026 QB snaps in earlier weeks; prior-season leader in week 1), while that starter had no row: **136.8 pts** (week 1: 17.1; week 2: 35.9; week 3: 51.0; week 4: 8.7; week 5: 19.7; week 6: 4.3).
+  - **41 of 45 charged QBs took 0 snaps, and the expected starter played in 40.** The 4 who played (Penix wk3, Darnold wk3, Sanders wk3 1 snap, Caleb Williams wk6) were charged as inactive or questionable and played, so those charges were wrong as well.
+  - P48's narrow rule (10/16) now removes the no-snap subset only.
+  - **Week 7 as served now: 4 cases, 9.21 pts.** CLE Gabriel 3.37, PHI Joe Milton III 2.10, SEA Lock 2.56, TB Mayfield 1.18. Mayfield is a returning starter; his "expected starter" by recent snaps is Jalon Daniels.
+  - The manual-file form exists only in `2026-wk06.csv` (7 blank + FP QB rows; none in weeks 4, 5 or 7).
+- *Proposed rule (to confirm).* A QB's injury row takes the team's QB slot only if he is the team's **expected starter**: most 2026 QB snaps in the team's games before this one (week 1: the 2025 leader for that team). A non-expected QB on the report is not charged while the expected starter is not ruled out. When the expected starter is ruled out, the charge stays his, as today. Baseline path only (the anchored sim follows). ML's `qb_loss_diff` is untouched (as P48).
+- *Expected effect.* It removes about 2-6 pts of wrong charge per case: about 7 cases a week in weeks 1-5 (before P48) and fewer since. On today's week 7 it would move CLE @ TEN, DAL @ PHI, KC @ SEA and TB @ CAR by 1.2-3.4 pts each.
+- *Risk.* A returning starter (Mayfield 10/25, Penix wk3, Caleb wk6) is not the snap-history "expected" QB. If he is ruled out after being named the starter, the rule would leave the team uncharged. This did not occur in weeks 1-6. It overlaps P48 (subsumes it) and fix (b) (subsumes its one case).
+- *Walk-forward replay plan, weeks 1-6.* Use the 10/15 method: stored served breakdowns, team charge recomputed exactly as `score_injuries` (cap 8.0), the anchored sim moves by the same delta. The expected starter is computed only from games before each one, so there is no look-ahead. The replay is on top of P48, so only P74's own effect is measured.
+  - **G1 (gate, 100%):** every removed charge was on a QB who did not start that game (fewer pass attempts than the team's starter) or who took snaps despite the charge.
+  - **G2 (gate, 100%):** in every changed game the team's actual starter (most pass attempts) was the expected starter or the charged QB himself, which means no real starter loss was removed.
+  - **G3 (gate):** no other row changes (byte-identical breakdowns elsewhere).
+  - **G4 (reported, not gated):** per-game margin, absolute error, ATS; MAE by week.
+  - **G5:** suite passes plus new unit cases (healthy starter off the report, backup out → 0; starter out → his charge; returning starter questionable → listed).
+  - Decision rule: ships only if G1 to G3 and G5 pass. Ranked, as on 10/15, by wrong points removed, not ATS.
+- *Kind:* **engine**.
+
+### Fix (b): hold a flagged QB when the books price a different healthy QB (engine)
+
+- *Diagnosis.* One week-5 case (SEA Lock), 3.14 pts. It passed b1 and b2 (10/15). There is no week-6 case. No week-7 case can exist until inactive lists are applied.
+- **P74's rule subsumes it**: Lock is not SEA's expected starter, so P74 removes the charge entirely, against b's 2.56 kept.
+- *Expected effect:* about 1 case every few weeks.
+- *Risk:* it depends on book pricing being current (P53 stale-pull cases).
+- *Replay plan:* the same as 10/15 (b1, b2, b3) over weeks 1-6 runs, and the weeks 1-6 log grep for `unresolved ... books price`.
+- *Kind:* engine. **Not recommended separately** while P74 is open.
+
+### Fix (c): P62 S4 "displaced" cause (shadow tooling; changes no served number)
+
+- c1 and c2 passed 10/15: Tre' Harris is the only unexplained S4 change; with "displaced" built, S4 would read PASS on the saved pulls.
+- The P62 window has closed, so (c) only matters if P62 continues (recommendation below: stop).
+- *Criteria if built:* S4 re-run on all 7 saved pulls gives Harris → displaced, with every other S4 row identical.
+- *Kind:* **ops / validation tooling**. Does not count against the limit.
+
+### P70: duplicate name spellings in `injuries` (data hygiene)
+
+- Current table: the player keys holding two spellings in the same week are week 1: 2, week 2: 8, week 3: 1, week 4: 4, week 5: 6, week 6: 0.
+- Margin effect 0 (10/15 d2: no double charge), because `latest_injury_report` reads each source's latest pull.
+- *Proposal:* normalise suffixes and initials in `player_key` for the read path only. **No Supabase rows deleted**; any cleanup of stored rows needs the user's explicit OK.
+- *Criteria:* (1) every served weeks 1-7 breakdown byte-identical; (2) a test with "Derwin James" / "Derwin James Jr." → one key; (3) the duplicates listed before and after.
+- *Kind:* **data**. It changes no served number, by its own gate.
+
+### P75: `ingest_props` / `props.rank` KeyError on carried-forward stubs (bug; served props lists)
+
+- Cause known (10/18): a stub game with only `pulled_at`. It cost every week-6 noon and late game its served props list. Week 6 has one graded list, SNF only.
+- *Proposal:* skip stubs in the summary and in `rank`.
+- *Criteria:* (1) unit test with a stub; (2) the 10/18 16:24Z file ranks without error; (3) rankings on non-stub files byte-identical; (4) suite.
+- *Kind:* **ops / bug**. It changes no prediction.
+
+### New: stale ESPN inactive-list detector (data; it changes which inputs reach the engine)
+
+- *Diagnosis.* On 10/18 every noon game's ESPN list was a week-5 copy (CLE 7/7, NYG 6/6, NYJ 6/6, NE 6/6, PIT 7/7, CHI 6/7, TB 7/10, IND 4/5), and DAL had 10 names, 9 of them from week 5.
+- The user's rule (more than 7 names, or a superset of the previous week's list) catches 9 of those 10 teams. IND (4 of its 5 names were week-5 copies, so not a superset) is missed.
+- It also risks **false skips**: a genuine list often repeats long-term absences, so a superset with 1-2 new names can be real.
+- *Proposed detector (to confirm):* skip a team's ESPN list and log it when
+  - (a) it is read before T-95 min (lists post at T-90, so it cannot be this week's); or
+  - (b) it is a superset of that team's previous list with the identical ESPN payload hash; or
+  - (c) it has more than 7 names.
+  Skips are written to the log, and the game keeps the official report.
+- *Replay plan (weeks 2-6, stored raw lists + P33 probe reads):*
+  - **D1 (gate):** it flags every list the log already ruled stale (10/18 noon and SNF, 10/1 PIT, 10/15 SF @ SEA / BUF @ LA cases).
+  - **D2 (gate):** **0 false skips** on lists whose players are confirmed absent by snap counts.
+  - **D3:** the served margin change per game is reported.
+- *Kind:* **data**. It changes served numbers, so it is validated like an engine change. The user decides whether it counts against the limit.
+
+### P71: Thursday reminder-only safeguard (ops)
+
+- Both recent TNFs were missed (week 6 SEA @ DEN, week 7 NE @ CHI), and so was the week-6 MNF re-run.
+- *Proposal as logged 10/16 (reminder only):* a Task Scheduler check at T-4h and T-90m for every game. It raises a desktop alert and a `data/live/alerts.log` line when no prediction is stored; it is read-only, makes no API call and writes nothing else.
+- *Criteria:* (1) a dry run on the 10/15 and 10/22 clocks fires; (2) it is silent for a game with a prediction; (3) predictions are byte-identical with it on or off; (4) it is verified on a real scheduled pass.
+- *Caveat:* it cannot fire while the laptop sleeps (WakeToRun off). Both missed TNF windows were sleep gaps.
+- *Kind:* **ops**.
+
+### P69: Odds API budget, weeks 7-8
+
+- 452 left after today's game-lines pull. Neither the plan nor the reset is exposed by the API, and none is assumed before 11/1.
+- At the 10/16 rates (lines 3 per pull, props ~3-4 per game, TD 1 per game), week 7's remaining windows at full cadence come to about 70: noon ~38, 15:05/15:25 ~18, SNF ~8, MNF ~8. Week 8 at full cadence is about 133. That leaves **about 250 after week 8**.
+- With lines-only windows (today's approval: no props or TD), the rest of week 7 is about 12.
+- *Rule proposed:* full cadence for weeks 7-8 is affordable. Read the quota before every pull, and stop if it falls below the remaining windows' cost.
+- *Kind:* **ops**.
+
+### P58: NCAAF removal, merge status
+
+- The branch `p58-ncaaf-removal` (worktree `..\Football Predictor p58`) has **2 commits not on main** (`16dcd12` code removal, `2240b11` test). It is unmerged, and main has moved 21 commits past the merge base `b74bf9c`.
+- 5 files changed on both sides, so conflicts are expected: `src/config.py`, `export_dashboard.py`, `features.py`, `ingest_injuries.py`, `predict_baseline.py`.
+- **Supabase college rows are still present** (games 331, predictions 166, clv_log 166, team_ratings 276, teams 138: no deletions made); `data/archive/ncaaf_2026/` exists.
+- *Next step if the user wants it:* rebase onto main and re-run the 9/30 verification (NFL identical: suite, in-memory predictions and dashboard export).
+- **No Supabase deletion without the user's explicit OK.**
+- *Kind:* **ops (removal)**.
+
+### P62 Sportradar shadow: recommendation
+
+**Stop Phase 1; no switch.**
+- S3 cannot reach 6 gameday pairs, because the shadow made no pull after 10/12.
+- S4 and S5 are STOP as written.
+- The trial ends **10/30** and no post-trial terms are written (S7d).
+- **Consequence for P61:** P61's capture runs on the same trial key, so prop-close capture also ends on 10/30 unless the user buys access.
+
+### Recommendation
+
+**The one engine change for the week-7 → week-8 boundary is P74**, subject to G1 to G3 and G5 on the weeks 1-6 replay. The others are:
+
+| Item | Kind | Counts against the limit? |
+|---|---|---|
+| Fix (b) | engine | subsumed by P74; not recommended separately |
+| Stale-list detector | data | user's call |
+| P70 | data | no (served-identical by its gate) |
+| P75 | ops | no |
+| Fix (c) | tooling | no |
+| P71 | ops | no |
+| P58 | ops | no |
+| P69 | ops (rule) | no |
+
+None of these is built until the user says so.
+
+---
+
 ## 2026-10-25 — PRELIMINARY week-7 run (12 games still to kick off), ~10:00 CDT
 
 The data used:
