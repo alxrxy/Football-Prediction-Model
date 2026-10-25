@@ -165,10 +165,9 @@ QB_ZERO_SNAP_RULE = os.getenv("QB_ZERO_SNAP_RULE", "1").strip().lower() in ("1",
 # Retired 2026-10-15: 2026_05_BUF_LA, graded (an exception to the rule above; see the log).
 # 2026-10-18 (user, exception to the rule above): the week-6 noon games. ESPN's lists are week 5's copied
 # forward (each holds all of that team's week-5 list: CLE 7/7, NYG 6/6, NYJ 6/6, NE 6/6, PIT 7/7, CHI 6/7,
-# TB 7/10, IND 4/5); see the log. Revert once these games are graded.
-INACTIVES_SKIP_GAMES: set[str] = {
-    "2026_06_BAL_CLE", "2026_06_CHI_ATL", "2026_06_NO_NYG", "2026_06_NYJ_NE", "2026_06_TEN_IND",
-}
+# TB 7/10, IND 4/5); see the log. Retired 2026-10-25: all five (2026_06_BAL_CLE, _CHI_ATL, _NO_NYG,
+# _NYJ_NE, _TEN_IND) graded at 09:40 CDT; see the log.
+INACTIVES_SKIP_GAMES: set[str] = set()
 # CAR @ PHI and PIT @ TB left the skip at 11:53 CDT 10/18: their stored lists were replaced with the teams'
 # official articles (buccaneers.com, philadelphiaeagles.com; source 'official_team_article').
 # DAL @ GB (SNF) never stored ESPN's week-6 lists (stale: DAL 10 names, 9 from week 5; GB 4/4 of week 5 plus

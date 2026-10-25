@@ -143,9 +143,14 @@ PRELIMINARY_WEEKS = {
                 "Friday reports (hand-checked file 2026-wk06.csv plus nflverse), play-by-play through SEA @ DEN and "
                 "fresh game lines. This game has not yet been re-run on its own official inactive list, so the "
                 "numbers can still change at its window refresh."),
+    (2026, 7): ("PRELIMINARY · OFFICIAL REPORTS, INACTIVES PENDING: predicted and simulated on Sun 10/25 ~10:00 CDT "
+                "from the official Friday injury reports (nflverse only; no hand-checked file, no ESPN feed, no "
+                "inactive lists), ratings through week-6 finals and fresh game lines. No game has been re-run on its "
+                "official inactive list, so the numbers can still change at its window refresh."),
 }
 # The short chip shown on each such game; "PRELIMINARY" when a week has none.
-PRELIMINARY_CHIPS = {(2026, 6): "OFFICIAL REPORTS IN · INACTIVES PENDING"}
+PRELIMINARY_CHIPS = {(2026, 6): "OFFICIAL REPORTS IN · INACTIVES PENDING",
+                     (2026, 7): "PRELIMINARY · INACTIVES PENDING"}
 # Games the week's label does not fit: (notice, chip). WAS @ SF is not in 2026-wk06.csv.
 PRELIMINARY_GAMES = {
     "2026_06_WAS_SF": ("PRE-INACTIVES, official reports pending: predicted and simulated on Sun 10/18 ~08:30Z from "
