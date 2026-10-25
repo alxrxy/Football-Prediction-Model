@@ -37,6 +37,7 @@ from . import config, db
 from .features import latest_injury_report, parse_dt
 from .ingest_inactives import CORE, _get, impossible_list
 from .ingest_injuries import _resolve_team, player_key
+from .stale_inactives import previous_lists, stale_reasons
 
 WINDOW_HOURS = 3.0
 SCHEDULE_MAX_AGE_HOURS = 6.0
@@ -147,6 +148,7 @@ def probe(store_factory, now: datetime, out_dir: Path = OUT_DIR, get=_get) -> li
     store = store_factory()
     try:
         report = latest_injury_report(store.select("injuries", {"sport": "nfl"}))
+        stored_lists = store.select("inactives", {"sport": "nfl"})
     finally:
         store.close()
 
@@ -154,6 +156,7 @@ def probe(store_factory, now: datetime, out_dir: Path = OUT_DIR, get=_get) -> li
     records = []
     for season, week in sorted({(g["season"], g["week"]) for g in window}):
         wanted = {(g["home_team"], g["away_team"]): g for g in window if (g["season"], g["week"]) == (season, week)}
+        previous = previous_lists(stored_lists, season, week)
         code, sb = get(f"{config.ESPN_NFL}/scoreboard", params={"week": week, "seasontype": 2, "dates": season})
         if not sb:
             records.append({"read_at": now.isoformat(), "season": season, "week": week,
@@ -180,6 +183,8 @@ def probe(store_factory, now: datetime, out_dir: Path = OUT_DIR, get=_get) -> li
                 ruled = _ruled_out(report, team)
                 ruled_rows = [{**v, "on_list": k in listed} for k, v in ruled.items()]
                 non_ir = [r for r in ruled_rows if r["status"] != "ir"]
+                lead_min = (kickoff - now).total_seconds() / 60 if kickoff else None
+                stale = stale_reasons(sorted(listed), lead_min, previous.get(team))
                 records.append({
                     "read_at": now.isoformat(), "game_id": game["game_id"], "team": team,
                     "kickoff": kickoff.isoformat() if kickoff else None,
@@ -189,8 +194,10 @@ def probe(store_factory, now: datetime, out_dir: Path = OUT_DIR, get=_get) -> li
                     "flagged": flagged, "ruled_out": ruled_rows,
                     "coverage": {"ruled": len(ruled_rows), "listed": sum(r["on_list"] for r in ruled_rows),
                                  "ruled_excl_ir": len(non_ir), "listed_excl_ir": sum(r["on_list"] for r in non_ir)},
+                    "stale_warnings": stale,   # warn-only (src/stale_inactives.py); nothing is skipped
                 })
     names.save()
+    _log_stale(out_dir, [r for r in records if r.get("stale_warnings")])
 
     day_dir = out_dir / now.strftime("%Y-%m-%d")
     day_dir.mkdir(parents=True, exist_ok=True)
@@ -198,6 +205,19 @@ def probe(store_factory, now: datetime, out_dir: Path = OUT_DIR, get=_get) -> li
         for r in records:
             fh.write(json.dumps(r) + "\n")
     return records
+
+
+def _log_stale(out_dir: Path, flagged: list[dict]) -> None:
+    """Warn-only: one line per flagged list in out_dir/stale_warnings.log, and on the console."""
+    if not flagged:
+        return
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with (out_dir / "stale_warnings.log").open("a", encoding="utf-8") as fh:
+        for r in flagged:
+            line = (f"{r['read_at']} {r['game_id']} {r['team']} list {r['list_size']} T-{r['lead_hours']:.2f}h: "
+                    f"STALE? {'; '.join(r['stale_warnings'])} (warn-only, not skipped)")
+            fh.write(line + "\n")
+            print(f"[probe] {line}")
 
 
 def main() -> int:
