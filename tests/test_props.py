@@ -168,6 +168,18 @@ def test_started_games_not_ranked():
     check("but its rows are kept", [r["game_id"] for r in out["started"]], ["done"])
 
 
+def test_carried_forward_stub_is_skipped():
+    """P75: a targeted pull carries a never-pulled game forward as a stub with only `pulled_at`."""
+    book = {"dk": {"point": 60.5, "over": -110, "under": -110}}
+    lines = {"games": {
+        "stub": {"pulled_at": "2026-10-18T16:24:00+00:00"},
+        "real": {"home": "BUF", "away": "DET", "kickoff": "2026-09-20T17:00:00+00:00",
+                 "players": {"Star Receiver": {"player_reception_yds": book}}}}}
+    from datetime import datetime, timezone
+    out = rank(lines, {"stub": _sim(75.0), "real": _sim(75.0)}, now=datetime(2026, 9, 18, 12, tzinfo=timezone.utc))
+    check("the stub does not crash rank and is not ranked", [r["game_id"] for r in out["ranked"]], ["real"])
+
+
 def test_pick_alt():
     q = {"p10": 150, "p25": 180, "median": 220, "p75": 260, "p90": 290}   # passing yards
     row = {"pick": "under", "line": 240.5}

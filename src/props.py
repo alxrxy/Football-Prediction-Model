@@ -420,6 +420,10 @@ def rank(lines: dict, sims: dict[str, dict], now: datetime | None = None) -> dic
     now = now or datetime.now(timezone.utc)
     rows, unmatched, unprojected = [], 0, 0
     for gid, g in (lines.get("games") or {}).items():
+        # P75: a targeted pull carries a never-pulled game forward as a stub
+        # holding only `pulled_at`; it has nothing to rank.
+        if not g.get("players"):
+            continue
         sim = sims.get(gid)
         box = (sim or {}).get("box_score") or {}
         players = [(side, p) for side in ("home", "away") for p in (box.get(side) or {}).get("players") or []]

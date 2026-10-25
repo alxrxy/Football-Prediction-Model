@@ -124,7 +124,7 @@ def run(cache_minutes: int | None = None, only: set[str] | None = None) -> dict:
 
     config.ensure_dirs()
     TD_LINES_JSON.write_text(json.dumps(out), encoding="utf-8")
-    priced = sum(len(g["players"]) for g in out["games"].values())
+    priced = sum(len(g.get("players") or {}) for g in out["games"].values())   # P75: stubs have no players
     empty = sorted(g[8:] for g, v in out["games"].items() if not v.get("players"))
     print(f"[td-props] week {out['week']}: {len(out['games'])}/{len(games)} games, {priced} players priced "
           f"({live_calls} live call(s), {carried} carried forward); "
