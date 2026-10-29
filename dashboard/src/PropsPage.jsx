@@ -135,7 +135,7 @@ export default function PropsPage({ tabs = null }) {
                   <PropCard key={`${r.game_id}-${r.player}-${r.market}`} r={r} />
                 ))}
               </ol>
-              <MoreProps more={data.more || []} held={data.held_out || []} maxGap={data.max_gap}
+              <MoreProps more={data.more || []} held={data.held_out || []} maxGap={data.max_gap} minGap={data.min_gap}
                 structural={data.structural_holdouts || []} />
               <P62Compare />
             </>
@@ -225,9 +225,10 @@ function PropCard({ r }) {
 
 // Everything below the top list: the rest of the ranking, then the props held
 // out for gaps too big to believe.
-function MoreProps({ more, held, maxGap, structural }) {
+function MoreProps({ more, held, maxGap, minGap, structural }) {
   if (!more.length && !held.length) return null
-  const gapHeld = held.filter((r) => r.held_reason !== 'structural')
+  const gapHeld = held.filter((r) => r.held_reason === 'gap')
+  const smallHeld = held.filter((r) => r.held_reason === 'min_gap')
   const defectHeld = held.filter((r) => r.held_reason === 'structural')
   const row = (r, rank) => (
     <tr key={`${r.game_id}-${r.player}-${r.market}`}>
@@ -282,6 +283,14 @@ function MoreProps({ more, held, maxGap, structural }) {
               </tr>
             ) : null}
             {gapHeld.map((r) => row(r, '—'))}
+            {smallHeld.length ? (
+              <tr className="group">
+                <td colSpan={8}>
+                  Held out · gaps under {Math.round((minGap ?? 0.1) * 100)} points (filter added 2026-10-29 on four weeks of graded props: unvalidated)
+                </td>
+              </tr>
+            ) : null}
+            {smallHeld.map((r) => row(r, '—'))}
             {defectHeld.length ? (
               <tr className="group">
                 <td colSpan={8}>

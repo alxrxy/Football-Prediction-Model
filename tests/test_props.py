@@ -86,7 +86,7 @@ def test_rank():
     check("ranked by gap: receiving yards over first", (top["player"], top["market"], top["pick"]),
           ("Star Receiver", "player_reception_yds", "over"))
     check("gap = raw model minus market", round(top["gap"], 3), round(top["p_model_raw"] - top["p_market"], 3))
-    check(f"gaps over {MAX_GAP:.0%} held out", [r["player"] for r in out["held_out"]], ["Bad Role Back"])
+    check(f"gaps over {MAX_GAP:.0%} held out", [r["player"] for r in out["held_out"] if r["held_reason"] == "gap"], ["Bad Role Back"])
     check("unmatched names counted", out["unmatched_players"], 1)
     check("no defect note by default", top.get("defect_note"), None)
 
@@ -121,6 +121,16 @@ def test_qb_rushing_ranked_with_its_own_offset():
     book = {"dk": {"point": 19.5, "over": -110, "under": -110}}
     lines = {"games": {"g1": {"home": "BUF", "away": "DET", "kickoff": "k", "players": {
         "Pocket Passer": {"player_rush_yds": book}, "Lead Back": {"player_rush_yds": book}}}}}
+    min_gap, props.MIN_GAP = props.MIN_GAP, 0.0   # these fixtures carry a 1.6-point gap; F2 is tested below
+    try:
+        _qb_rushing_checks(lines, sim)
+    finally:
+        props.MIN_GAP = min_gap
+
+
+def _qb_rushing_checks(lines, sim):
+    from src import config, props  # noqa: F401
+
     out = rank(lines, {"g1": sim})
     check("QB rushing is ranked again (P24)", sorted(r["player"] for r in out["ranked"]), ["Lead Back", "Pocket Passer"])
     check("nothing held out as an engine defect", out["held_out"], [])
@@ -285,3 +295,17 @@ if __name__ == "__main__":
         fn()
     print(f"\n{PASS} passed, {FAIL} failed")
     raise SystemExit(1 if FAIL else 0)
+
+
+def test_min_gap_holds_small_gaps():
+    """F2 (2026-10-29): a raw gap under MIN_GAP is held out as 'min_gap', not ranked."""
+    from src import props
+
+    lines = {"games": {"g1": {"home": "BUF", "away": "DET", "kickoff": "k", "players": {
+        "Star Receiver": {"player_reception_yds": {"dk": {"point": 60.5, "over": -110, "under": -110}},
+                          "player_receptions": {"dk": {"point": 5.5, "over": -110, "under": -110}}}}}}}
+    out = rank(lines, {"g1": _sim(75.0)})
+    gaps = {r["market"]: (r["gap"], r.get("held_reason")) for r in out["ranked"] + out["held_out"]}
+    check("big gap ranked", gaps["player_reception_yds"][1], None)
+    check("receptions at a coin flip held as min_gap", gaps["player_receptions"][1], "min_gap")
+    check("min_gap rows never ranked", all(r["gap"] >= props.MIN_GAP for r in out["ranked"]), True)

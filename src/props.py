@@ -58,6 +58,10 @@ MARKETS = {
 }
 TOP_N = 25
 MAX_GAP = 0.25          # model vs market gaps past this are held out as likely usage misses
+# Gaps under this are held out of the ranking (filter F2, 2026-10-29): walk-forward on the served lists of
+# weeks 4-7, the rows it keeps returned +0.2% against -10.3% for all rows (+10.5 pp, game-bootstrap 95% CI
+# +2.7 to +18.0, 308 kept test rows). Four weeks of data: the dashboard labels it unvalidated.
+MIN_GAP = 0.10
 NAME_MATCH = 0.88
 
 # Alt lines: for each top prop, an easier alternate line on the same side
@@ -494,10 +498,12 @@ def rank(lines: dict, sims: dict[str, dict], now: datetime | None = None) -> dic
         r.pop("_structural")
     for r in rows:
         why = r.pop("_structural")
-        r["held_reason"] = "structural" if why else "gap" if r["gap"] > MAX_GAP else None
+        r["held_reason"] = ("structural" if why else "gap" if r["gap"] > MAX_GAP
+                            else "min_gap" if r["gap"] < MIN_GAP else None)
         if why:
             r["held_note"] = why
-    held = sorted((r for r in rows if r["held_reason"]), key=lambda r: (r["held_reason"] != "gap", -r["gap"]))
+    order = {"gap": 0, "min_gap": 1, "structural": 2}
+    held = sorted((r for r in rows if r["held_reason"]), key=lambda r: (order[r["held_reason"]], -r["gap"]))
     ranked = sorted((r for r in rows if not r["held_reason"]), key=lambda r: -r["gap"])
     for i, r in enumerate(ranked, 1):
         r["rank"] = i
@@ -617,6 +623,7 @@ def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = Fa
         "lines_refreshed_games": [f"{g['away']} @ {g['home']}" for gid in lines.get("refreshed_games") or []
                                   if (g := (lines.get("games") or {}).get(gid))],
         "model_weight": config.MODEL_MARKET_WEIGHT, "edge_buffer": config.EDGE_BUFFER, "max_gap": MAX_GAP,
+        "min_gap": MIN_GAP,
         "priced": len(result["ranked"]) + len(result["held_out"]),
         "unmatched_players": result["unmatched_players"],
         "unprojected_players": result["unprojected_players"],

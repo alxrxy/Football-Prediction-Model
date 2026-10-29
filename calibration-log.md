@@ -152,6 +152,72 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-29 — Props: graded inventory weeks 4-7, where picks lose, filter F2 (gap < 0.10 held out) APPLIED to the ranking, labelled unvalidated
+
+**Inventory** (`calibration/props_inventory.py`): for each game, the last archived list generated before kickoff (P67 rule), with every row (top 25 + more), graded against nflverse `stats_player_week_2026`. A snap-count row with no stat line is graded as 0; no snaps means void.
+- **897 rows in 41 games: 887 graded W/L, 0 pushes, 10 void.**
+- **Weeks 1-3: no served list was archived** (P67 starts at week 4), so they cannot be inventoried. Week 6 has 1 game (P75).
+- P61 / Sportradar closes are not used here: no prop CLV under the amended definitions.
+
+| Cut | n | Win % | ROI (1u flat at the served price) |
+|---|---|---|---|
+| Top 25, by week (4 / 5 / 6 / 7) | 23 / 60 / 25 / 25 | 47.8 / 38.3 / 52.0 / 76.0 | −9.3 / −27.7 / +0.3 / +46.2 % |
+| "More", by week | 301 / 174 / 10 / 269 | 49.8 / 44.8 / 30.0 / 48.3 | −3.4 / −15.6 / −45.3 / −7.9 % |
+| Pass yds / rec yds / receptions / rush yds | 73 / 340 / 313 / 161 | 57.5 / 46.5 / 50.2 / 43.5 | +8.8 / −11.9 / −2.7 / −17.6 % |
+| Over / under | 372 / 515 | 44.6 / 50.7 | −13.5 / −3.9 % |
+| Raw gap 0-.05 / .05-.10 / .10-.15 / .15-.20 / .20-.25 | 237 / 191 / 172 / 171 / 116 | 44.7 / 40.8 / 51.2 / 52.0 / 56.9 | −14.4 / −22.1 / −3.4 / +1.0 / +8.7 % |
+| Rank 1-10 / 11-25 / 26-50 / 51-100 / 100+ | 54 / 79 / 102 / 171 / 481 | 55.6 / 45.6 / 55.9 / 50.9 / 45.1 | +5.2 / −12.6 / +6.3 / −1.2 / −14.1 % |
+| Price ≤ −140 / −139..−115 / −114..−101 / +101..+130 / > +130 | 82 / 89 / 572 / 102 / 32 | 51.2 / 43.8 / 48.4 / 48.0 / 46.9 | −16.9 / −21.4 / −8.1 / +3.0 / +18.3 % |
+| List age at kickoff < 3 h / 3-12 h / 12-48 h / > 48 h | 387 / 117 / 16 / 367 | 48.8 / 46.2 / 62.5 / 47.4 | −7.4 / −12.1 / +19.6 / −8.5 % |
+| Rush-yds over / rec-yds over / receptions over / pass-yds over | 101 / 133 / 104 / 34 | 39.6 / 42.9 / 45.2 / 64.7 | −24.8 / −18.8 / −7.6 / +22.2 % |
+
+**Where picks lose.**
+- Small gaps lose most: below 0.10 the rows win 42.9%, and above 0.10 they win 53.0%. The ranking's own order carries information.
+- Overs lose, rush-yds and rec-yds overs most of all (the P30 / P31 under-bias family). The F1 / F3 filters on those did not pass their walk-forward, below.
+- **Stale lines: no effect.** Lists served more than 48 h before kickoff did no worse than lists served inside 3 h.
+- **Wrong-team bugs: none found in served data** (see the trades entry: Jonnu Smith was GB in every served file). 10 voids: players with no snaps that week.
+- Rows share games and players, so the effective n is well below 887.
+
+**Walk-forward** (criteria in the entry above, written before the run; `calibration/props_walkforward.py`). Test weeks 5-7, 563 graded rows, all-rows ROI **−10.3%**.
+
+| Filter | Selected for weeks 5 / 6 / 7 (training gain) | Kept test rows | Kept ROI | Diff | Game-bootstrap 95% CI | Verdict |
+|---|---|---|---|---|---|---|
+| F1 drop rush-yds overs | no / no / no (+2.5, +2.0, +2.1 pp) | 563 | −10.3% | 0 | — | not selected; proposal only |
+| **F2 drop gap < 0.10** | yes / yes / yes (+7.3, +6.7, +6.4) | 308 | **+0.2%** | **+10.5 pp** | **+2.7 to +18.0** | **passes A, B, C** |
+| F3 drop all overs | no / no / no | 563 | −10.3% | 0 | — | not selected |
+| F4 F1 + F2 | yes / yes / yes | 268 | +1.0% | +11.3 pp | +3.0 to +19.7 | passes, but its F1 half never passed alone |
+
+**Applied: F2 only** (the criteria did not rank F2 against F4, so I took the one with no unvalidated part).
+- `src/props.py` `MIN_GAP = 0.10`: a raw gap under it gets `held_reason: "min_gap"` and is listed among the held rows, never ranked. The payload carries `min_gap`.
+- The dashboard shows those rows in their own held group, labelled *"filter added 2026-10-29 on four weeks of graded props: unvalidated"*.
+- The game engine is untouched. The top 25 is barely affected (served top-25 gaps run about 0.20-0.25); the "more" list shrinks.
+- New test `test_min_gap_holds_small_gaps`; existing fixtures pinned to `MIN_GAP = 0` where they test other things. Suite 312.
+- "Positive ROI" is not established: F2's kept rows are +0.2%, which is break-even, not an edge. All F2 shows is that the dropped rows were the losing ones.
+
+**P75-style bugs:** none new found in the stored lists this pass (no stubs, no KeyError, no team mismatch). Not checked: alt-line rows.
+
+---
+
+## 2026-10-29 — Props ranking filters: criteria, written BEFORE the walk-forward runs
+
+The inventory (next entry up, once written) suggested four filters. They are fixed here, before any held-out test:
+- **F1:** drop rush-yds overs.
+- **F2:** drop rows with raw gap < 0.10.
+- **F3:** drop all overs.
+- **F4:** F1 + F2.
+
+**Walk-forward:**
+- For each test week W in 5, 6, 7, a filter is "selected" for W only if, on weeks < W, the ROI of the rows it keeps beats the ROI of all rows by ≥ 5 pp.
+- The test unit is the flat 1u result of every graded row of week W (the last served list per game, top 25 + more).
+- A filter is applied to the ranking only if all three hold:
+  - (A) pooled over test weeks 5-7, the rows it keeps (when selected) have a higher ROI than all rows;
+  - (B) a bootstrap over games (5,000) gives a 95% CI for that ROI difference that excludes 0;
+  - (C) it keeps ≥ 100 test rows.
+- Otherwise it is logged as a proposal or labelled **unvalidated**, and the ranking is unchanged.
+- Week 4 is training only. Weeks 1-3 have no archived served list (P67 starts at week 4), so they are not in the sample.
+
+---
+
 ## 2026-10-29 — Trades since week 1: table, injury-layer diagnosis, Questionable rows NOT applied (they mis-charge in all 7 cases); P78 logged; props / TD rosters verified current
 
 **Trades in the regular season** (sources: [NFL.com league tracker](https://www.nfl.com/news/nfl-trade-deadline-track-every-move-since-start-of-2026-regular-season), cross-checked with [ProFootballMania's tracker](https://profootballmania.com/nfl-trade-tracker/); team moves confirmed against nflverse 2026 snap counts and today's nflverse depth charts). **The deadline is 11/10 at 4 p.m. ET, so the deadline wave has not happened yet.** nflverse's `trades.csv` stops at 2026-04-17 and has no in-season rows.
