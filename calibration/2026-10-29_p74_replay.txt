@@ -1,0 +1,95 @@
+removed charges: 46  pts 136.89  (no-snap/default-share subset 37)
+  wk1 2026_01_ATL_PIT   PIT  Will Howard            out           2.10 snaps    0 | expected Aaron Rodgers | actual starter aaron rodgers | G1 ok G2 ok
+  wk1 2026_01_BAL_IND   IND  Riley Leonard          out           2.36 snaps    0 | expected Daniel Jones | actual starter daniel jones | G1 ok G2 ok
+  wk1 2026_01_BAL_IND   BAL  Joe Fagnano            out           2.10 snaps    0 | expected Lamar Jackson | actual starter lamar jackson | G1 ok G2 ok
+  wk1 2026_01_CHI_CAR   CAR  Haynes King            out           2.10 snaps    0 | expected Bryce Young | actual starter bryce young | G1 ok G2 ok
+  wk1 2026_01_CHI_CAR   CHI  Miller Moss            out           2.10 snaps    0 | expected Caleb Williams | actual starter caleb williams | G1 ok G2 ok
+  wk1 2026_01_CLE_JAX   JAX  Quinn Ewers            out           2.10 snaps    0 | expected Trevor Lawrence | actual starter trevor lawrence | G1 ok G2 ok
+  wk1 2026_01_CLE_JAX   CLE  Taylen Green           out           2.10 snaps    0 | expected Shedeur Sanders | actual starter deshaun watson | G1 ok G2 FAIL
+  wk1 2026_01_NO_DET    NO   Zach Wilson            out           2.10 snaps    0 | expected Tyler Shough | actual starter tyler shough | G1 ok G2 ok
+  wk2 2026_02_CAR_ATL   ATL  Michael Penix Jr.      inactive      5.59 snaps    0 | expected Cooper Rush | actual starter cooper rush | G1 ok G2 ok
+  wk2 2026_02_CIN_HOU   HOU  Davis Mills            inactive      4.23 snaps    0 | expected C.J. Stroud | actual starter cj stroud | G1 ok G2 ok
+  wk2 2026_02_CLE_TB    CLE  Shedeur Sanders        inactive      5.50 snaps    0 | expected Deshaun Watson | actual starter deshaun watson | G1 ok G2 ok
+  wk2 2026_02_IND_KC    IND  Riley Leonard          inactive      2.36 snaps    0 | expected Daniel Jones | actual starter daniel jones | G1 ok G2 ok
+  wk2 2026_02_LV_LAC    LV   Aidan O'Connell        questionable  3.69 snaps    0 | expected Kirk Cousins | actual starter kirk cousins | G1 ok G2 ok
+  wk2 2026_02_MIN_CHI   MIN  J.J. McCarthy          inactive      5.50 snaps    0 | expected Carson Wentz | actual starter carson wentz | G1 ok G2 ok
+  wk2 2026_02_NO_BAL    BAL  Tyler Huntley          inactive      3.56 snaps    0 | expected Lamar Jackson | actual starter lamar jackson | G1 ok G2 ok
+  wk2 2026_02_NO_BAL    NO   Spencer Rattler        inactive      4.90 snaps    0 | expected Tyler Shough | actual starter tyler shough | G1 ok G2 ok
+  wk2 2026_02_SEA_ARI   SEA  Sam Darnold            out           0.60 snaps    0 | expected Drew Lock | actual starter drew lock | G1 ok G2 ok
+  wk3 2026_03_ARI_SF    ARI  Carson Beck            inactive      2.10 snaps    0 | expected Jacoby Brissett | actual starter jacoby brissett | G1 ok G2 ok
+  wk3 2026_03_ATL_GB    ATL  Michael Penix Jr.      inactive      5.59 snaps 71.0 | expected Cooper Rush | actual starter michael penix | G1 ok G2 ok
+  wk3 2026_03_BAL_DAL   BAL  Tyler Huntley          inactive      3.56 snaps    0 | expected Lamar Jackson | actual starter lamar jackson | G1 ok G2 ok
+  wk3 2026_03_CAR_CLE   CLE  Shedeur Sanders        inactive      5.50 snaps  1.0 | expected Deshaun Watson | actual starter deshaun watson | G1 ok G2 ok
+  wk3 2026_03_HOU_IND   IND  Riley Leonard          inactive      2.36 snaps    0 | expected Daniel Jones | actual starter daniel jones | G1 ok G2 ok
+  wk3 2026_03_HOU_IND   HOU  Davis Mills            inactive      4.23 snaps    0 | expected C.J. Stroud | actual starter cj stroud | G1 ok G2 ok
+  wk3 2026_03_KC_MIA    MIA  Brady Cook             inactive      2.10 snaps    0 | expected Malik Willis | actual starter malik willis | G1 ok G2 ok
+  wk3 2026_03_LAC_BUF   LAC  Trey Lance             inactive      2.27 snaps    0 | expected Justin Herbert | actual starter justin herbert | G1 ok G2 ok
+  wk3 2026_03_LA_DEN    DEN  Jarrett Stidham        inactive      3.18 snaps    0 | expected Bo Nix | actual starter bo nix | G1 ok G2 ok
+  wk3 2026_03_LV_NO     NO   Spencer Rattler        inactive      4.90 snaps    0 | expected Tyler Shough | actual starter tyler shough | G1 ok G2 ok
+  wk3 2026_03_LV_NO     LV   Aidan O'Connell        inactive      4.92 snaps    0 | expected Kirk Cousins | actual starter kirk cousins | G1 ok G2 ok
+  wk3 2026_03_MIN_TB    MIN  J.J. McCarthy          inactive      5.50 snaps    0 | expected Carson Wentz | actual starter kyler murray | G1 ok G2 FAIL
+  wk3 2026_03_NE_JAX    NE   Behren Morton          inactive      2.10 snaps    0 | expected Drake Maye | actual starter drake maye | G1 ok G2 ok
+  wk3 2026_03_PHI_CHI   PHI  Cole Payton            inactive      2.10 snaps    0 | expected Jalen Hurts | actual starter jalen hurts | G1 ok G2 ok
+  wk3 2026_03_SEA_WAS   SEA  Sam Darnold            inactive      0.60 snaps 67.0 | expected Drew Lock | actual starter sam darnold | G1 ok G2 ok
+  wk4 2026_04_ARI_NYG   NYG  Jaxson Dart            ir            3.36 snaps    0 | expected Jameis Winston | actual starter jameis winston | G1 ok G2 ok
+  wk4 2026_04_KC_LV     LV   Aidan O'Connell        questionable  2.21 snaps    0 | expected Kirk Cousins | actual starter kirk cousins | G1 ok G2 ok
+  wk4 2026_04_LAC_SEA   LAC  Trey Lance             questionable  1.02 snaps    0 | expected Justin Herbert | actual starter justin herbert | G1 ok G2 ok
+  wk4 2026_04_PIT_CLE   CLE  Taylen Green           out           2.10 snaps    0 | expected Deshaun Watson | actual starter deshaun watson | G1 ok G2 ok
+  wk5 2026_05_BUF_LA    LA   Ty Simpson             out           2.10 snaps    0 | expected Matthew Stafford | actual starter matthew stafford | G1 ok G2 ok
+  wk5 2026_05_CLE_NYJ   CLE  Dillon Gabriel         ir            3.37 snaps    0 | expected Deshaun Watson | actual starter deshaun watson | G1 ok G2 ok
+  wk5 2026_05_DEN_LAC   LAC  Trey Lance             out           2.27 snaps    0 | expected Justin Herbert | actual starter justin herbert | G1 ok G2 ok
+  wk5 2026_05_DEN_LAC   DEN  Sam Ehlinger           inactive      2.10 snaps    0 | expected Bo Nix | actual starter bo nix | G1 ok G2 ok
+  wk5 2026_05_DET_ARI   ARI  Carson Beck            inactive      2.10 snaps    0 | expected Jacoby Brissett | actual starter jacoby brissett | G1 ok G2 ok
+  wk5 2026_05_SF_SEA    SEA  Drew Lock              inactive      5.70 snaps    0 | expected Sam Darnold | actual starter sam darnold | G1 ok G2 ok
+  wk5 2026_05_SF_SEA    SF   Kurtis Rourke          inactive      2.10 snaps    0 | expected Brock Purdy | actual starter brock purdy | G1 ok G2 ok
+  wk6 2026_06_CHI_ATL   CHI  Caleb Williams         questionable  1.12 snaps 77.0 | expected Tyson Bagent | actual starter caleb williams | G1 ok G2 ok
+  wk6 2026_06_WAS_SF    WAS  Marcus Mariota         out           3.22 snaps    0 | expected Jayden Daniels | actual starter jayden daniels | G1 ok G2 ok
+  wk7 2026_07_KC_SEA    SEA  Jalen Milroe           out           0.12 snaps    0 | expected Sam Darnold | actual starter sam darnold | G1 ok G2 ok
+
+G1 PASS (46/46)   G2 FAIL (44/46)
+
+G4 changed games:
+  2026_01_ATL_PIT   PIT -Will Howard 2.10                    margin +4.8 -> +6.9 actual 7 | abs err 2.2 -> 0.09999999999999964 | ATS L -> W
+  2026_01_BAL_IND   IND -Riley Leonard 2.36; BAL -Joe Fagnano 2.10 margin +5.9 -> +6.2 actual -18 | abs err 23.9 -> 24.16 | ATS L -> L
+  2026_01_NO_DET    NO -Zach Wilson 2.10                     margin +9.0 -> +6.9 actual 1 | abs err 8.03 -> 5.93 | ATS L -> W
+  2026_02_CAR_ATL   ATL -Michael Penix Jr. 5.16              margin +1.8 -> +7.0 actual -31 | abs err 32.83 -> 37.99 | ATS L -> L
+  2026_02_CIN_HOU   HOU -Davis Mills 4.23                    margin +8.2 -> +12.5 actual -14 | abs err 22.240000000000002 -> 26.47 | ATS L -> L
+  2026_02_CLE_TB    CLE -Shedeur Sanders 5.50                margin +11.1 -> +5.6 actual -4 | abs err 15.08 -> 9.58 | ATS L -> W
+  2026_02_IND_KC    IND -Riley Leonard 2.36                  margin +6.4 -> +4.1 actual 3 | abs err 3.41 -> 1.0500000000000007 | ATS L -> W
+  2026_02_LV_LAC    LV -Aidan O'Connell 3.69                 margin +15.7 -> +12.0 actual -12 | abs err 27.66 -> 23.97 | ATS L -> L
+  2026_02_MIN_CHI   MIN -J.J. McCarthy 5.50                  margin +9.5 -> +4.0 actual -6 | abs err 15.46 -> 9.96 | ATS L -> W
+  2026_02_NO_BAL    BAL -Tyler Huntley 3.56; NO -Spencer Rattler 4.90 margin +7.3 -> +6.0 actual -7 | abs err 14.3 -> 12.959999999999999 | ATS W -> W
+  2026_02_SEA_ARI   SEA -Sam Darnold 0.60                    margin -9.4 -> -10.0 actual -24 | abs err 14.63 -> 14.030000000000001 | ATS W -> W
+  2026_03_ARI_SF    ARI -Carson Beck 2.10                    margin +10.5 -> +8.4 actual 6 | abs err 4.470000000000001 -> 2.370000000000001 | ATS L -> L
+  2026_03_ATL_GB    ATL -Michael Penix Jr. 4.32              margin +12.8 -> +8.5 actual -21 | abs err 33.85 -> 29.53 | ATS L -> L
+  2026_03_BAL_DAL   BAL -Tyler Huntley 3.56                  margin -2.3 -> -5.9 actual -3 | abs err 0.7000000000000002 -> 2.8599999999999994 | ATS W -> L
+  2026_03_CAR_CLE   CLE -Shedeur Sanders 5.50                margin -1.5 -> +4.0 actual 3 | abs err 4.51 -> 0.9900000000000002 | ATS W -> W
+  2026_03_HOU_IND   IND -Riley Leonard 2.36; HOU -Davis Mills 3.57 margin +1.9 -> +0.7 actual 2 | abs err 0.1200000000000001 -> 1.3300000000000005 | ATS W -> W
+  2026_03_KC_MIA    MIA -Brady Cook 2.10                     margin -10.5 -> -8.4 actual -14 | abs err 3.539999999999999 -> 5.639999999999999 | ATS W -> L
+  2026_03_LAC_BUF   LAC -Trey Lance 2.27                     margin +13.9 -> +11.6 actual 8 | abs err 5.91 -> 3.6400000000000006 | ATS W -> W
+  2026_03_LA_DEN    DEN -Jarrett Stidham 3.18                margin -4.0 -> -0.9 actual 4 | abs err 8.05 -> 4.869999999999999 | ATS L -> W
+  2026_03_LV_NO     NO -Spencer Rattler 4.90; LV -Aidan O'Connell 4.66 margin +10.4 -> +10.6 actual -8 | abs err 18.39 -> 18.630000000000003 | ATS L -> L
+  2026_03_MIN_TB    MIN -J.J. McCarthy 5.50                  margin +3.9 -> -1.6 actual -7 | abs err 10.94 -> 5.4399999999999995 | ATS L -> W
+  2026_03_NE_JAX    NE -Behren Morton 2.10                   margin +4.7 -> +2.6 actual 29 | abs err 24.33 -> 26.43 | ATS W -> L
+  2026_03_PHI_CHI   PHI -Cole Payton 2.10                    margin -2.9 -> -5.0 actual 20 | abs err 22.9 -> 25.0 | ATS W -> L
+  2026_03_SEA_WAS   SEA -Sam Darnold 0.60                    margin -15.9 -> -16.6 actual 2 | abs err 17.95 -> 18.55 | ATS L -> L
+  2026_04_ARI_NYG   NYG -Jaxson Dart 3.36                    margin +0.6 -> +4.0 actual 12 | abs err 11.36 -> 8.0 | ATS W -> W
+  2026_04_KC_LV     LV -Aidan O'Connell 2.21                 margin -12.5 -> -10.3 actual -3 | abs err 9.52 -> 7.309999999999999 | ATS L -> L
+  2026_04_LAC_SEA   LAC -Trey Lance 1.02                     margin +13.4 -> +12.3 actual 7 | abs err 6.359999999999999 -> 5.34 | ATS P -> P
+  2026_04_PIT_CLE   CLE -Taylen Green 2.10                   margin -3.2 -> -1.1 actual 3 | abs err 6.16 -> 4.0600000000000005 | ATS L -> W
+  2026_05_BUF_LA    LA -Ty Simpson 2.10                      margin +3.7 -> +5.8 actual -3 | abs err 6.71 -> 8.81 | ATS L -> L
+  2026_05_CLE_NYJ   CLE -Dillon Gabriel 3.37                 margin +2.1 -> -1.2 actual 5 | abs err 2.87 -> 6.24 | ATS W -> L
+  2026_05_DEN_LAC   LAC -Trey Lance 1.73; DEN -Sam Ehlinger 2.10 margin -0.8 -> -1.2 actual -6 | abs err 5.21 -> 4.84 | ATS L -> L
+  2026_05_DET_ARI   ARI -Carson Beck 2.10                    margin -1.3 -> +0.8 actual -24 | abs err 22.67 -> 24.77 | ATS L -> L
+  2026_05_SF_SEA    SEA -Drew Lock 5.70; SF -Kurtis Rourke 2.10 margin +3.4 -> +7.0 actual -3 | abs err 6.37 -> 9.97 | ATS L -> L
+  2026_06_CHI_ATL   CHI -Caleb Williams 1.12                 margin +2.3 -> +1.1 actual -8 | abs err 10.27 -> 9.15 | ATS L -> L
+  2026_06_WAS_SF    WAS -Marcus Mariota 3.22                 margin +9.1 -> +5.9 actual 6 | abs err 3.08 -> 0.14000000000000057 | ATS L -> W
+  2026_07_KC_SEA    SEA -Jalen Milroe 0.12                   margin +5.4 -> +5.5 actual 17 | abs err 11.6 -> 11.48 | ATS W -> W
+week: games changed, |delta| pts, graded, MAE before, MAE after (changed games), ATS W before, after
+  wk1: 3 games, 4.46 pts, graded 3, MAE 11.38 -> 10.06, ATS W 0 -> 2
+  wk2: 8 games, 28.38 pts, graded 8, MAE 18.20 -> 17.00, ATS W 2 -> 5
+  wk3: 13 games, 34.78 pts, graded 13, MAE 11.97 -> 11.18, ATS W 7 -> 5
+  wk4: 4 games, 8.69 pts, graded 4, MAE 8.35 -> 6.18, ATS W 1 -> 2
+  wk5: 5 games, 11.54 pts, graded 5, MAE 8.77 -> 10.93, ATS W 1 -> 0
+  wk6: 2 games, 4.34 pts, graded 2, MAE 6.67 -> 4.65, ATS W 0 -> 1
+  wk7: 1 games, 0.12 pts, graded 1, MAE 11.60 -> 11.48, ATS W 1 -> 1
