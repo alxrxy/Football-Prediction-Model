@@ -199,6 +199,13 @@ def refresh(window: Window, target: date, args) -> None:
             cache_minutes=0 if args.fresh_odds else None,
             only_games={g["game_id"] for g in window.games}))
 
+    # P74 SHADOW (user, 2026-10-29): logs what P74 would change; nothing served reads it.
+    def _p74_shadow():
+        from src import p74_shadow as shadow
+        if window.games:
+            shadow.run(int(window.games[0]["season"]), int(window.games[0]["week"]))
+    step("P74 shadow (log only)", _p74_shadow)
+
     step("simulate", lambda: simulate_nfl.run(
         dates=[target], n=args.sims, quiet=True, upcoming_only=True))
 

@@ -1,0 +1,49 @@
+weeks [5, 6, 7]: removed 31 charges (16.84 pts); kept as long-term 16 (Counter({'ir': 13, 'reserve': 3}))
+R1a played that game: 12/31 = 38.7%  (gate >= 80%)
+R1b removed but did not play AND on official report: 1  (gate 0)
+    {'wk': 7, 'gid': '2026_07_NYG_HOU', 'team': 'HOU', 'player': 'Reed Blankenship', 'status': 'questionable', 'pts': 0.5, 'row_week': 6, 'played': False, 'on_report': True, 'lt': None}
+R2 long-term absences removed: 0  (gate 0)
+removed rows:
+  wk7 2026_07_CIN_BAL   BAL  Elijah Sarratt             out           0.48 rowwk 6 played False on_report False
+  wk7 2026_07_CIN_BAL   CIN  Kyle Dugger                questionable  0.12 rowwk 6 played True on_report False
+  wk7 2026_07_CLE_TEN   TEN  Alontae Taylor             out           1.67 rowwk 6 played False on_report False
+  wk7 2026_07_CLE_TEN   TEN  Jackie Marshall            out           0.46 rowwk 6 played False on_report False
+  wk7 2026_07_CLE_TEN   TEN  Brandon Crenshaw-Dickson   out           0.14 rowwk 6 played False on_report False
+  wk7 2026_07_CLE_TEN   CLE  Parker Brailsford          out           0.52 rowwk 6 played False on_report False
+  wk7 2026_07_DAL_PHI   PHI  Lane Johnson               out           1.80 rowwk 6 played False on_report False
+  wk7 2026_07_DEN_ARI   DEN  Kage Casey                 out           0.63 rowwk 6 played False on_report False
+  wk7 2026_07_DEN_ARI   DEN  Tyler Onyedim              out           0.46 rowwk 6 played False on_report False
+  wk7 2026_07_DEN_ARI   DEN  Dallen Bentley             out           0.32 rowwk 6 played False on_report False
+  wk7 2026_07_GB_DET    GB   Josh Jacobs                out           0.64 rowwk 6 played True on_report False
+  wk7 2026_07_IND_MIN   MIN  Christian Darrisaw         questionable  0.72 rowwk 6 played True on_report False
+  wk7 2026_07_IND_MIN   MIN  Christian Darrisaw         None          0.64 rowwk 6 played True on_report False
+  wk7 2026_07_IND_MIN   MIN  Jordan Addison             questionable  0.54 rowwk 6 played True on_report False
+  wk7 2026_07_IND_MIN   MIN  T.J. Hockenson             questionable  0.25 rowwk 6 played True on_report False
+  wk7 2026_07_KC_SEA    SEA  Jalen Milroe               out           0.12 rowwk 6 played False on_report False
+  wk7 2026_07_MIA_NYJ   NYJ  Jack Heflin                out           0.15 rowwk 6 played False on_report False
+  wk7 2026_07_MIA_NYJ   MIA  Storm Duck                 out           0.59 rowwk 6 played False on_report False
+  wk7 2026_07_MIA_NYJ   MIA  Caleb Douglas              questionable  0.53 rowwk 6 played True on_report False
+  wk7 2026_07_MIA_NYJ   MIA  Michael Taaffe             questionable  0.49 rowwk 6 played True on_report False
+  wk7 2026_07_MIA_NYJ   MIA  Jonah Savaiinaea           questionable  0.46 rowwk 6 played True on_report False
+  wk7 2026_07_NYG_HOU   HOU  Braden Smith               out           0.63 rowwk 6 played True on_report False
+  wk7 2026_07_NYG_HOU   HOU  Nate Thomas                out           0.63 rowwk 6 played False on_report False
+  wk7 2026_07_NYG_HOU   HOU  Reed Blankenship           questionable  0.50 rowwk 6 played False on_report True
+  wk7 2026_07_NYG_HOU   NYG  CJ Okoye                   out           0.35 rowwk 6 played True on_report False
+  wk7 2026_07_SF_ATL    ATL  Ethan Onianwa              out           0.63 rowwk 6 played True on_report False
+  wk7 2026_07_TB_CAR    CAR  Albert Reese IV            out           0.63 rowwk 6 played False on_report False
+  wk7 2026_07_TB_CAR    CAR  TeRah Edwards              out           0.43 rowwk 6 played False on_report False
+  wk7 2026_07_TB_CAR    CAR  Ja'Tavion Sanders          out           0.43 rowwk 6 played False on_report False
+  wk7 2026_07_TB_CAR    TB   DeMonte Capehart           out           0.46 rowwk 6 played False on_report False
+  wk7 2026_07_TB_CAR    TB   Billy Schrauth             out           0.42 rowwk 6 played False on_report False
+R4 changed graded games:
+   (7, '2026_07_CIN_BAL', -0.12, -2.91, -3.03, -22, 19.09, 18.97, 'L', 'W')
+   (7, '2026_07_CLE_TEN', 1.75, -1.44, 0.31, -3, 1.56, 3.31, 'L', 'L')
+   (7, '2026_07_DEN_ARI', -1.41, -1.75, -3.16, -14, 12.25, 10.84, 'L', 'L')
+   (7, '2026_07_GB_DET', -0.64, 5.44, 4.8, 3, 2.4400000000000004, 1.8000000000000007, 'L', 'L')
+   (7, '2026_07_IND_MIN', 2.15, 4.74, 6.89, 6, 1.2599999999999998, 0.8900000000000006, 'W', 'W')
+   (7, '2026_07_KC_SEA', 0.12, 5.4, 5.52, 17, 11.6, 11.48, 'W', 'W')
+   (7, '2026_07_MIA_NYJ', -1.92, 1.02, -0.9, -3, 4.02, 2.0999999999999996, 'W', 'W')
+   (7, '2026_07_NYG_HOU', 1.41, 7.63, 9.04, -6, 13.629999999999999, 15.040000000000001, 'W', 'W')
+   (7, '2026_07_SF_ATL', 0.63, -0.45, 0.18, 9, 9.45, 8.82, 'W', 'W')
+   (7, '2026_07_TB_CAR', 0.61, 2.17, 2.78, -30, 32.17, 32.78, 'W', 'W')
+  wk7: 10 games MAE 10.75 -> 10.60; ATS W 6 -> 7

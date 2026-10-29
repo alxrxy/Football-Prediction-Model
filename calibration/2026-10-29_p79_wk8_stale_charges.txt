@@ -1,0 +1,56 @@
+ALL feed-sourced charges older than the game's week:
+  2026_08_ATL_TB    TB   DeMonte Capehart           out           0.46 from wk6 -> no snaps since
+  2026_08_ATL_TB    TB   Billy Schrauth             out           0.42 from wk6 -> no snaps since
+  2026_08_ATL_TB    ATL  Ethan Onianwa              out           0.63 from wk6 -> no snaps since
+  2026_08_ATL_TB    ATL  Malcolm DeWalt IV          out           0.59 from wk6 -> no snaps since
+  2026_08_ATL_TB    ATL  Yasir Abdullah             ir            0.36 from wk6 -> ir
+  2026_08_BAL_BUF   BAL  Elijah Sarratt             out           0.48 from wk6 -> no snaps since
+  2026_08_BAL_BUF   BAL  Matt Hibner                out           0.32 from wk6 -> no snaps since
+  2026_08_CAR_GB    GB   Micah Parsons              out           1.40 from wk6 -> reserve
+  2026_08_CAR_GB    GB   Josh Jacobs                out           0.64 from wk6 -> would drop
+  2026_08_CAR_GB    CAR  Ikem Ekwonu                out           1.70 from wk6 -> reserve
+  2026_08_CAR_GB    CAR  Cam Jackson                ir            0.71 from wk6 -> ir
+  2026_08_CAR_GB    CAR  Albert Reese IV            out           0.63 from wk6 -> no snaps since
+  2026_08_CHI_SEA   SEA  Jadarian Price             ir            0.40 from wk6 -> ir
+  2026_08_CHI_SEA   SEA  Jalen Milroe               out           0.12 from wk6 -> no snaps since
+  2026_08_CHI_SEA   SEA  Brandon Pili               out           0.09 from wk6 -> would drop
+  2026_08_CHI_SEA   SEA  Elijah Arroyo              questionable  0.09 from wk6 -> reserve
+  2026_08_CHI_SEA   CHI  Case Keenum                out           2.68 from wk6 -> no snaps since
+  2026_08_CHI_SEA   CHI  Jayden Loving              out           0.46 from wk6 -> no snaps since
+  2026_08_CHI_SEA   CHI  Anthony Johnson Jr.        out           0.42 from wk6 -> no snaps since
+  2026_08_CLE_PIT   PIT  Michael Pittman Jr.        ir            1.03 from wk6 -> ir
+  2026_08_CLE_PIT   PIT  Sean Murphy-Bunting        out           0.59 from wk6 -> no snaps since
+  2026_08_CLE_PIT   PIT  Terell Smith               out           0.59 from wk6 -> no snaps since
+  2026_08_CLE_PIT   PIT  Kevin Jobity Jr.           out           0.46 from wk6 -> would drop
+  2026_08_CLE_PIT   CLE  Raheim Sanders             ir            0.35 from wk6 -> ir
+  2026_08_IND_JAX   JAX  Anton Harrison             ir            1.65 from wk6 -> ir
+  2026_08_IND_JAX   JAX  Wesley Williams            out           0.63 from wk6 -> no snaps since
+  2026_08_IND_JAX   JAX  CJ Williams                out           0.24 from wk6 -> no snaps since
+  2026_08_IND_JAX   JAX  Albert Regis               out           0.17 from wk6 -> no snaps since
+  2026_08_IND_JAX   IND  Arden Key                  ir            1.17 from wk6 -> ir
+  2026_08_IND_JAX   IND  Alec Pierce                ir            0.56 from wk6 -> ir
+  2026_08_IND_JAX   IND  Dalton Tucker              out           0.19 from wk6 -> no snaps since
+  2026_08_KC_DEN    DEN  Pat Bryant                 ir            0.76 from wk6 -> ir
+  2026_08_KC_DEN    DEN  Kage Casey                 out           0.63 from wk6 -> no snaps since
+  2026_08_KC_DEN    DEN  Tyler Onyedim              out           0.46 from wk6 -> no snaps since
+  2026_08_KC_DEN    KC   Tyquan Thornton            ir            0.78 from wk6 -> ir
+  2026_08_LAC_LA    LA   Myles Garrett              ir            1.12 from wk6 -> ir
+  2026_08_LAC_LA    LAC  Denzel Perryman            ir            0.63 from wk6 -> ir
+  2026_08_MIN_DET   DET  Brian Branch               out           1.15 from wk6 -> would drop
+  2026_08_MIN_DET   DET  Ben Bartch                 ir            1.12 from wk6 -> ir
+  2026_08_MIN_DET   MIN  Donovan Jackson            ir            0.93 from wk6 -> ir
+  2026_08_MIN_DET   MIN  Christian Darrisaw         questionable  0.72 from wk6 -> would drop
+  2026_08_MIN_DET   MIN  Jordan Addison             questionable  0.54 from wk6 -> would drop
+  2026_08_MIN_DET   MIN  T.J. Hockenson             questionable  0.25 from wk6 -> would drop
+  2026_08_NE_MIA    MIA  Storm Duck                 out           0.59 from wk6 -> no snaps since
+  2026_08_NE_MIA    MIA  Caleb Douglas              questionable  0.53 from wk6 -> would drop
+  2026_08_NE_MIA    MIA  Jonah Savaiinaea           questionable  0.46 from wk6 -> would drop
+  2026_08_NE_MIA    NE   Tanner Arkin               out           0.13 from wk6 -> no snaps since
+  2026_08_PHI_WAS   PHI  Joe Milton III             out           2.10 from wk6 -> no snaps since
+  2026_08_PHI_WAS   PHI  Lane Johnson               out           1.80 from wk6 -> no snaps since
+  2026_08_PHI_WAS   PHI  Hollywood Brown            out           0.46 from wk6 -> no snaps since
+  2026_08_TEN_CIN   CIN  Tanner Hudson              out           0.23 from wk6 -> reserve
+  2026_08_TEN_CIN   CIN  Colbie Young               questionable  0.07 from wk6 -> would drop
+  2026_08_TEN_CIN   TEN  Alontae Taylor             out           1.67 from wk6 -> no snaps since
+  2026_08_TEN_CIN   TEN  Jackie Marshall            out           0.46 from wk6 -> no snaps since
+  2026_08_TEN_CIN   TEN  Brandon Crenshaw-Dickson   out           0.14 from wk6 -> no snaps since

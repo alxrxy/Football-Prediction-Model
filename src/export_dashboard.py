@@ -149,6 +149,22 @@ PRELIMINARY_WEEKS = {
                 "inactive lists), ratings through week-6 finals and fresh game lines. No game has been re-run on its "
                 "official inactive list, so the numbers can still change at its window refresh."),
 }
+# Display only (user, 2026-10-29): in-season trades, shown as a TRADE NOTE chip on any game either team plays.
+# No number reads this; no arrival or departure adjustment is modeled (P78). Source: NFL.com trade tracker,
+# re-scanned until the 11/10 deadline. (player, position, old team, new team, date)
+TRADES = [
+    ("Jeffery Simmons", "DT", "TEN", "CHI", "10/29"), ("DeForest Buckner", "DT", "IND", "SF", "10/27"),
+    ("Quenton Nelson", "G", "IND", "SEA", "10/27"), ("Marvin Harrison Jr.", "WR", "ARI", "HOU", "10/12"),
+    ("Cam Jurgens", "C", "PHI", "BAL", "10/07"), ("Joey Porter Jr.", "CB", "PIT", "DAL", "10/01"),
+    ("J.J. McCarthy", "QB", "MIN", "NYG", "09/28"),
+]
+
+
+def trade_notes(home: str, away: str) -> list[str]:
+    return [f"{p} ({pos}) {old} → {new}, {d}: not modeled" for p, pos, old, new, d in TRADES
+            if {old, new} & {home, away}]
+
+
 # The short chip shown on each such game; "PRELIMINARY" when a week has none.
 PRELIMINARY_CHIPS = {(2026, 6): "OFFICIAL REPORTS IN · INACTIVES PENDING",
                      (2026, 7): "PRELIMINARY · INACTIVES PENDING",
@@ -266,6 +282,7 @@ def build(sport: str, explain: bool = True) -> dict:
                                 if (k := parse_dt(game.get("kickoff_time"))) and k > datetime.now(timezone.utc)
                                 and not _rerun_on_inactives(game, baseline, inactives)
                                 else None),
+                "trade_notes": trade_notes(game.get("home_team"), game.get("away_team")),
                 "preliminary_chip": (PRELIMINARY_GAMES[gid][1] if gid in PRELIMINARY_GAMES else
                                      PRELIMINARY_CHIPS.get((int(game.get("season") or 0), int(game.get("week") or 0)))),
             }
