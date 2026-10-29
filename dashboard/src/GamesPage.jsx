@@ -89,9 +89,8 @@ function GameCard({ game, sim, lg, onOpen, trust }) {
               {' '}· {game.official_chip}
             </strong>
           ) : null}
-          {game.trade_notes?.length && !final ? (
-            <strong className="prelim-chip" title={game.trade_notes.join('
-')}> · TRADE NOTE</strong>
+          {game.trade_notes?.length > 0 && !final ? (
+            <strong className="prelim-chip" title={game.trade_notes.join(' | ')}> · TRADE NOTE</strong>
           ) : null}
         </span>
         <StatusChip status={live ? 'live' : final ? 'final' : 'scheduled'} detail={live ? lg.detail : null} />
