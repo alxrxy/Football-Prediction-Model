@@ -105,6 +105,7 @@ status only when its adoption test is met.
 | P74 | Injury layer: a healthy manual row for the starting QB (blank status + FP) clears him from the report, so `score_injuries` promotes the next QB into the single QB slot and charges that backup's ESPN 'out' row as if he started | logic | 2026-10-18 | Week-6 noon refresh: ATL charged 4.74 for Cooper Rush, then 2.52 for Jack Strand, with Penix starting; IND 2.36 (Riley Leonard), NO 2.10 (Zach Wilson). Worked around in `2026-wk06.csv` (no-status rows for the backups, user-approved); see the 2026-10-18 noon entry | open, nothing built **Diagnosed 10/25: general form (45 backup charges / 136.8 pts in weeks 1-6). CHOSEN by the user 2026-10-25 as the single engine change for the week-7 → week-8 boundary, to ship after MNF 10/26 under G1-G5 (10/25 Step-3 entry); not before. Until then, the P64 workaround applies per verified case (10/25: CLE Gabriel applied; SEA Lock and PHI Milton at their windows; TB Mayfield not overridden)** **Replay 2026-10-29, weeks 1-7: G1 PASS 46/46; G2 FAIL 44/46 (wk 1 CLE: expected Sanders, actual Watson; wk 3 MIN: expected Wentz, actual Murray; both removed charges were 0-snap QBs); G3 / G5 not run. NOT SHIPPED by the written rule; amending G2 is the user's call.** |
 | P75 | `ingest_props.run` raises KeyError 'players' on its summary line when a carried-forward game has no `players` key; the file is already written, so only the printout fails | bug | 2026-10-18 | Noon props pull 10/18 16:24Z: file written (7 games priced), crash at `priced = sum(...)`. 10/18 SNF: cause found. A targeted pull (`only_games`) carries a game with no prior entry forward as a stub holding only `pulled_at` (never-pulled ARI_LA, BUF_LV, LAC_KC, WAS_SF), and `props.rank` crashes on the same stub (`g["players"]`), so ranking fails too, not just the printout. Worked around in-process for SNF only (stubs filtered before `rank`); that wrapper skipped the P62 shadow refresh (nothing served) | open, cause known, nothing built **FIXED 2026-10-25 (`c1197a7`, user-approved): stubs are skipped in `props.rank` and in the props / TD pull summaries; regression test `test_carried_forward_stub_is_skipped` (fails before the fix, passes after); suite 299. Live check: the 10/25 noon pull carried 32 stubs, and the ranking ran clean (archived `2026_w07/20261025T155050Z.json`). Criterion 2 (re-rank the 10/18 16:24Z file) could not be run: that file was overwritten** |
 | P76 | Live: an overtime walk-off score is treated as a kickoff after a score, so the game shows ~1% instead of final | live model | 2026-10-25 | P73 V4 review, PIT @ TB 10/18 20:33Z (PIT TD in OT → kickoff to TB, TB 0.85%). The guard behaved correctly by its rule; the engine has no game-over state for a sudden-death OT score | (to set with the user) e.g. an OT touchdown, or any OT score that ends the game, gives a final state with WP 0 / 1 | logged 2026-10-25 (user: small tracker item); nothing built |
+| P78 | No arrival or departure credit for traded players: the old team's rating keeps him, the new team gets nothing | engine | 2026-10-29 | 7 in-season trades (see the 10/29 trades entry); a departure Out row would be worth 0.97-5.50 pts to the old team | walk-forward 2016-25 trades; MAE improves with game-bootstrap CI excluding 0 (criteria to confirm with the user) | proposed 2026-10-29; nothing built |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -148,6 +149,51 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-10-29 — Trades since week 1: table, injury-layer diagnosis, Questionable rows NOT applied (they mis-charge in all 7 cases); P78 logged; props / TD rosters verified current
+
+**Trades in the regular season** (sources: [NFL.com league tracker](https://www.nfl.com/news/nfl-trade-deadline-track-every-move-since-start-of-2026-regular-season), cross-checked with [ProFootballMania's tracker](https://profootballmania.com/nfl-trade-tracker/); team moves confirmed against nflverse 2026 snap counts and today's nflverse depth charts). **The deadline is 11/10 at 4 p.m. ET, so the deadline wave has not happened yet.** nflverse's `trades.csv` stops at 2026-04-17 and has no in-season rows.
+
+| Player | Pos | Old team | New team | Date | New-team snaps (2026 wks) |
+|---|---|---|---|---|---|
+| Jeffery Simmons | DT | TEN | CHI | 10/29 (today) | none |
+| DeForest Buckner | DT | IND | SF | 10/27 | none |
+| Quenton Nelson | G | IND | SEA | 10/27 | none |
+| Marvin Harrison Jr. | WR | ARI | HOU | 10/12 | 6, 7 |
+| Cam Jurgens | C | PHI | BAL | 10/07 | 7 |
+| Joey Porter Jr. | CB | PIT | DAL | 10/01 | 4, 6, 7 |
+| J.J. McCarthy | QB | MIN | NYG | 09/28 | 5, 6, 7 (NYG starter) |
+
+Not trades, for completeness: Kaytron Allen (RB, WAS → MIA, waiver claim 10/9); Jared Wayne (WR, HOU → MIA, move not confirmed by any source found; nflverse has him at MIA).
+
+**Diagnosis: how the injury layer treats a traded player.**
+- `manual_injuries.merge` looks up the share under the **new** team's key (`merge_snap_shares`, keyed `(team, player)`). With no new-team snaps the share is `None`, and `score_injuries` uses `DEFAULT_SNAP_SHARE` 0.35. With new-team snaps it is the mean share in those games.
+- **Old team:** the power rating carries the player's past contribution (it fades as new games enter the rating). Nothing in the injury layer charges his departure, because he is on no old-team report. **Old-team loss modeled: 0.**
+- **New team:** the rating does not contain him. **No arrival credit is modeled.**
+- A Questionable row (play probability 0.55) on the new team would therefore always *charge* the new team, and that is a mis-charge either way: for an arrival with no snaps it penalises a team for a player its rating never had; for an integrated player it charges a healthy player.
+
+| Player | Questionable row: charge on the new team | Out row: value on the old team (if a departure were modeled) |
+|---|---|---|
+| Simmons | CHI −0.21 (default 0.35 share) | TEN −1.14 (share 0.87) |
+| Buckner | SF −0.21 (default) | IND −1.09 (0.83) |
+| Nelson | SEA −0.19 (default) | IND −1.19 (0.99) |
+| Harrison Jr. | HOU −0.12 (share 0.20, 2 games) | ARI −0.97 (0.74) |
+| Jurgens | BAL −0.67 (1.00) | PHI −1.50 (1.00) |
+| Porter Jr. | DAL −0.43 (0.57) | PIT −1.59 (0.95) |
+| McCarthy | **NYG −1.24 (0.46). He is NYG's starter, and P48 does not zero him (he has 2025 snaps)** | MIN −5.50 (0.92) |
+
+**Decision: the Questionable rows were NOT applied.** The user's condition was "only after checking it doesn't mis-charge", and all 7 rows mis-charge (the new team loses 0.12-1.24 pts for no injury). Nothing was written to any week-8 manual file. The intent of holding traded players until confirmed is met today without a number changing: no row means no charge, and no gain is credited either.
+
+**Separate gain / loss, as the model sees them for week 8:** the old team's loss is **0** for all 7 (the rating still carries him); the new team's gain is **0** (no arrival credit). The right-hand column is what a departure would be worth if it were modeled; it is NOT applied.
+
+**Proposed P78 (logged, nothing built): "no arrival or departure credit is modeled".** A traded player's value stays in the old team's rating, and the new team gets nothing, until enough games pass. *Criteria to set with the user before any build:* (1) the trades 2016-2025 from nflverse `trades.csv`, walk-forward; (2) a departure Out row on the old team and an arrival credit (same formula, positive sign) on the new team for N weeks; (3) margin MAE and ATS on the affected games against no adjustment, with a game bootstrap; (4) ships only if MAE improves with the CI excluding 0. *Kind:* engine (counts against the one-per-boundary limit).
+
+**Props / TD roster check.** The team on a props or TD row is the side of the sim player that `match_player` hits, and sim rosters come from `sim_data.current_depth` (nflverse depth charts, the latest daily chart per team).
+- Today's chart is as of **2026-10-29 14:07Z for all 32 teams**, and 0 players appear on two teams.
+- Harrison Jr. HOU WR2, McCarthy NYG QB1, Jonnu Smith GB TE2, Allen MIA RB3, Wayne MIA WR6.
+- **The 10/25 "Jonnu Smith priced as DAL" note does not reproduce.** Every served file has him at GB TE2: the archive `2026_w06/20261018T231721Z.json`, `data/props.json` and `dashboard/public/props.json`. The DAL label came from the 10/25 grading step, not from pricing. No code change was needed. Week-8 sims built today read today's chart.
 
 ---
 
