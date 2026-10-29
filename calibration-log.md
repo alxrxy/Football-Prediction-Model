@@ -153,6 +153,53 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-29 — TNF CAR @ GB window: official lists applied, Jacobs cleared (official list omits him), re-predicted / re-simulated 17:55-18:00 CDT (75 min before kickoff)
+
+**Manual file.** `data/manual_injuries/2026-wk08_new.csv` (user; it was in `data/manual_injuries/`, not the project root) became `2026-wk08.csv`.
+- No earlier week-8 file existed, so there were no conflicts.
+- Validator: 15 rows, header and positions valid (`OT` accepted).
+- Coker (CAR WR) and Banks (GB G) are blank + FP rows, so they are healthy with no charge (user confirmed both playing).
+- **Added: `GB,Josh Jacobs,RB,,-,-,-,`** (healthy, clears the stale feed row). Source: Jacobs is on neither GB's official week-8 report nor GB's official inactive list ([packers.com, 5:45 PM](https://www.packers.com/news/packers-panthers-week-8-inactives-oct-29-2026)). **Case: the list omits him, so the charge is cleared (0.64).**
+- Other stale GB / CAR feed rows were **kept**, as no official source contradicts them:
+  - Parsons and Ekwonu: PUP-R per the user's file;
+  - Cam Jackson: IR;
+  - Albert Reese IV: absent from CAR's week-8 roster, so unavailable either way.
+
+**Official inactive lists** (stored as `official_team_article` rows):
+- **GB:** Jonnu Smith, Kaleb Johnson, Zaire Franklin, Donovan Jennings, Sean Rhyan, Travis Glover.
+- **CAR** ([panthers.com](https://www.panthers.com/news/week-8-inactives-at-green-bay-panthers-down-three-starters-for-packers)): Ja'Tavion Sanders, Jaelan Phillips, Haynes King (3QB), AJ Dillon, Damien Lewis, Torricelli Simpkins III, Bobby Brown III. Akayleb Evans was placed on IR 10/29.
+- **ESPN lists not used:** P77 flagged CAR's ESPN list on every read as a superset of the previous list (7/7 kept), and the GB reads came before T-90.
+
+**CSV vs official lists:**
+- Bobby Brown III: CSV Questionable, officially **inactive**.
+- Inactive but not in the CSV: GB Jonnu Smith, Kaleb Johnson, Donovan Jennings; CAR Sanders, King, Dillon.
+- Questionables active: Golden, Wyatt, Nixon, Campbell, Cox Jr.
+- The CSV's Outs are all inactive or on IR (Evans).
+
+**QB check (P74):** Young and Love are off the report and active; neither is charged. The inactive 3QB Haynes King is uncharged (P48). Sim QB1 is Young / Love, so QB props were not held.
+
+**Run:** official lists → nflverse week 8 + manual → weather → baseline + ML (this game only; asserted) → props lines + TD lines for this game → sim → props rank (19 + held) → TD rank → export.
+- Odds API **394 → 389**.
+- Explanations regenerated for unplayed games only.
+- New display-only chip "OFFICIAL REPORTS + INACTIVE LISTS IN".
+
+| | Preliminary (15:43) | Now (17:56) | Market |
+|---|---|---|---|
+| Baseline (home margin) | GB +5.3 | **GB +6.6** | GB −3.5 |
+| ML | GB +7.9 | **GB +7.7** | |
+| Sim (GB WP, total) | GB +5.1 (0.66, 44.4) | **GB +6.6 (0.70, 44.3)** | |
+
+**Why it moved.**
+- GB injury charge 6.93 → 6.08: Jacobs cleared (0.64) and Golden active (0.50), against new inactives Jennings (0.54) and Jonnu Smith (0.25).
+- CAR's charge 6.83 → 7.26, with official inactives replacing the preliminary statuses (Bobby Brown III among them).
+- The sim restores Jacobs as RB1 (13.7 carries).
+
+**Tracker:** started 18:01 CDT as a detached process (pid 15324, `data/live/tracker_2026-10-29.log`). It polls (0 live), and its idle wake is capped at kickoff.
+
+**Machine:** on AC (97%); Windows updates paused until 11/5 (registry read only). Processes running: the dev server (5174) and the tracker only.
+
+---
+
 ## 2026-10-29 — TD experiment T2 result: FAILS all three bars; not applied (shadow only, as decided)
 
 `calibration/td_t2_pbp.py`: 99.5% of scorer rows matched to play-by-play ids. Test weeks 4-6: 704 rows, 44 games.

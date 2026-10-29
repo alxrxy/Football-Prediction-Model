@@ -283,6 +283,10 @@ def build(sport: str, explain: bool = True) -> dict:
                                 and not _rerun_on_inactives(game, baseline, inactives)
                                 else None),
                 "trade_notes": trade_notes(game.get("home_team"), game.get("away_team")),
+                # Display only (2026-10-29): an unstarted game re-run on its official inactive lists says so.
+                "official_chip": ("OFFICIAL REPORTS + INACTIVE LISTS IN"
+                                  if (k := parse_dt(game.get("kickoff_time"))) and k > datetime.now(timezone.utc)
+                                  and _rerun_on_inactives(game, baseline, inactives) else None),
                 "preliminary_chip": (PRELIMINARY_GAMES[gid][1] if gid in PRELIMINARY_GAMES else
                                      PRELIMINARY_CHIPS.get((int(game.get("season") or 0), int(game.get("week") or 0)))),
             }

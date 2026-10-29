@@ -84,6 +84,11 @@ function GameCard({ game, sim, lg, onOpen, trust }) {
           {game.preliminary && !live && !final ? (
             <strong className="prelim-chip" title={game.preliminary}> · {game.preliminary_chip || 'PRELIMINARY'}</strong>
           ) : null}
+          {game.official_chip && !game.preliminary && !live && !final ? (
+            <strong className="prelim-chip official" title="Re-predicted and re-simulated on the official injury reports and inactive lists">
+              {' '}· {game.official_chip}
+            </strong>
+          ) : null}
           {game.trade_notes?.length && !final ? (
             <strong className="prelim-chip" title={game.trade_notes.join('
 ')}> · TRADE NOTE</strong>
