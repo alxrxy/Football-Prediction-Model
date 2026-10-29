@@ -139,6 +139,7 @@ WEEK_NOTES = {
 # reports and that week's data. Shown as a banner on the games page and a chip
 # on each such game until it kicks off; display only, no number changes.
 PRELIMINARY_WEEKS = {
+    (2026, 8): ("PRELIMINARY: predicted and simulated Thu 10/29 ~16:00 CDT on ratings through the week-7 finals, fresh game lines, and the nflverse week-8 report as of 10/29 (TNF teams have game statuses; Sunday and Monday teams have Wed/Thu practice only, no game status). No Friday report, no hand-checked file, no inactive list. Stored week-6 ESPN injury rows are still in force (P79, logged, not fixed). Traded players carry no arrival or departure adjustment (P78). Numbers will change at the Friday and Sunday refreshes."),
     (2026, 6): ("OFFICIAL REPORTS IN · INACTIVES PENDING: predicted and simulated on Sun 10/18 from the official "
                 "Friday reports (hand-checked file 2026-wk06.csv plus nflverse), play-by-play through SEA @ DEN and "
                 "fresh game lines. This game has not yet been re-run on its own official inactive list, so the "
@@ -150,7 +151,8 @@ PRELIMINARY_WEEKS = {
 }
 # The short chip shown on each such game; "PRELIMINARY" when a week has none.
 PRELIMINARY_CHIPS = {(2026, 6): "OFFICIAL REPORTS IN · INACTIVES PENDING",
-                     (2026, 7): "PRELIMINARY · INACTIVES PENDING"}
+                     (2026, 7): "PRELIMINARY · INACTIVES PENDING",
+                     (2026, 8): "PRELIMINARY · NO OFFICIAL REPORTS"}
 # Games the week's label does not fit: (notice, chip). WAS @ SF is not in 2026-wk06.csv.
 PRELIMINARY_GAMES = {
     "2026_06_WAS_SF": ("PRE-INACTIVES, official reports pending: predicted and simulated on Sun 10/18 ~08:30Z from "

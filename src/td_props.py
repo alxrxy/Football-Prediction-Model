@@ -97,16 +97,16 @@ CONFIDENCE = "exploratory"
 # Re-flagging a fixed bug misleads in the other direction. What is named below
 # is what is still open.
 NOTE = (
-    "Lower confidence than the yardage props. Touchdowns are binary and high-variance, and "
-    "the scorer split is usage extrapolation - the simulator's least certain output. Two "
-    "open issues sit in these numbers. P18: the engine converts first-and-goal far below "
-    "real (1st & 0-2.5 converts .323 against .486), which is the single most relevant defect "
-    "for a market decided at the goal line, and it is diagnosed but not fixed. And the engine "
-    "now runs about 8.3% hot on touchdowns as a whole (5.14 offensive TDs a game against the "
-    "4.75 the market totals imply, measured across the 2026 week-2 slate), with no bias "
-    "correction fitted for this market, so that sits raw in every number below. Books post "
-    "Yes only, so the market probability is an estimate: prices are scaled to what the game "
-    "total implies."
+    "Experimental. Touchdowns are binary and high-variance, and the scorer split is usage "
+    "extrapolation - the simulator's least certain output. Calibration on the archived pregame "
+    "simulations (weeks 1 and 3-6, 992 player-games in 62 games; 2026-10-29): the mean simulated "
+    "chance is 23.1% against 22.8% actual, but the 30-40% band says 34.5% and hits 28.8%, and tight "
+    "ends run under (19.0% vs 22.5%). A per-position correction failed its walk-forward, so none is "
+    "applied. P18 (re-diagnosed 2026-09-25): the engine over-converts first-and-goal; not fixed. "
+    "The market comparison covers one slate only (week 7 noon, 123 players: Brier sim 0.183 vs "
+    "devigged market 0.178), and the graded leans so far are week 6 1-9 and week 7 4-13, never "
+    "served. Books post Yes only, so the market probability is an estimate: prices are scaled to "
+    "what the game total implies."
 )
 
 
@@ -267,10 +267,74 @@ def bias_summary(rows: list[dict]) -> dict | None:
     }
 
 
+def _upcoming_week(now: datetime | None = None) -> tuple[int, int] | None:
+    """(season, week) of the next NFL game still to kick off, from the stored schedule."""
+    from . import db
+
+    now = now or datetime.now(timezone.utc)
+    store = db.get_store()
+    games = [g for g in store.select("games", {"sport": "nfl"}) if g.get("kickoff_time")]
+    store.close()
+    ahead = [g for g in games if not _kicked_off(g["kickoff_time"], now)]
+    if not ahead:
+        return None
+    g = min(ahead, key=lambda g: str(g["kickoff_time"]))
+    return int(g["season"]), int(g["week"])
+
+
+def model_only(season: int, week: int, sims: dict, now: datetime | None = None) -> dict:
+    """The simulation's anytime-TD chances for a week with no lines pulled yet: no market,
+    nothing ranked against a price. Wired 2026-10-29 so the tab shows the current week
+    instead of last week's list."""
+    from . import db
+
+    now = now or datetime.now(timezone.utc)
+    store = db.get_store()
+    games = {g["game_id"]: g for g in store.select("games", {"sport": "nfl", "season": season, "week": week})}
+    store.close()
+    rows, covered = [], 0
+    for gid, g in sorted(games.items(), key=lambda kv: str(kv[1].get("kickoff_time"))):
+        view = sims.get(gid)
+        if not view or _kicked_off(g["kickoff_time"], now) or not view.get("scorers"):
+            continue
+        covered += 1
+        for side in ("home", "away"):
+            for p in view["scorers"].get(side) or []:
+                rows.append({
+                    "game_id": gid, "game": f"{g['away_team']} @ {g['home_team']}", "kickoff": g["kickoff_time"],
+                    "player": p["player"], "team": g[f"{side}_team"],
+                    "position": f"{p.get('position') or ''}{p.get('depth_rank') or ''}",
+                    "p_model": p.get("anytime_td"), "two_plus_td": p.get("two_plus_td"),
+                    "expected_tds": p.get("expected_tds"),
+                    "usage": {k: p.get(k) for k in ("rz_target_share", "rz_carry_share", "gl_carry_share")},
+                    "sim_generated_at": view.get("generated_at"),
+                })
+    rows.sort(key=lambda r: -(r["p_model"] or 0))
+    return {
+        "generated_at": now.isoformat(), "lines_pulled_at": None, "season": season, "week": week,
+        "confidence": CONFIDENCE, "note": NOTE, "model_only": rows,
+        "model_only_note": (f"No anytime-TD lines pulled for week {week} yet, so nothing is compared with a "
+                            "market: these are the simulation's chances only."),
+        "games_covered": covered, "games_started": 0, "games_in_week": len(games), "priced": 0,
+        "unmatched_players": 0, "unmatched": [], "team_entries_skipped": 0, "unprojected_players": 0,
+        "bias": None, "games": {}, "props": [], "more": [], "held_out": [], "started": [],
+        "max_gap": TD_MAX_GAP,
+    }
+
+
 def run(top_n: int = TOP_N) -> dict:
-    if not TD_LINES_JSON.exists():
+    lines = json.loads(TD_LINES_JSON.read_text(encoding="utf-8")) if TD_LINES_JSON.exists() else {}
+    upcoming = _upcoming_week()
+    if upcoming and (lines.get("season"), lines.get("week")) != upcoming:
+        payload = model_only(*upcoming, _sims())
+        config.ensure_dirs()
+        TD_PROPS_JSON.write_text(json.dumps(payload), encoding="utf-8")
+        print(f"[td-props] week {payload['week']}: no lines for this week (lines file is week {lines.get('week')}); "
+              f"model-only chances for {len(payload['model_only'])} players in {payload['games_covered']} game(s) "
+              f"-> {TD_PROPS_JSON}")
+        return payload
+    if not lines:
         raise SystemExit("No anytime-TD lines yet. Run: python -m src.ingest_td_props")
-    lines = json.loads(TD_LINES_JSON.read_text(encoding="utf-8"))
     result = rank(lines, _sims())
     everything = result["ranked"] + result["held_out"]
     payload = {

@@ -45,7 +45,11 @@ export default function TdPropsPage({ tabs = null }) {
       <PageHead
         title="Anytime TD props"
         sub={
-          data
+          data && data.model_only
+            ? `Week ${data.week} · simulation only, ${data.model_only.length} players across ${data.games_covered} game${
+                data.games_covered === 1 ? '' : 's'
+              } · no lines pulled yet`
+            : data
             ? `Week ${data.week} · ${data.priced} players priced across ${data.games_covered} game${
                 data.games_covered === 1 ? '' : 's'
               } · lines pulled ${pulled}`
@@ -65,6 +69,8 @@ export default function TdPropsPage({ tabs = null }) {
                 <code>python -m src.td_props</code>.
               </p>
             </div>
+          ) : data.model_only ? (
+            <ModelOnly data={data} />
           ) : (
             <>
               {partial ? (
@@ -128,14 +134,15 @@ function ExploratoryBanner() {
           plan.
         </li>
         <li>
-          <b>The engine converts at the goal line far below real</b> (first-and-goal from inside 2.5 yards converts
-          .323 against a real .486). That is diagnosed and deferred, not fixed, and it is the defect that matters
-          most for a market settled on the goal line.
+          <b>Calibration so far</b> (archived pregame simulations, weeks 1 and 3&ndash;6: 992 player-games in 62
+          games): the average simulated chance is 23.1% against 22.8% actual, but players the simulation puts at
+          30&ndash;40% scored 28.8% of the time, and tight ends run under (19.0% vs 22.5%). A per-position correction
+          failed its walk-forward test on 2026-10-29, so none is applied.
         </li>
         <li>
-          <b>The engine currently runs about 8.3% hot on touchdowns overall</b> — 5.14 offensive TDs a game against
-          the 4.75 the market totals imply, across this week&rsquo;s slate — and no bias correction has been fitted
-          for this market, unlike the yardage list. That sits raw in every number here.
+          <b>Tiny market sample.</b> Simulation vs devigged market has been compared on one slate only (week 7 noon,
+          123 players: Brier 0.183 vs 0.178, the market slightly better). Graded leans so far: week 6 1&ndash;9, week 7
+          4&ndash;13, neither list served.
         </li>
         <li>
           The market number is an estimate. Books only post Yes, so the vig is removed by scaling each book&rsquo;s
@@ -356,3 +363,57 @@ const CompareRow = ({ label, value, cls }) => (
     <span className="compare-value">{pct(value)}</span>
   </div>
 )
+
+// Week with no TD lines pulled yet (src/td_props.model_only): the simulation's chances, no market.
+function ModelOnly({ data }) {
+  const rows = data.model_only || []
+  return (
+    <>
+      <p className="td-sample">
+        <span className="tag warn">Simulation only</span> {data.model_only_note} {data.games_covered} of{' '}
+        {data.games_in_week} games simulated. These are not picks: without a price there is nothing to compare.
+      </p>
+      <div className="card">
+        <div className="table-wrap">
+          <table className="more-props">
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Game</th>
+                <th className="num">Anytime TD (sim)</th>
+                <th className="num">2+ TD</th>
+                <th className="num">RZ targets</th>
+                <th className="num">RZ carries</th>
+                <th className="num">GL carries</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice(0, 120).map((r) => (
+                <tr key={`${r.game_id}-${r.player}`}>
+                  <td>
+                    <span className="kp-name">
+                      <TeamLogo abbr={r.team} size={18} />
+                      <strong>{r.player}</strong>
+                    </span>
+                    <em className="sub">
+                      {r.team} {r.position}
+                    </em>
+                  </td>
+                  <td>
+                    {r.game}
+                    <em className="sub">{kickoffLabel(r.kickoff, true)}</em>
+                  </td>
+                  <td className="num">{pct(r.p_model)}</td>
+                  <td className="num">{pct(r.two_plus_td)}</td>
+                  <td className="num">{share(r.usage?.rz_target_share)}</td>
+                  <td className="num">{share(r.usage?.rz_carry_share)}</td>
+                  <td className="num">{share(r.usage?.gl_carry_share)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  )
+}

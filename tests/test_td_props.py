@@ -118,3 +118,30 @@ if __name__ == "__main__":
         fn()
     print(f"\n{PASS} passed, {FAIL} failed")
     raise SystemExit(1 if FAIL else 0)
+
+
+def test_model_only_payload(monkeypatch):
+    """Wired 2026-10-29: a week with no TD lines publishes the simulation's chances only."""
+    from datetime import datetime, timezone
+    from src import db, td_props
+
+    class FakeStore:
+        def select(self, table, where=None):
+            return [{"game_id": "2026_08_CAR_GB", "home_team": "GB", "away_team": "CAR", "season": 2026, "week": 8,
+                     "kickoff_time": "2026-10-30T00:15:00+00:00"},
+                    {"game_id": "2026_08_X_Y", "home_team": "Y", "away_team": "X", "season": 2026, "week": 8,
+                     "kickoff_time": "2026-10-29T00:15:00+00:00"}]   # already kicked off
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(db, "get_store", lambda: FakeStore())
+    sims = {"2026_08_CAR_GB": {"generated_at": "g", "scorers": {
+        "home": [{"player": "Josh Jacobs", "position": "RB", "depth_rank": 1, "anytime_td": 0.45}],
+        "away": [{"player": "Rico Dowdle", "position": "RB", "depth_rank": 1, "anytime_td": 0.30}]}},
+        "2026_08_X_Y": {"scorers": {"home": [{"player": "Started", "anytime_td": 0.9}], "away": []}}}
+    out = td_props.model_only(2026, 8, sims, now=datetime(2026, 10, 29, 21, 0, tzinfo=timezone.utc))
+    check("model-only rows, highest chance first", [(r["player"], r["team"]) for r in out["model_only"]],
+          [("Josh Jacobs", "GB"), ("Rico Dowdle", "CAR")])
+    check("started games excluded", out["games_covered"], 1)
+    check("nothing ranked against a market", (out["props"], out["priced"], out["lines_pulled_at"]), ([], 0, None))

@@ -106,6 +106,7 @@ status only when its adoption test is met.
 | P75 | `ingest_props.run` raises KeyError 'players' on its summary line when a carried-forward game has no `players` key; the file is already written, so only the printout fails | bug | 2026-10-18 | Noon props pull 10/18 16:24Z: file written (7 games priced), crash at `priced = sum(...)`. 10/18 SNF: cause found. A targeted pull (`only_games`) carries a game with no prior entry forward as a stub holding only `pulled_at` (never-pulled ARI_LA, BUF_LV, LAC_KC, WAS_SF), and `props.rank` crashes on the same stub (`g["players"]`), so ranking fails too, not just the printout. Worked around in-process for SNF only (stubs filtered before `rank`); that wrapper skipped the P62 shadow refresh (nothing served) | open, cause known, nothing built **FIXED 2026-10-25 (`c1197a7`, user-approved): stubs are skipped in `props.rank` and in the props / TD pull summaries; regression test `test_carried_forward_stub_is_skipped` (fails before the fix, passes after); suite 299. Live check: the 10/25 noon pull carried 32 stubs, and the ranking ran clean (archived `2026_w07/20261025T155050Z.json`). Criterion 2 (re-rank the 10/18 16:24Z file) could not be run: that file was overwritten** |
 | P76 | Live: an overtime walk-off score is treated as a kickoff after a score, so the game shows ~1% instead of final | live model | 2026-10-25 | P73 V4 review, PIT @ TB 10/18 20:33Z (PIT TD in OT → kickoff to TB, TB 0.85%). The guard behaved correctly by its rule; the engine has no game-over state for a sudden-death OT score | (to set with the user) e.g. an OT touchdown, or any OT score that ends the game, gives a final state with WP 0 / 1 | logged 2026-10-25 (user: small tracker item); nothing built |
 | P78 | No arrival or departure credit for traded players: the old team's rating keeps him, the new team gets nothing | engine | 2026-10-29 | 7 in-season trades (see the 10/29 trades entry); a departure Out row would be worth 0.97-5.50 pts to the old team | walk-forward 2016-25 trades; MAE improves with game-bootstrap CI excluding 0 (criteria to confirm with the user) | proposed 2026-10-29; nothing built |
+| P79 | Injuries: the newest ESPN injury pull stays in force indefinitely when the ESPN feed stops answering, so a week-old ESPN report is charged into later weeks | data / pipeline | 2026-10-29 | `latest_injury_report` retires ESPN rows only by a newer ESPN pull. Since 10/18 none has arrived, so the 10/18 (week-6) ESPN pull, 112 rows, was in force for every week-7 prediction, though the 10/25 runs were logged as "no ESPN feed". Week-7 served breakdowns hold **46 charges (28.2 pts) on players whose only in-force row is that ESPN pull**. That is an upper bound: some 'inactive' rows come from official lists, and many are genuine IR absences (Garrett, Bartch). But some are stale statuses, e.g. MIA Caleb Douglas Q 0.53, who played (2 rec). The week-8 preliminary run carries the same rows | (to confirm with the user) ESPN rows count only for the week they were pulled for (as P19 does for nflverse); IR rows kept until a newer source contradicts them; replay weeks 2-7 on served breakdowns: charges removed only on players who played or were not on that week's official report; MAE / ATS reported, not gated | logged 2026-10-29; nothing built (changes pregame numbers: next boundary at the earliest) |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -149,6 +150,114 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-10-29 — PRELIMINARY week-8 run (all 14 games), 15:43-15:49 CDT; no official Friday reports; TNF CAR @ GB stored 2.4 h before kickoff
+
+**Data used:**
+- **Ratings:** through the week-7 finals (`team_ratings` week 8, written 10/29).
+- **Lines:** one approved game-lines pull at 15:43 CDT, 29 events matched; **397 → 394**.
+- **Weather:** 22 outdoor forecasts.
+- **No props / TD pulls** (user rule).
+- **Injuries, a deliberate deviation from "stored injuries", stated plainly:** the stored nflverse rows were week 7, and charging them into week 8 would have kept, e.g., Lamar Jackson Out (week 8: full practice). Following the 10/25 precedent, **the nflverse week-8 report alone was ingested** (`ingest_nfl`): 189 rows, 26 teams. TNF teams have game statuses (CAR 4 Out, 1 Q; GB 3 Out, 4 Q); Sunday / Monday teams have Wed / Thu practice only. CHI and SEA have no week-8 rows yet.
+- **Not used:** no ESPN feed, no manual file, no inactive lists. The week-7 manual rows retire automatically, being older than this ingest.
+- **But the 10/18 ESPN pull is still in force (P79)**: e.g. GB Micah Parsons (reserve, correct), **GB Josh Jacobs Out 0.64 (stale: he played 35 snaps in week 7, roster ACT, not on the week-8 report)**, CAR Ekwonu (reserve, correct), CAR Albert Reese IV (unclear).
+- **Trades (P78):** no adjustment; no Questionable rows added (see the trades entry).
+
+**Results** (home margin, + = home; market = home line; sim = mean margin, home WP). P48 left 7 no-snap backup QBs uncharged. 0 value flags. Every sim QB1 is the expected starter (PHI McKee with Hurts on IR); the books' priced QBs were not checked, because no props pull was made.
+
+| Game (CDT kickoff) | Market / sim total | Baseline | ML | Sim (home WP) |
+|---|---|---|---|---|
+| **CAR @ GB (Thu 19:15)** | −3.5 / 44.4 | **+5.3** | +7.9 | +5.1 (0.66) |
+| ARI @ DAL | −7 / 49.8 | +6.1 | +4.9 | +6.3 (0.69) |
+| ATL @ TB | −2.5 / 42.6 | +3.6 | +0.7 | +3.4 (0.61) |
+| BAL @ BUF | −3 / 46.9 | +6.7 | +8.4 | +6.7 (0.71) |
+| CLE @ PIT | −3.5 / 41.4 | +2.3 | +4.7 | +2.6 (0.57) |
+| IND @ JAX | −10 / 46.0 | +6.1 | +6.8 | +5.8 (0.68) |
+| LV @ NYJ | −1.5 / 44.0 | +1.4 | −0.5 | +0.9 (0.53) |
+| MIN @ DET | −3.5 / 42.0 | −0.2 | −1.1 | −0.2 (0.49) |
+| TEN @ CIN | −11.5 / 46.7 | +9.1 | +10.4 | +9.3 (0.77) |
+| LAC @ LA | −6.5 / 44.7 | +7.2 | +5.4 | +7.1 (0.71) |
+| KC @ DEN | +1 / 43.3 | −0.8 | +0.1 | −0.3 (0.49) |
+| NE @ MIA | +7 / 43.9 | −7.4 | −4.4 | −7.1 (0.28) |
+| PHI @ WAS (SNF) | −6 / 42.5 | +6.7 | +0.1 | +6.4 (0.70) |
+| CHI @ SEA (MNF) | −3 / 42.8 | +7.5 | +9.2 | +7.5 (0.73) |
+
+**For the TNF window (the user's call, nothing changed):**
+- GB's 0.64 Jacobs charge is stale (P79). Without it the baseline is about GB +5.9.
+- The sim also drops him, which is why the model-only TD tab puts **MarShawn Lloyd at 62%**. Jacobs' TD chance is wrong for the same reason.
+- Under the manual override rule, clearing him needs the official source. The NFL's week-8 report (nflverse) does not list him.
+
+**Display:** `PRELIMINARY_WEEKS` / `PRELIMINARY_CHIPS` (2026, 8) = "PRELIMINARY · NO OFFICIAL REPORTS", with a notice naming the inputs, P79 and P78.
+- TD tab: week 8 model-only, 224 players in 14 games.
+- Props tab: no week-8 lines, so nothing ranked. `props.run` also archived a 0-row `2026_w07/20261029T204925Z.json`, made after every week-7 kickoff, so the P67 rule never grades it.
+- Dev server started on :5174 (it was down) and opened.
+- Explanations skipped (Claude key 401).
+
+**Research report, likely injuries (WEB READING ONLY; NOT fed to the engine, NOT written to any table):**
+- BAL Lamar Jackson full practice Wednesday, expected to play.
+- **DET Jahmyr Gibbs (shoulder) and Amon-Ra St. Brown (ankle) DNP Wednesday** (Gibbs possibly precautionary); Kerby Joseph limited.
+- KC Rashee Rice limited (first practice since week 4); KC RT Jaylon Moore back.
+- LAC Derwin James setback, possible IR.
+- CIN Chase, Dugger and J. Allen DNP (two of them rest days).
+- TEN Tate, Spears and Franklin-Myers DNP.
+- ARI 9 DNP Wednesday.
+- BAL Campbell, Hamilton, Hawkins, Ioane and R. Smith DNP Wednesday.
+
+Sources: [CBS Sports](https://www.cbssports.com/nfl/news/nfl-week-8-injury-report-lamar-jackson-kerby-joseph-updates/), [NBC Sports](https://www.nbcsports.com/fantasy/football/news/nfl-week-8-injury-report-ljax-expected-to-play-plus-updates-on-jaylin-noel-aaron-jones-cmc), [chargers.com](https://www.chargers.com/news/chargers-vs-rams-injury-report-mcconkey-full-james-awosika-don-t-practice-wednesday), [Yahoo (KC)](https://sports.yahoo.com/articles/kansas-city-chiefs-first-injury-211335788.html).
+
+---
+
+## 2026-10-29 — TD tab wired (model-only until lines exist); calibration weeks 1, 3-6; per-position correction T1 FAILS; tab stays "experimental"
+
+**Wiring.** The UI route `#/nfl/props/td` already existed; what was missing was the pipeline. `td_props.json` still held week 7, and nothing in `run_sunday` produced it.
+- `run_sunday` now has a step **"TD props: rank / model-only"** after the props ranking.
+- **`td_props.run`** checks the next game's `(season, week)` against the stored TD-lines file:
+  - if they match, it ranks against the market as before;
+  - if not, it publishes **`model_only`**: the simulation's anytime-TD chances for that week's unstarted games (2+ TD chance, red-zone and goal-line shares), with nothing ranked against a price.
+- **The TD lines pull (`ingest_td_props`) stays manual** (P69 budget; no pulls today, by the user's rule).
+- `TdPropsPage` renders the model-only table under a "Simulation only" tag.
+- The page banner and `NOTE` dropped two stale claims:
+  - "goal line converts .323 vs .486", which P18 superseded on 9/25 (the engine over-converts);
+  - "8.3% hot overall", which this sample doesn't support.
+  - They are replaced by the calibration below and the market sample size.
+- New test `test_model_only_payload`.
+
+**Calibration** (`calibration/td_calibration.py`): archived pregame scorers (`data/sims_archive`, `after_kickoff` excluded) against `actual_tds`, with the rushing / receiving split from nflverse `stats_player_week_2026`. Weeks 1 and 3-6: week 2's archive has no scorers, and week 7 has no archive yet.
+- **992 player-games, 62 games.** Mean sim chance **0.231 vs actual 0.228**. Expected TDs 269 vs actual 278. **Brier 0.162, log loss 0.499.**
+- By band (sim → actual): 0.05-0.10 0.084 → 0.091; 0.10-0.20 0.146 → 0.142; 0.20-0.30 0.246 → 0.276; **0.30-0.40 0.345 → 0.288**; 0.40-0.50 0.441 → 0.400; 0.50+ 0.565 → 0.591.
+- By position (sim → actual): QB 0.146 → 0.154; RB 0.307 → 0.295; WR 0.221 → 0.206; **TE 0.190 → 0.225** (51 TDs vs 39.6 expected).
+- Actual TD type: RB 90 rushing / 20 receiving; WR 4 / 95; TE 1 / 50; QB 18 / 0.
+- The sim's team TD expectation is 2.52 per team-game. The old "8.3% hot" figure (week-2 slate vs market totals) is not visible here, where expected and actual scorer TDs are within 3%.
+- **Not done:** targets inside the 10 and goal-line carries from play-by-play, compared against the sim's `rz_*` / `gl_*` shares. The shares are on every row, but the pbp join was not built today.
+
+**Against the market** (only where odds were stored: week 7 noon, 123 players): **Brier sim 0.183 vs devigged market 0.178**, so the market is slightly better. Week 6's DAL @ GB TD file was overwritten (TD lists are not archived; that is a gap, logged here).
+
+**Walk-forward T1** (criteria in the entry above, set first; `calibration/td_walkforward.py`): per-position logit shift, test weeks 4-6, 704 rows, 44 games.
+- Log loss 0.4984 → **0.5029 (worse, +0.0045)**; 95% CI −0.0001 to +0.0098.
+- RB worse by 0.0146, QB worse by 0.0136 (both beyond the 0.01 limit).
+- The fitted shifts are unstable week to week (RB −0.44, then −0.10, then −0.02).
+- **T1 fails (1) and (3). Not applied. The TD model is unchanged and the tab stays "experimental".**
+
+**Proposal (not built):** archive each served TD list like P67 does for yardage props (`props_archive`), so TD picks become gradeable week by week. Ops only, changes no number.
+
+---
+
+## 2026-10-29 — TD model: per-position correction, criteria written BEFORE the walk-forward
+
+**Candidate T1:** a per-position logit shift on the sim's `anytime_td` (QB / RB / WR / TE; FB left raw), fitted by log loss on training weeks.
+
+**Walk-forward:**
+- Data: the archived pregame scorers, weeks 1 and 3-6 (`data/sims_archive`; no week-2 scorers stored).
+- Test weeks 4, 5 and 6, each fitted on all earlier weeks only.
+
+**T1 is applied to the TD model only if all three hold:**
+- (1) pooled test log loss improves;
+- (2) a bootstrap over games (5,000) gives a 95% CI for the improvement that excludes 0;
+- (3) no position's test log loss is worse by more than 0.01.
+
+**Otherwise** the model is unchanged and the tab stays labelled "experimental". The market comparison is reported only where odds were stored (week 7 noon, `td_props.json`).
 
 ---
 

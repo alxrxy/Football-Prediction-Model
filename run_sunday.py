@@ -45,6 +45,7 @@ from src import (
     props,
     scenarios,
     simulate_nfl,
+    td_props,
 )
 from src.features import parse_dt
 from src.predict_baseline import slate_window
@@ -203,6 +204,14 @@ def refresh(window: Window, target: date, args) -> None:
 
     if not args.skip_props:
         step("props: rank", lambda: props.run(with_explanations=not args.no_explain))
+
+    # Anytime-TD tab (wired 2026-10-29): ranks the stored TD lines if they are this
+    # week's, otherwise publishes the simulation's chances only. The TD lines pull
+    # (`ingest_td_props`, 1 credit a game) stays manual under the P69 budget.
+    def _td():
+        td_props.run()
+        td_props.publish()
+    step("TD props: rank / model-only", _td)
 
     # P66: starting-QB scenarios for this window's games that qualify (an
     # unresolved starter), merged into scenarios.json; comparison only, nothing
