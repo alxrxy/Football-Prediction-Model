@@ -153,6 +153,32 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-10-29 — TD experiment T2 result: FAILS all three bars; not applied (shadow only, as decided)
+
+`calibration/td_t2_pbp.py`: 99.5% of scorer rows matched to play-by-play ids. Test weeks 4-6: 704 rows, 44 games.
+- Log loss: raw sim 0.4984, T2 **0.5016 (worse, +0.0032)**; 95% CI −0.0009 to +0.0075.
+- By position: RB 0.5440 → 0.5587 and FB 0.1042 → 0.1180 (both beyond 0.01); QB, WR better by < 0.004; TE slightly worse.
+- The fitted coefficients on the goal-line share and the inside-10 target share change sign between weeks (gl −0.26 / +0.31 / +0.25; t10 +0.24 / 0.00 / +0.34): three to five weeks of shares is too little to learn from.
+- The sim's own `rz_*` / `gl_*` usage already carries most of this. Re-test when weeks 7-9 are archived; the TD tab stays "experimental".
+
+---
+
+## 2026-10-29 — TD experiment T2 (SHADOW ONLY): play-by-play goal-line carries and targets inside the 10; criteria written BEFORE the run
+
+**Features** (nflverse 2026 play-by-play, regular season, walk-forward: only games before the one predicted):
+- the player's share of his team's carries at yardline_100 ≤ 5;
+- his share of team targets at yardline_100 ≤ 10;
+- each over all prior 2026 games (0 if none).
+
+**Model T2:** logistic regression of "scored a rushing or receiving TD" on logit(sim `anytime_td`) plus the two shares. It is fitted on weeks < W and tested on W = 4, 5, 6; rows are the archived pregame scorers (weeks 1, 3-6).
+
+**Pass bars, all three needed (a pass would still only make it a candidate; per the user it is not applied):**
+- (1) pooled test log loss better than the raw sim;
+- (2) a game-bootstrap 95% CI excluding 0;
+- (3) no position worse by more than 0.01.
+
+---
+
 ## 2026-10-29 — P79 shadow replay weeks 5-7: **R1 FAILS (38.7% vs ≥ 80%; 1 removed player was on the official report and did not play); R2 PASSES. NOT shipped**; P74 shadow started; P72 closed; tracker gap cause; trade chips; explanations back
 
 **P79** (criteria in the entry below, written first; `calibration/p79_replay.py`, output `calibration/2026-10-29_p79_replay_wk5-7.txt`). Only week 7 is affected: in weeks 5-6 the ESPN rows were that week's own.
