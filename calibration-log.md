@@ -184,7 +184,7 @@ Edits to the user's rows, each with a NOTE in the file: Rams Donald, A. Jackson,
 
 **My audit error, corrected before NE @ MIA kicked off.** The first audit filtered to week 8 and missed carried-forward week-6 rows (P79), so the first NE @ MIA run charged MIA Duck, Douglas, Savaiinaea, Beal and NE Arkin. Caught from the served injury list at 15:03 CT. Cleared Douglas, Savaiinaea, Arkin (off the final report at [patriots.com](https://www.patriots.com/news/week-8-injury-report-patriots-at-dolphins-x9227) and off the list; Jacobs rule) and Beal ([waived, miamidolphins.com](https://www.miamidolphins.com/news/dolphins-elevate-gonzalez-llewellyn)). NE @ MIA re-run alone, done 15:10 CT. **Duck (0.59) kept:** last known PUP, no official source. LAC @ LA and KC @ DEN were checked: their carried rows are IR per the user's note.
 
-**Run** (game-scoped, as on TNF; each done before its kickoff): Odds API 500 → 477 (game lines 3, props 16, TD 4). LAC @ LA done 14:55 CT, KC @ DEN 15:02, NE @ MIA 15:10. LAC @ LA's explanations were skipped for time.
+**Run** (game-scoped, as on TNF; each done before its kickoff): Odds API 500 → 477 (game lines 3, props 16, TD 4). LAC @ LA done 14:55 CT, KC @ DEN 15:02, NE @ MIA 15:10.
 
 | Game | Prelim base / ML / sim | Now base / ML / sim WP | Market |
 |---|---|---|---|
