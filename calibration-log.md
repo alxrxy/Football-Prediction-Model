@@ -107,6 +107,7 @@ status only when its adoption test is met.
 | P76 | Live: an overtime walk-off score is treated as a kickoff after a score, so the game shows ~1% instead of final | live model | 2026-10-25 | P73 V4 review, PIT @ TB 10/18 20:33Z (PIT TD in OT → kickoff to TB, TB 0.85%). The guard behaved correctly by its rule; the engine has no game-over state for a sudden-death OT score | (to set with the user) e.g. an OT touchdown, or any OT score that ends the game, gives a final state with WP 0 / 1 | logged 2026-10-25 (user: small tracker item); nothing built |
 | P78 | No arrival or departure credit for traded players: the old team's rating keeps him, the new team gets nothing | engine | 2026-10-29 | 7 in-season trades (see the 10/29 trades entry); a departure Out row would be worth 0.97-5.50 pts to the old team | walk-forward 2016-25 trades; MAE improves with game-bootstrap CI excluding 0 (criteria to confirm with the user) | proposed 2026-10-29; nothing built |
 | P79 | Injuries: the newest ESPN injury pull stays in force indefinitely when the ESPN feed stops answering, so a week-old ESPN report is charged into later weeks | data / pipeline | 2026-10-29 | `latest_injury_report` retires ESPN rows only by a newer ESPN pull. Since 10/18 none has arrived, so the 10/18 (week-6) ESPN pull, 112 rows, was in force for every week-7 prediction, though the 10/25 runs were logged as "no ESPN feed". Week-7 served breakdowns hold **46 charges (28.2 pts) on players whose only in-force row is that ESPN pull**. That is an upper bound: some 'inactive' rows come from official lists, and many are genuine IR absences (Garrett, Bartch). But some are stale statuses, e.g. MIA Caleb Douglas Q 0.53, who played (2 rec). The week-8 preliminary run carries the same rows | (to confirm with the user) ESPN rows count only for the week they were pulled for (as P19 does for nflverse); IR rows kept until a newer source contradicts them; replay weeks 2-7 on served breakdowns: charges removed only on players who played or were not on that week's official report; MAE / ATS reported, not gated | logged 2026-10-29; nothing built (changes pregame numbers: next boundary at the earliest) **Criteria set 10/29 (R1-R5); shadow replay weeks 5-7: R1 FAILS (12/31 = 38.7% played; Blankenship on report, did not play), R2 PASSES. NOT shipped; redesign proposed (drop only on later snaps / absence from a filed official report).** |
+| P80 | Kickoffs: `ET_UTC_OFFSET_HOURS = 4` stores every game after DST ends (11/1) one hour early, so kickoff gates treat unstarted games as started | bug fix | 2026-11-01 | Week 8: all 12 Sunday games stored 1 h early against ESPN; 4 unstarted rows corrected by hand, MNF and weeks 9+ not | Stored kickoffs match ESPN for weeks 8-18 after a schedule ingest | open; user's call, nothing built |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -150,6 +151,50 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-11-01 — Sunday afternoon window: LAC @ LA, KC @ DEN, NE @ MIA re-run on official lists; PHI @ WAS held PRELIMINARY; stored kickoffs were 1 h early (P80)
+
+**Kickoffs (P80).** DST ended 11/1. `ingest_nflverse.ET_UTC_OFFSET_HOURS = 4` stored every game from today on one hour early (LAC @ LA 20:05Z; actual 21:05Z per ESPN and the rams.com / patriots.com post times). The pipeline would have treated all three afternoon games as already kicked off. Corrected in `games` for the 4 unstarted Sunday games only (21:05Z, 21:25Z, 21:25Z, 01:20Z). **Not fixed:** MNF CHI @ SEA, weeks 9+, and the code; an nflverse schedule ingest restores the wrong times.
+
+**Manual file.** `2026-wk08_new.csv` (found in `data/manual_injuries/`, not the project root; 85 rows) merged into `2026-wk08.csv`. Header identical; no conflicts; CAR/GB and Coker/Banks rows kept; validator passed (105 rows after the stale clears below).
+Edits to the user's rows, each with a NOTE in the file: Rams Donald, A. Jackson, B. Young, Nacua (Friday DNP, no status; active on the official list, practice cells blanked so the DNP carries no charge); MIA Addington (same); P74 workaround on LA Simpson and DEN Ehlinger (Out → no status).
+
+**Official lists** (stored as `official_team_article`):
+- LAC, 6 ([chargers.com](https://www.chargers.com/news/rams-inactives-week-8-2026), 11:35 PT): Shelley, D. Jackson, Leonard, Awosika, Wease (healthy), Thompson.
+- LA, 6 ([therams.com](https://www.therams.com/news/joe-cardona-colby-parkinson-among-rams-inactives-for-week-8-2026-vs-chargers), 11:50 PT): Simpson (3QB), Cardona, Murray, Trost, Parkinson, D. Johnson. **No 7th.**
+- KC, 6 ([chiefs.com](https://www.chiefs.com/news/week-8-inactive-players-chiefs-vs-broncos), 14:02): Delane, Nussmeier (3QB), VanSumeren, Pyburn, T. Smith, Pounds.
+- DEN, 7 ([denverbroncos.com](https://www.denverbroncos.com/news/wr-jaylen-waddle-dl-zach-allen-among-broncos-active-for-week-8-game-vs-chiefs), 12:55 MT): Hufanga, Ehlinger (3QB), Ortega, Casey, Bentley, J. Jackson, Onyedim. Matches the CSV 7/7.
+- NE, 6 ([patriots.com](https://www.patriots.com/news/week-8-inactives-patriots-at-dolphins), 14:55 ET): A.J. Brown, Henderson, Prunty, Davison, Canada, Morton (3QB).
+- MIA, 7 (same patriots.com page, plus [NFL.com](https://www.nfl.com/news/nfl-week-8-inactives-players-ruled-out-sunday-2026-season)): Kromah, Dial, Simpson, Haynes, Proctor, Joly, Wayne. **No miamidolphins.com article found**; MIA's list rests on these two sources.
+- NFL.com's list agrees with all six teams. It has no PHI or WAS entry yet.
+
+**P77:** every ESPN list flagged (LA 10, LAC 12, KC 10, DEN 8, MIA 12, NE 9 names; DEN also a superset of its previous list, 7/7). They name McDuffie, Rice, Surtain, Joe Alt, Tre' Harris, C. Davis and others that the official lists omit. None used; no ESPN feed or ESPN inactives written.
+
+**CSV vs official, differences:**
+- Q → inactive: LAC D. Jackson, Shelley.
+- Blank → inactive: NE Prunty, Canada (both Coach's Decision), MIA Wayne.
+- Inactive, not in CSV: LAC Wease; KC Nussmeier, VanSumeren, Pyburn, T. Smith, Pounds; NE Davison, Morton; MIA Kromah, Dial, Simpson, Haynes, Joly.
+- CSV Out, not on the list: KC Norman-Lott (Out on chiefs.com's Friday report, on no list; charge stays), KC Sneed (chiefs.com Friday report: Questionable; IR move NOT confirmed on an official page; charge stays), NE Bryant (Out on the Saturday report; IR-return window opened 10/14, per a secondary tracker; charge stays, no real effect), DEN Harvey and LAC James (IR, [denverbroncos.com](https://www.denverbroncos.com/news/broncos-promote-s-taylor-rapp-to-active-roster-place-rb-rj-harvey-on-injured-reserve), chargers.com).
+- Q → active: LA Shelton, Whittington, McDuffie; DEN Waddle, Bolles, Allen, B. Jones; KC Thomas; NE Davis, Elliss; MIA Brents, Taylor.
+- SNF: WAS Payne and Newton are Out in the CSV (NFL.com note), but [commanders.com](https://www.commanders.com/news/game-status-commanders-eagles-week-8) has both Questionable (10/30). PHI Bennett Out, IR ([philadelphiaeagles.com](https://www.philadelphiaeagles.com/news/eagles-at-commanders-injury-report-2026-nfl-week-8-sunday-night-football-saquon-barkley-devonta-smith)). Burks Questionable. All unresolved until the lists post.
+
+**QBs.** Herbert, Stafford, Mahomes, Nix, Maye, Willis: not on any official list, books price each, and no QB prop is held for a QB reason. Team reports show Mahomes FP, Maye and Willis no status. Herbert and Stafford rest on the list omission plus books; no team page says "starts". McKee and Daniels: priced; SNF list pending. Backups Simpson, Ehlinger, Nussmeier, Morton held by P49; no charge.
+
+**My audit error, corrected before NE @ MIA kicked off.** The first audit filtered to week 8 and missed carried-forward week-6 rows (P79), so the first NE @ MIA run charged MIA Duck, Douglas, Savaiinaea, Beal and NE Arkin. Caught from the served injury list at 15:03 CT. Cleared Douglas, Savaiinaea, Arkin (off the final report at [patriots.com](https://www.patriots.com/news/week-8-injury-report-patriots-at-dolphins-x9227) and off the list; Jacobs rule) and Beal ([waived, miamidolphins.com](https://www.miamidolphins.com/news/dolphins-elevate-gonzalez-llewellyn)). NE @ MIA re-run alone, done 15:10 CT. **Duck (0.59) kept:** last known PUP, no official source. LAC @ LA and KC @ DEN were checked: their carried rows are IR per the user's note.
+
+**Run** (game-scoped, as on TNF; each done before its kickoff): Odds API 500 → 477 (game lines 3, props 16, TD 4). LAC @ LA done 14:55 CT, KC @ DEN 15:02, NE @ MIA 15:10. LAC @ LA's explanations were skipped for time.
+
+| Game | Prelim base / ML / sim | Now base / ML / sim WP | Market |
+|---|---|---|---|
+| LAC @ LA | LA +7.2 / +5.4 / +7.1 | LA +8.8 / +6.8 / LA 0.77 | LA −6.5, 46 |
+| KC @ DEN | KC +0.8 / DEN +0.1 / KC +0.3 | DEN +0.8 / DEN +1.9 / DEN 0.53 | PK, 42 |
+| NE @ MIA | NE +7.4 / +4.4 / +7.1 | NE +5.2 / +5.4 / NE 0.66 | NE −7, 41 |
+
+**PHI @ WAS held PRELIMINARY:** not re-predicted or re-simulated (WAS +6.7 / +0.1 / WAS 0.70; WAS −6, 40.5). Props and TD lines refreshed. Its stored 5.21 injury edge leans on stale rows: Milton 2.10 (P74 case, McKee starts), Lane Johnson 1.80 and Hollywood Brown 0.46 (P79), none in the CSV. Check all three at its window.
+
+**Tracker:** started 14:43 CT (pid 16132, `data/live/tracker_2026-11-01.log`); following LAC @ LA live. Dev server restarted on 5174, dashboard opened.
 
 ---
 
