@@ -1,0 +1,34 @@
+Stored feed charges older than week 8, in force now, all weeks. Read-only, 2026-11-01. Nothing changed.
+team player pos status play_prob row_week source pulled_at | current charge | served charge (stored prediction)
+
+PHI (2026_08_PHI_WAS, generated 2026-10-29T20:43): 3 old rows in force; current charge 8.42 before cap
+  PHI Joe Milton III            QB  out          pp 0 wk6 espn 2026-10-18 | 2.10 | 2.10
+  PHI Lane Johnson              OT  out          pp 0 wk6 espn 2026-10-18 | 1.80 | 1.80
+  PHI Hollywood Brown           WR  out          pp 0 wk6 espn 2026-10-18 | 0.46 | 0.46
+  served but no longer charged: []
+  all stored rows wk<8 (superseded included): [((1, 'nflverse'), 2), ((2, 'espn'), 1), ((2, 'nflverse'), 4), ((3, 'espn'), 10), ((3, 'nflverse'), 5), ((4, 'espn'), 6), ((4, 'nflverse'), 9), ((5, 'espn'), 12), ((5, 'nflverse'), 8), ((6, 'espn'), 3), ((6, 'manual'), 24), ((7, 'manual'), 19)]
+
+WAS (2026_08_PHI_WAS, generated 2026-10-29T20:43): 0 old rows in force; current charge 2.47 before cap
+  served but no longer charged: [('stefon diggs', 0.32), ('jerzhan newton', 0.07)]
+  all stored rows wk<8 (superseded included): [((1, 'espn'), 5), ((1, 'nflverse'), 4), ((2, 'espn'), 2), ((2, 'nflverse'), 9), ((3, 'espn'), 1), ((3, 'nflverse'), 14), ((4, 'espn'), 1), ((4, 'nflverse'), 13), ((5, 'espn'), 5), ((5, 'nflverse'), 19), ((6, 'nflverse'), 19)]
+
+CHI (2026_08_CHI_SEA, generated 2026-10-29T20:43): 4 old rows in force; current charge 4.69 before cap
+  CHI Case Keenum               QB  out          pp 0 wk6 espn 2026-10-18 | 2.68 | 2.68
+  CHI Jayden Loving             DT  out          pp 0 wk6 espn 2026-10-18 | 0.46 | 0.46
+  CHI Anthony Johnson Jr.       S   out          pp 0 wk6 espn 2026-10-18 | 0.42 | 0.42
+  CHI Jordan McFadden           G   out          pp 0 wk6 espn 2026-10-18 | 0.00 | -
+  served but no longer charged: []
+  all stored rows wk<8 (superseded included): [((1, 'espn'), 6), ((1, 'nflverse'), 6), ((2, 'espn'), 4), ((2, 'nflverse'), 10), ((3, 'espn'), 8), ((3, 'nflverse'), 4), ((4, 'espn'), 7), ((4, 'nflverse'), 6), ((5, 'espn'), 10), ((5, 'nflverse'), 11), ((6, 'espn'), 4), ((6, 'manual'), 9), ((7, 'nflverse'), 4)]
+
+SEA (2026_08_CHI_SEA, generated 2026-10-29T20:43): 7 old rows in force; current charge 6.63 before cap
+  SEA Jadarian Price            RB  ir           pp 0 wk6 espn 2026-10-18 | 0.40 | 0.40
+  SEA Elijah Arroyo             TE  questionable pp 0.55 wk6 espn 2026-10-18 | 0.09 | 0.09
+  SEA Brandon Pili              DT  out          pp 0 wk6 espn 2026-10-18 | 0.07 | 0.09
+  SEA Avery Smith               CB  out          pp 0 wk6 espn 2026-10-18 | 0.00 | -
+  SEA Jalen Milroe              QB  out          pp 0 wk6 espn 2026-10-18 | 0.00 | 0.12
+  SEA Montorie Foster Jr.       WR  out          pp 0 wk6 espn 2026-10-18 | 0.00 | -
+  SEA Robert Henry Jr.          RB  out          pp 0 wk6 espn 2026-10-18 | 0.00 | -
+  served but no longer charged: [('jalen milroe', 0.12)]
+  all stored rows wk<8 (superseded included): [((1, 'espn'), 4), ((1, 'nflverse'), 4), ((2, 'espn'), 2), ((2, 'nflverse'), 6), ((3, 'espn'), 6), ((3, 'nflverse'), 9), ((4, 'espn'), 3), ((4, 'nflverse'), 7), ((5, 'espn'), 7), ((5, 'manual'), 13), ((6, 'espn'), 8), ((6, 'nflverse'), 5), ((7, 'manual'), 12)]
+
+Totals old-row charge now: {'PHI': 4.36, 'CHI': 3.56, 'SEA': 0.56}; in served prediction: {'PHI': 4.36, 'CHI': 3.56, 'SEA': 0.7}

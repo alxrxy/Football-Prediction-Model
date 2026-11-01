@@ -3,8 +3,13 @@
 import os
 import sys
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
+
+# P80: named zones, never a fixed UTC offset. Schedules and ESPN dates are Eastern; the user reads Central.
+EASTERN = ZoneInfo("America/New_York")
+CENTRAL = ZoneInfo("America/Chicago")
 
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")

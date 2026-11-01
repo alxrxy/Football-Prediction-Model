@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import argparse
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from statistics import median
 
 from . import config, db, market
@@ -116,6 +116,11 @@ def _espn(sport: str, path: str, params: dict | None = None, cache_minutes: int 
                          cache_minutes=cache_minutes, cache_tag=tag)
 
 
+def eastern_day(kickoff: datetime) -> str:
+    """ESPN dates are US Eastern days."""
+    return kickoff.astimezone(config.EASTERN).strftime("%Y%m%d")
+
+
 def espn_event_id(sport: str, game: dict) -> str | None:
     """College game ids are ESPN event ids; NFL ids are nflverse's, so the
     ESPN event is found on that day's scoreboard by team codes."""
@@ -124,8 +129,7 @@ def espn_event_id(sport: str, game: dict) -> str | None:
     kickoff = parse_dt(game.get("kickoff_time"))
     if kickoff is None:
         return None
-    day = (kickoff - timedelta(hours=5)).strftime("%Y%m%d")   # ESPN dates are US Eastern days
-    board = _espn(sport, "scoreboard", {"dates": day}, cache_minutes=60, tag=f"espn_board_{sport}") or {}
+    board = _espn(sport, "scoreboard", {"dates": eastern_day(kickoff)}, cache_minutes=60, tag=f"espn_board_{sport}") or {}
     for event in board.get("events") or []:
         comp = (event.get("competitions") or [{}])[0]
         sides = {c.get("homeAway"): ESPN_ALIASES.get(c["team"]["abbreviation"], c["team"]["abbreviation"])

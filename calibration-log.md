@@ -107,7 +107,7 @@ status only when its adoption test is met.
 | P76 | Live: an overtime walk-off score is treated as a kickoff after a score, so the game shows ~1% instead of final | live model | 2026-10-25 | P73 V4 review, PIT @ TB 10/18 20:33Z (PIT TD in OT → kickoff to TB, TB 0.85%). The guard behaved correctly by its rule; the engine has no game-over state for a sudden-death OT score | (to set with the user) e.g. an OT touchdown, or any OT score that ends the game, gives a final state with WP 0 / 1 | logged 2026-10-25 (user: small tracker item); nothing built |
 | P78 | No arrival or departure credit for traded players: the old team's rating keeps him, the new team gets nothing | engine | 2026-10-29 | 7 in-season trades (see the 10/29 trades entry); a departure Out row would be worth 0.97-5.50 pts to the old team | walk-forward 2016-25 trades; MAE improves with game-bootstrap CI excluding 0 (criteria to confirm with the user) | proposed 2026-10-29; nothing built |
 | P79 | Injuries: the newest ESPN injury pull stays in force indefinitely when the ESPN feed stops answering, so a week-old ESPN report is charged into later weeks | data / pipeline | 2026-10-29 | `latest_injury_report` retires ESPN rows only by a newer ESPN pull. Since 10/18 none has arrived, so the 10/18 (week-6) ESPN pull, 112 rows, was in force for every week-7 prediction, though the 10/25 runs were logged as "no ESPN feed". Week-7 served breakdowns hold **46 charges (28.2 pts) on players whose only in-force row is that ESPN pull**. That is an upper bound: some 'inactive' rows come from official lists, and many are genuine IR absences (Garrett, Bartch). But some are stale statuses, e.g. MIA Caleb Douglas Q 0.53, who played (2 rec). The week-8 preliminary run carries the same rows | (to confirm with the user) ESPN rows count only for the week they were pulled for (as P19 does for nflverse); IR rows kept until a newer source contradicts them; replay weeks 2-7 on served breakdowns: charges removed only on players who played or were not on that week's official report; MAE / ATS reported, not gated | logged 2026-10-29; nothing built (changes pregame numbers: next boundary at the earliest) **Criteria set 10/29 (R1-R5); shadow replay weeks 5-7: R1 FAILS (12/31 = 38.7% played; Blankenship on report, did not play), R2 PASSES. NOT shipped; redesign proposed (drop only on later snaps / absence from a filed official report).** |
-| P80 | Kickoffs: `ET_UTC_OFFSET_HOURS = 4` stores every game after DST ends (11/1) one hour early, so kickoff gates treat unstarted games as started | bug fix | 2026-11-01 | Week 8: all 12 Sunday games stored 1 h early against ESPN; 4 unstarted rows corrected by hand, MNF and weeks 9+ not | Stored kickoffs match ESPN for weeks 8-18 after a schedule ingest | open; user's call, nothing built |
+| P80 | Kickoffs: `ET_UTC_OFFSET_HOURS = 4` stores every game after DST ends (11/1) one hour early, so kickoff gates treat unstarted games as started | bug fix | 2026-11-01 | Week 8: all 12 Sunday games stored 1 h early against ESPN; 4 unstarted rows corrected by hand, MNF and weeks 9+ not | Stored kickoffs match ESPN for weeks 8-18 after a schedule ingest | **FIXED 11/1** (named zones; test first; 152 unplayed rows + mirror re-derived; dry re-ingest changes 0 unplayed) |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -151,6 +151,41 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-11-01 — P80 fixed (named time zones); kickoffs re-derived; stale-row audit PHI / WAS / CHI / SEA (report only); manual-row regression found and restored
+
+**P80 fix.** Test first: `tests/test_kickoff_times.py` failed 10 checks, then passed 7 of 7 tests; full suite 321 passed. `config.EASTERN` / `config.CENTRAL` (`zoneinfo`; `tzdata` already pinned). `ingest_nflverse._kickoff` reads the schedule as America/New_York; `ET_UTC_OFFSET_HOURS` removed. `clv.eastern_day` replaces the −5 h on a kickoff. `run_sunday` shows times in America/Chicago rather than the machine's zone.
+
+**Re-derived** from a fresh nflverse schedule, unstarted games only: 152 rows corrected (week 8: CHI @ SEA, now 2026-11-03T01:15Z; weeks 9-18: 151). PHI @ WAS stays 01:20Z. 0 unplayed rows still differ. A dry-run `ingest_games` on the real schedule changes 0 unplayed rows. It would move only the 8 finished noon games (+1 h); those stay as stored, as nothing was to touch started games.
+- **`sync_to_supabase` path:** it pushes the sqlite mirror's `games`, so 153 mirror rows were updated too.
+- **ESPN cross-check of 153 unplayed:** 128 match. 24 are ESPN's 05:00Z placeholder (weeks 16-18, flex TBD; our 13:00 ET is nflverse's default). **1 real difference: week 9 LV @ SF, schedule 21:05Z, ESPN 21:25Z.** Left on the schedule; check before week 9.
+
+**P73.** `live_sim.kickoff_guard` reads no kickoff time: its input is score, game clock, possession, down and yard line. The fix cannot affect it, and it needs no change. The tracker's use of `kickoff_time` is game matching within ±36 h. The running tracker (started 14:43 CT) cached the old SNF kickoff in memory; its only effect is an earlier idle wake.
+**Not changed:** `live_tracker`'s `_now() − 5 h`. It is a slate-day rollover on the current time, not a kickoff, and real Eastern time would flip the date at midnight during a late game in daylight-time weeks.
+
+**Regression I caused, restored.** The 15:06 NE / MIA-only injury write gave `manual` a newer pull, and `manual` is read per source, not per team (`PER_TEAM_SOURCES` is nflverse only), so every other team's manual rows left force at 15:06. Found 15:28 CT. Stored predictions and sims for all games were made before it or are unaffected (NE @ MIA's own rows were in force). Restored by writing the full file (207 rows, 105 manual) at 15:29. No prediction or sim was re-run. **Rule: never write a subset of `manual` rows.**
+
+**Stale-row audit (read-only; no number changed).** `calibration/2026-11-01_stale_feed_charges_PHI_WAS_CHI_SEA.txt`. All rows are source `espn`, week 6, pulled 2026-10-18.
+
+| Team | Player | Status | Charge now | Served |
+|---|---|---|---|---|
+| PHI | Joe Milton III (QB) | out | 2.10 | 2.10 |
+| PHI | Lane Johnson (OT) | out | 1.80 | 1.80 |
+| PHI | Hollywood Brown (WR) | out | 0.46 | 0.46 |
+| CHI | Case Keenum (QB) | out | 2.68 | 2.68 |
+| CHI | Jayden Loving (DT) | out | 0.46 | 0.46 |
+| CHI | Anthony Johnson Jr. (S) | out | 0.42 | 0.42 |
+| CHI | Jordan McFadden (G) | out | 0.00 | — |
+| SEA | Jadarian Price (RB) | ir | 0.40 | 0.40 |
+| SEA | Elijah Arroyo (TE) | questionable | 0.09 | 0.09 |
+| SEA | Brandon Pili (DT) | out | 0.07 | 0.09 |
+| SEA | Jalen Milroe (QB) | out | 0.00 | 0.12 |
+| SEA | Avery Smith, Montorie Foster Jr., Robert Henry Jr. | out | 0.00 | — |
+| WAS | none | | | |
+
+Old-row charge now: PHI 4.36, CHI 3.56, SEA 0.56, WAS 0. No week other than 6 has a row in force; rows from weeks 1-7 otherwise are stored but superseded. The served PHI @ WAS and CHI @ SEA predictions are both from 10/29.
 
 ---
 

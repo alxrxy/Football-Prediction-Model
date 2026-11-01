@@ -78,14 +78,11 @@ class Window:
 
 
 def _tz() -> str:
-    """CDT, rather than the "Central Daylight Time" Windows hands back."""
-    name = datetime.now().astimezone().strftime("%Z")
-    initials = "".join(w[0] for w in name.split() if w)
-    return initials if len(name.split()) > 1 else name
+    return datetime.now(config.CENTRAL).strftime("%Z")
 
 
 def _local(when: datetime) -> str:
-    return when.astimezone().strftime("%H:%M")
+    return when.astimezone(config.CENTRAL).strftime("%H:%M")
 
 
 def _fmt(when: datetime) -> str:

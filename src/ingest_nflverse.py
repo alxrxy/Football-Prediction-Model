@@ -25,7 +25,7 @@ import math
 import warnings
 
 import numpy as np
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from . import config, db, nfl_venues, qb_prior
 
@@ -191,12 +191,7 @@ def ingest_games(store: db.Store, schedules, season: int) -> int:
     return len(rows)
 
 
-# nflverse gameday/gametime are US Eastern. Treating that as UTC-4 (EDT) is
-# correct for the whole regular season; January playoff games land an hour off,
-# which is immaterial for a kickoff-hour weather lookup.
-ET_UTC_OFFSET_HOURS = 4
-
-
+# nflverse gameday/gametime are US Eastern wall-clock times (P80).
 def _kickoff(row):
     day, t = row.get("gameday"), row.get("gametime")
     if not day or str(day) == "nan":
@@ -206,10 +201,10 @@ def _kickoff(row):
             hh, mm = str(t).split(":")[:2]
         else:
             hh, mm = "13", "00"
-        eastern = datetime.fromisoformat(str(day)).replace(hour=int(hh), minute=int(mm))
+        eastern = datetime.fromisoformat(str(day)).replace(hour=int(hh), minute=int(mm), tzinfo=config.EASTERN)
     except (ValueError, TypeError):
         return None
-    return (eastern + timedelta(hours=ET_UTC_OFFSET_HOURS)).replace(tzinfo=timezone.utc)
+    return eastern.astimezone(timezone.utc)
 
 
 def _float(value):
