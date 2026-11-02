@@ -154,6 +154,40 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-11-01 — SNF PHI @ WAS window: official lists in, stale rows cleared, re-predicted and re-simulated (T-80)
+
+**Official lists**, stored as `official_team_article`. Stored kickoff 01:20Z; run finished 18:02 CT.
+- **PHI** (philadelphiaeagles.com/news/eagles-at-commanders-inactives-nfl-2026-week-8-sunday-night-football, 11/1 6:50 PM ET): DeVonta Smith, Jihaad Campbell, Dontayvion Wicks, Jonathan Jones, Jake Majors, Britain Covey.
+- **WAS** (commanders.com/news/inactives-commanders-vs-eagles-week-8-2026, 11/1 6:51 PM ET): Athan Kaliakmanis (emergency QB), Fabian Moreau, Isaac Yiadom, Tanoa Togiai, Daron Payne, Javon Kinlaw.
+- **NFL.com not used:** its week-8 inactives article showed no list for this game when read at about 17:55 CT.
+- **commanders.com/news/washington-commanders-vs-eagles-inactives-week-8 is a 2023 article** (10/29/2023) that surfaces in search as week 8. It was rejected.
+
+**P77 / ESPN, not used.** P77 raised no flag on either list, and both are wrong against the official lists. PHI: 6 of ESPN's 7 names are the Eagles' week-7 official list (Nolan Smith, DeVonta Smith, Wicks, Payton, Michael Carter II, Majors), plus Lane Johnson; it misses Campbell, Jones and Covey. WAS: names Omenihu and Mariota, misses Payne, Kinlaw and Kaliakmanis. Nothing from ESPN was stored. A list read at T-88 can still be a copy that P77 passes, so the official article stays the only source. No rule changed.
+
+**Row by row (`2026-wk08.csv`, full manual write: 109 rows, never a subset).**
+| Player | Official source | Result |
+|---|---|---|
+| Daron Payne | On the WAS list | Out; charge 0.97 |
+| Jer'Zhan Newton | Questionable (commanders.com game status, 10/30); not on the list | **Questionable, active.** User rule: the list decides. **Conflict:** commanders.com roster page shows Reserve/Injured and no activation was found. No 2026 snaps, charge 0.00 either way |
+| Treylon Burks, John Bates | Questionable; not on the list | Active |
+| Jakorian Bennett | Out on the official report; Reserve/Injured on the roster page | Out; charge 0.22. IR players do not appear on inactive lists |
+| Jalen Carter | Not on the official report or list | CSV row error: the Abdomen line is DB Michael Carter II's. Cells blanked; 0.17 charge removed |
+
+**Stale rows cleared by manual row (Jacobs rule): off the final official report, off the official list, Active on the Eagles' roster page.** Joe Milton III 2.10, Lane Johnson 1.80, Hollywood Brown 0.46. WAS had none.
+
+**QBs.** PHI: Tanner McKee, "start No. 3" (philadelphiaeagles.com preview, 11/1); the Eagles' week-7 inactives article names Milton as his backup. WAS: Jayden Daniels, full practice all week, no game status, not on the list; no team article says "starting" outright. P74 workaround: Kaliakmanis as a no-status row so an Out row cannot fill the QB slot. QB props released.
+
+**Run (`stage2` game-scoped; PHI @ WAS only).** Other week-8 predictions and sims kept their earlier timestamps. Odds quota 477 → 469.
+| | Before | After |
+|---|---|---|
+| Baseline (WAS margin) | +6.7 | +4.5 (market WAS −5.5) |
+| ML (WAS margin) | +0.1 | −0.8 |
+| Sim WAS win | 0.70 | 0.644 (mean 24.5-19.8) |
+
+Injury edge after the clears: PHI 5.39 before the cap, WAS 2.35. Largest charge left: Jake Majors 1.50, on the official list. Value flags off; no scenario qualifies. Props: 28 priced, 9 ranked, 8 held as likely usage misses; TD: 18 priced, 1 held. Dashboard shows OFFICIAL REPORTS + INACTIVE LISTS IN. Tracker pid 16132 is running and loads a game's pregame when it goes live, so it reads this sim at kickoff.
+
+---
+
 ## 2026-11-01 — P80 fixed (named time zones); kickoffs re-derived; stale-row audit PHI / WAS / CHI / SEA (report only); manual-row regression found and restored
 
 **P80 fix.** Test first: `tests/test_kickoff_times.py` failed 10 checks, then passed 7 of 7 tests; full suite 321 passed. `config.EASTERN` / `config.CENTRAL` (`zoneinfo`; `tzdata` already pinned). `ingest_nflverse._kickoff` reads the schedule as America/New_York; `ET_UTC_OFFSET_HOURS` removed. `clv.eastern_day` replaces the −5 h on a kickoff. `run_sunday` shows times in America/Chicago rather than the machine's zone.
