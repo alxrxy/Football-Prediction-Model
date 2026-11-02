@@ -134,14 +134,15 @@ function ExploratoryBanner() {
           plan.
         </li>
         <li>
-          <b>Calibration so far</b> (archived pregame simulations, weeks 1 and 3&ndash;6: 992 player-games in 62
-          games): the average simulated chance is 23.1% against 22.8% actual, but players the simulation puts at
-          30&ndash;40% scored 28.8% of the time, and tight ends run under (19.0% vs 22.5%). A per-position correction
+          <b>Calibration so far</b> (archived pregame simulations, weeks 4&ndash;8: 1,088 player-games in 68
+          games): the average simulated chance is about 23% against 24% actual, players the simulation puts at
+          30&ndash;40% scored 36.3% of the time, and tight ends run under (18.9% vs 21.8%). A per-position correction
           failed its walk-forward test on 2026-10-29, so none is applied.
         </li>
         <li>
-          <b>Tiny market sample.</b> Simulation vs devigged market has been compared on one slate only (week 7 noon,
-          123 players: Brier 0.183 vs 0.178, the market slightly better). Graded leans so far: week 6 1&ndash;9, week 7
+          <b>Small market sample.</b> Simulation vs devigged market has been compared on 454 priced players in 24 games
+          (weeks 4, 6 and 7, rebuilt from stored odds: Brier 0.1593 vs 0.1557, the market slightly better, and the
+          interval includes zero). Graded leans so far: week 6 1&ndash;9, week 7
           4&ndash;13, neither list served.
         </li>
         <li>

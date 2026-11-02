@@ -108,6 +108,7 @@ status only when its adoption test is met.
 | P78 | No arrival or departure credit for traded players: the old team's rating keeps him, the new team gets nothing | engine | 2026-10-29 | 7 in-season trades (see the 10/29 trades entry); a departure Out row would be worth 0.97-5.50 pts to the old team | walk-forward 2016-25 trades; MAE improves with game-bootstrap CI excluding 0 (criteria to confirm with the user) | proposed 2026-10-29; nothing built |
 | P79 | Injuries: the newest ESPN injury pull stays in force indefinitely when the ESPN feed stops answering, so a week-old ESPN report is charged into later weeks | data / pipeline | 2026-10-29 | `latest_injury_report` retires ESPN rows only by a newer ESPN pull. Since 10/18 none has arrived, so the 10/18 (week-6) ESPN pull, 112 rows, was in force for every week-7 prediction, though the 10/25 runs were logged as "no ESPN feed". Week-7 served breakdowns hold **46 charges (28.2 pts) on players whose only in-force row is that ESPN pull**. That is an upper bound: some 'inactive' rows come from official lists, and many are genuine IR absences (Garrett, Bartch). But some are stale statuses, e.g. MIA Caleb Douglas Q 0.53, who played (2 rec). The week-8 preliminary run carries the same rows | (to confirm with the user) ESPN rows count only for the week they were pulled for (as P19 does for nflverse); IR rows kept until a newer source contradicts them; replay weeks 2-7 on served breakdowns: charges removed only on players who played or were not on that week's official report; MAE / ATS reported, not gated | logged 2026-10-29; nothing built (changes pregame numbers: next boundary at the earliest) **Criteria set 10/29 (R1-R5); shadow replay weeks 5-7: R1 FAILS (12/31 = 38.7% played; Blankenship on report, did not play), R2 PASSES. NOT shipped; redesign proposed (drop only on later snaps / absence from a filed official report).** |
 | P80 | Kickoffs: `ET_UTC_OFFSET_HOURS = 4` stores every game after DST ends (11/1) one hour early, so kickoff gates treat unstarted games as started | bug fix | 2026-11-01 | Week 8: all 12 Sunday games stored 1 h early against ESPN; 4 unstarted rows corrected by hand, MNF and weeks 9+ not | Stored kickoffs match ESPN for weeks 8-18 after a schedule ingest | **FIXED 11/1** (named zones; test first; 152 unplayed rows + mirror re-derived; dry re-ingest changes 0 unplayed) |
+| P81 | Served-list archive: every props and TD refresh stores the exact served list in data/archive/served_lists before publishing | process | 2026-11-01 | Report card: TD lists never archived; TD raw odds overwritten (no week 5 or 8 market left) | `tests/test_served_archive.py` fails if a list being served is not in the archive byte for byte | **BUILT 11/1** (`src/served_archive.py`; no missing week rebuilt) |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -151,6 +152,22 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-11-01 — P81 served-list archive; TD note moved to weeks 4-8; Props tab label (no pick or model number changed)
+
+**Archive.** `src/served_archive.py` writes each list to `data/archive/served_lists/<kind>/<season>_w<WW>/<stamp>.json`: exact served bytes (picks, lines, prices, model and market chances, rank), read-only, hashed in `index.csv`, with the raw lines kept once by hash. `props.run` and both branches of `td_props.run` call it BEFORE writing the served file. **Decision:** a failed archive now stops the refresh and the last archived list stays up, because an unrecorded list is the failure this exists to stop. `run_sunday` reports the step as failed and carries on. P67 (`data/props_archive`) is unchanged; its failure still never blocks serving, and the props record and report card still read it.
+
+**Test.** `tests/test_served_archive.py`: failed first (no module), then the live check failed on all four served files until they were captured, then passed. Full suite 329 passed; dashboard build passes.
+
+**Capture.** `--capture` stored the two lists live on 11/1 as exact copies with `origin=capture`, `archived_at` 03:56Z 11/2. The lists are from 00:00Z, before SNF kickoff, but the archive time is after it, so they do not count as archived pregame. **No missing week was rebuilt.** Noon games on 11/1 had no props list to archive: they were absent from every week-8 ranking.
+
+**What it cannot catch.** It keeps what is served, so a game with no ranking run before kickoff still has no list. The Monday CHI @ SEA is on neither current list.
+
+**TD note.** `td_props.NOTE` and the banner in `TdPropsPage.jsx` now read weeks 4-8: 1,088 player-games in 68 games, about 23% against 24% actual, 30-40% band 34.5% predicted and 36.3% actual, TE 18.9% vs 21.8%. The "Experimental" label stays. The served `td_props.json` was not re-run, so its `note` field updates at the next refresh; the page banner is what users see and it is live. The market sentence now also uses the report card: 454 priced players in 24 games, Brier 0.1593 vs 0.1557, rebuilt from stored odds.
+
+**Props label.** Approved wording: "Weeks 4-8: served picks 48.3%, -7.7% ROI; kept picks 52.6%, break-even; ranking within the list not validated." The first dictated version joined the served win rate to the kept rows' ROI and was replaced the same night.
 
 ---
 

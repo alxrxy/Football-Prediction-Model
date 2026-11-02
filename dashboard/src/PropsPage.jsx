@@ -117,6 +117,9 @@ export default function PropsPage({ tabs = null }) {
             </div>
           ) : (
             <>
+              <div className="caveat" role="note">
+                <strong>Weeks 4-8: served picks 48.3%, -7.7% ROI; kept picks 52.6%, break-even; ranking within the list not validated.</strong>
+              </div>
               {data.bias_adjust?.applied ? <BiasNote fit={data.bias_adjust} /> : (
                 <div className="caveat">
                   Ranked by how far the simulation&rsquo;s chance sits from the market&rsquo;s. Known bias this week (P17):

@@ -41,7 +41,7 @@ from statistics import mean, median
 
 import numpy as np
 
-from . import config, market
+from . import config, market, served_archive
 from .box_score import PCT_GRID
 from .names import norm
 
@@ -644,7 +644,10 @@ def run(with_explanations: bool = True, top_n: int = TOP_N, with_alts: bool = Fa
                                   if gid in (lines.get("games") or {})],
     }
     config.ensure_dirs()
-    PROPS_JSON.write_text(json.dumps(payload), encoding="utf-8")
+    body = json.dumps(payload).encode("utf-8")
+    # Before the served files: a list that cannot be archived is not published.
+    served_archive.archive("props", body, lines_bytes)
+    PROPS_JSON.write_bytes(body)
     if PUBLIC_PROPS_JSON.parent.exists():
         shutil.copy(PROPS_JSON, PUBLIC_PROPS_JSON)
     # P67: keep this ranking exactly as served (the bytes on disk), for the

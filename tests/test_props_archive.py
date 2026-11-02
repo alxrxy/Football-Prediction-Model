@@ -15,7 +15,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from src import p62_compare, props
+from src import p62_compare, props, served_archive
 from src import props_archive as pa
 
 PASS, FAIL = 0, 0
@@ -114,7 +114,8 @@ def test_seed_from_p62():
 def _run_props(tmp: Path, archive_fn=None):
     """props.run on fixture lines and sims, every path redirected into tmp."""
     saved = (props.PROPS_LINES_JSON, props.PROPS_JSON, props.PUBLIC_PROPS_JSON, props._sims, pa.ARCHIVE_DIR,
-             pa.archive, p62_compare.export)
+             pa.archive, p62_compare.export, served_archive.ARCHIVE_DIR)
+    served_archive.ARCHIVE_DIR = tmp / "served"
     (tmp / "public").mkdir(exist_ok=True)
     props.PROPS_LINES_JSON = tmp / "props_lines.json"
     props.PROPS_LINES_JSON.write_text(json.dumps(LINES), encoding="utf-8")
@@ -127,7 +128,7 @@ def _run_props(tmp: Path, archive_fn=None):
         props.run(with_explanations=False)
     finally:
         (props.PROPS_LINES_JSON, props.PROPS_JSON, props.PUBLIC_PROPS_JSON, props._sims, pa.ARCHIVE_DIR,
-         pa.archive, p62_compare.export) = saved
+         pa.archive, p62_compare.export, served_archive.ARCHIVE_DIR) = saved
     return tmp / "props.json", tmp / "public" / "props.json"
 
 

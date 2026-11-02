@@ -64,7 +64,7 @@ import shutil
 from datetime import datetime, timezone
 from statistics import mean
 
-from . import config, market
+from . import config, market, served_archive
 from .props import _kicked_off, _sims, match_player
 
 TD_LINES_JSON = config.DATA_DIR / "td_props_lines.json"
@@ -99,12 +99,12 @@ CONFIDENCE = "exploratory"
 NOTE = (
     "Experimental. Touchdowns are binary and high-variance, and the scorer split is usage "
     "extrapolation - the simulator's least certain output. Calibration on the archived pregame "
-    "simulations (weeks 1 and 3-6, 992 player-games in 62 games; 2026-10-29): the mean simulated "
-    "chance is 23.1% against 22.8% actual, but the 30-40% band says 34.5% and hits 28.8%, and tight "
-    "ends run under (19.0% vs 22.5%). A per-position correction failed its walk-forward, so none is "
+    "simulations (weeks 4-8, 1,088 player-games in 68 games; 2026-11-01): the mean simulated "
+    "chance is about 23% against 24% actual, the 30-40% band says 34.5% and hits 36.3%, and tight "
+    "ends run under (18.9% vs 21.8%). A per-position correction failed its walk-forward, so none is "
     "applied. P18 (re-diagnosed 2026-09-25): the engine over-converts first-and-goal; not fixed. "
-    "The market comparison covers one slate only (week 7 noon, 123 players: Brier sim 0.183 vs "
-    "devigged market 0.178), and the graded leans so far are week 6 1-9 and week 7 4-13, never "
+    "The market comparison covers 454 priced players in 24 games (weeks 4, 6 and 7, rebuilt from "
+    "stored odds: Brier sim 0.1593 vs devigged market 0.1557, interval includes zero), and the graded leans so far are week 6 1-9 and week 7 4-13, never "
     "served. Books post Yes only, so the market probability is an estimate: prices are scaled to "
     "what the game total implies."
 )
@@ -328,7 +328,9 @@ def run(top_n: int = TOP_N) -> dict:
     if upcoming and (lines.get("season"), lines.get("week")) != upcoming:
         payload = model_only(*upcoming, _sims())
         config.ensure_dirs()
-        TD_PROPS_JSON.write_text(json.dumps(payload), encoding="utf-8")
+        body = json.dumps(payload).encode("utf-8")
+        served_archive.archive("td", body)   # before the served file; failure stops the refresh
+        TD_PROPS_JSON.write_bytes(body)
         print(f"[td-props] week {payload['week']}: no lines for this week (lines file is week {lines.get('week')}); "
               f"model-only chances for {len(payload['model_only'])} players in {payload['games_covered']} game(s) "
               f"-> {TD_PROPS_JSON}")
@@ -365,7 +367,9 @@ def run(top_n: int = TOP_N) -> dict:
         "started": result["started"],
     }
     config.ensure_dirs()
-    TD_PROPS_JSON.write_text(json.dumps(payload), encoding="utf-8")
+    body = json.dumps(payload).encode("utf-8")
+    served_archive.archive("td", body, TD_LINES_JSON.read_bytes())   # before the served file; failure stops the refresh
+    TD_PROPS_JSON.write_bytes(body)
     print(f"[td-props] week {payload['week']}: {payload['priced']} players priced across "
           f"{payload['games_covered']} game(s), {len(result['held_out'])} held out, "
           f"{len(result['unmatched'])} names unmatched, {result['team_entries']} team defences skipped, "
