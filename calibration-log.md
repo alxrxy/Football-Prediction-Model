@@ -155,6 +155,51 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-11-08 — Week-9 afternoon window (HOU @ LAC 3:05, LV @ SF / GB @ NE / ARI @ SEA 3:25 CT): official team lists applied, re-predicted and re-simulated 13:43-14:08, props/TD by 14:10 CT
+
+**Lists** (all from the teams' own articles, stored as `official_team_article`). NFL.com's article had no late lists when read at 13:37 and 13:58.
+
+| Team | Source | Inactives |
+|---|---|---|
+| HOU | [houstontexans.com](https://www.houstontexans.com/news/texans-inactives-week-9-vs-los-angeles-chargers), 1:35 PM | Blankenship, Stover, Montgomery, Nwaiwu, Braden Smith, N. Thomas |
+| LAC | [chargers.com](https://www.chargers.com/news/texans-inactives-week-9-2026), 11:35 AM | Williamson, Leonard, Awosika, Wease (healthy), B. Thompson (5) |
+| ARI | [azcardinals.com](https://www.azcardinals.com/news/walter-nolen-iii-active-as-he-makes-return-against-seahawks), 12:55 PM | B. Knight, Starling Thomas V, Leota, J. Williams, Gaines, Reese. No emergency third QB |
+| SEA | [seahawks.com](https://www.seahawks.com/news/seahawks-vs-cardinals-week-9-inactives), 11:54 AM | Cross, Darnold, Nelson, Nwosu, Pili, Shaheed, L. Williams |
+| GB | [packers.com](https://www.packers.com/news/packers-patriots-week-9-inactives-nov-8-2026), 1:55 PM | Lloyd, Franklin, Jennings, Rhyan, Glover, Whyle |
+| NE | [patriots.com](https://www.patriots.com/news/week-9-inactives-packers-at-patriots-x4933), 2:56 PM; matches packers.com's copy | A.J. Brown, Woods, Henderson, Crownover, Morton (3QB) |
+| LV | [raiders.com](https://www.raiders.com/news/las-vegas-raiders-week-9-inactives-vs-san-francisco-49ers), 11:54 AM | O'Connell (3QB), Thornton, Benson, D. Johnson, Cabeldue, Booker |
+| SF | [49ers.com](https://www.49ers.com/news/bosa-sigle-active-vs-raiders-inactives-week-9-lvvssf), 11:55 AM | Rourke, Evans, Cruz, Samuel, Bethune, Kareem |
+
+The raiders.com page's intro says the Raiders "face the New York Jets", a template slip; its title and date are week 9 vs SF. Accepted.
+
+**CSV vs official.**
+- Q/D → inactive: LAC Awosika, B. Thompson (D); GB Lloyd; HOU Braden Smith (blank in the CSV; Q per the Texans' report).
+- Blank → inactive: LV Thornton.
+- Q → active: LV Porter; SF Robinson (activated from IR on Saturday, 49ers.com), Neal, Stout; GB Nixon; NE Henry, Hollins (activated from IR), Schooler, Davis, Byard, Moses; ARI Adams (off IR, starts), Melton, Nolen; SEA O'Toole.
+- Inactive and not in the CSV: HOU Stover, Nwaiwu, N. Thomas; LAC Wease; ARI Starling Thomas, Leota, Reese; GB Jennings; NE Woods, Crownover, Morton; LV O'Connell, Benson, D. Johnson, Cabeldue; SF Rourke, Cruz, Bethune, Kareem.
+- CSV Out and on no list. The charge stays: these players are IR or not activated.
+  - IR-R: **SF Hobbs, GB Brooks, NE Van Roten**; no team page mentions an activation.
+  - SF Kirk (IR); GB Parsons (PUP-R).
+  - **SF Aiyuk** ("Personal", Out per NFL.com) is on no list, so he is not on the 53. Unresolved; the charge stays.
+
+**Cell edits (each with a NOTE keeping the user's row).**
+- **LAC Njoku and Perryman: Doubtful → Out.** Both are IR-R; no chargers.com activation was found, and ESPN's feed also has them on IR. Doubtful plus a posted list would otherwise have made them active (1.0).
+- SEA Emmanwori, Knight and GB J. Bullard: Friday DNP with no status and not on the list, so their cells were blanked.
+- **SEA Drew Lock: starts** (seahawks.com). His LP row was blanked (P74 workaround). The sim starts Lock.
+- **SEA Velus Jones Jr.: released** (seahawks.com). His cells were blanked.
+
+**Run (game-scoped; quota 431 → 411).**
+| Game | PRELIMINARY base / ML / sim WP | Now base / ML / sim home WP | Market (11/8) |
+|---|---|---|---|
+| HOU @ LAC | LAC −2.9 / −4.1 / 0.40 | −2.9 / −4.1 / 0.40 | HOU −5.5, 40.5 |
+| ARI @ SEA | SEA +8.4 / +9.4 / 0.75 | +5.8 / +7.9 / 0.68 | SEA −8.5, 39.5 |
+| GB @ NE | NE +5.7 / +2.7 / 0.67 | +5.7 / +2.7 / 0.68 | NE −3, 44.5 |
+| LV @ SF | SF +7.9 / +11.9 / 0.73 | +8.7 / +11.6 / 0.76 | SF −9.5, 52 |
+
+P81 archives: props 19:45:24Z (HOU @ LAC) and 20:09:32Z; TD 19:45:53Z and 20:10:02Z.
+
+---
+
 ## 2026-11-08 — Week-9 noon window (7 games, 12:00 CT): official lists applied, re-predicted 11:45, re-simulated by 11:53, props/TD by 11:57 CT; late/SNF/MNF games PRELIMINARY
 
 **Not touched:** CIN @ ATL (Madrid) and JAX @ BAL (TNF). Neither has a stored week-9 prediction; that was not backfilled.
