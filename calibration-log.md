@@ -155,6 +155,63 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-11-08 — Week-9 noon window (7 games, 12:00 CT): official lists applied, re-predicted 11:45, re-simulated by 11:53, props/TD by 11:57 CT; late/SNF/MNF games PRELIMINARY
+
+**Not touched:** CIN @ ATL (Madrid) and JAX @ BAL (TNF). Neither has a stored week-9 prediction; that was not backfilled.
+
+**Manual file.** The user's `2026-wk09.csv` (224 rows, 20 teams; 11:35 CT) was already in place and passed the validator (header and positions). The original is kept in the session scratchpad. DET, MIA, CLE, NO, BUF and MIN have no CSV rows and run on the nflverse week-9 report plus their lists. I added no rows; the user's rows win. The only edits are cells, each with a `# NOTE` line keeping the user's original row:
+- P74 workaround: WAS Kaliakmanis, Out → no status (QB3; Daniels starts).
+- Friday-DNP rows with no status that the lists show as active: LA Donald, A. Jackson, B. Young, Nacua, Higbee, Garrett; WAS Diggs. Practice cells were blanked, because a posted list does not clear a no-status row (it stays at 0.60 in `apply_inactives`). therams.com: Garrett "expected to play".
+
+**Lists.** NFL.com's [week-9 inactives article](https://www.nfl.com/news/nfl-week-9-inactives-players-ruled-out-sunday-2026-season) was read at ~11:40 CT and stored by hand as source `nfl_com_list` (93 rows; ESPN's inactives pull skipped). Each was then checked against the team's own article. **13 of 14 match name for name:** [broncos](https://www.denverbroncos.com/news/broncos-announce-inactives-for-week-9-game-vs-panthers), panthers.com (Christensen not activated, ruled out), [colts](https://www.colts.com/news/colts-announce-7-inactive-players-for-week-9-game-against-dallas-cowboys), [jets](https://www.newyorkjets.com/news/jets-vs-chiefs-nfl-game-inactives-11-8-2026) (both teams' lists), [lions](https://www.detroitlions.com/news/inactives-lions-at-dolphins-stbrown-reed-wonnum), [browns](https://www.clevelandbrowns.com/news/browns-announce-inactives-for-week-9-vs-the-saints), [saints](https://www.neworleanssaints.com/news/new-orleans-saints-inactives-cleveland-browns-2026-nfl-week-9), [eagles](https://www.philadelphiaeagles.com/news/giants-vs-eagles-inactives-nfl-2026-week-9-kelly-green) (both teams' lists), [rams](https://www.therams.com/news/trent-mcduffie-and-joe-cardona-among-rams-inactives-for-week-9-2026-at-commanders), [commanders](https://www.commanders.com/news/inactives-commanders-vs-rams-week-9-treylon-burks) (5 names, no 6th). Dallas: no dallascowboys.com list was found; its list rests on NFL.com and the colts.com page. **MIA: no team article** (same as week 8); its list rests on NFL.com. One name differs: detroitlions.com has TE **Jackson** Meeks, NFL.com "Jordan Meeks". The stored row uses NFL.com's spelling; snap share is 0.04, so the effect is negligible.
+- The team-site reads were search-tool summaries of the official pages, not full page reads.
+
+**CSV vs official.**
+- Q/D → inactive: DAL Overshown, Pickens, Porter Jr., Schoonmaker; DEN Hufanga; LA McDuffie, Cardona (D); NYG Skattebo (D); CLE Watson (concussion); DET Saylors; MIA J. Wright.
+- Blank → inactive: NYG Fidone, Hood, Mbow (coach's decision); IND Mallory.
+- Q → active: NYJ H. Phillips; KC Remigio; DEN Tillman, Pat Bryant (activated from IR, broncos.com); CAR Bullock, Simpkins; LA Parkinson, Stuard, Whittington, Curl; WAS Newton; DAL Ferguson, Liufau; IND Travis; NYG C. Jones; PHI McKee, Pierce; DET St. Brown; NO Banks, Tyson (both activated from IR, saints.com), Richards, Emerson; MIA K. Allen, Herring.
+- Inactive and not in the CSV: depth and 3QB names (DEN Ehlinger, Humphrey, Casey, Bentley; CAR King, Dillon, Edwards; DAL Wheat, Cornelius; IND P. Brown, Heck, Leonard; NYJ Freeland, Levao, Patrick; KC Nussmeier, VanSumeren, Pyburn, Pounds; NYG Okoye, N. Reed, Sills; LA Simpson, Peterson, Murray, Trost, D. Johnson).
+- CSV Out and not on a list. The charge stays: these players are on IR or not activated. DAL Bullard (IR-R; not activated per dallascowboys.com through 11/6; no activation found), CAR Christensen (not activated, panthers.com), DEN Uwazurike (IR), LA J. Watson (IR), LA T. Ferguson (IR-R, ruled out), WAS Dyami Brown (IR on Saturday, therams.com), DAL M. Lawrence and NYJ VJ Payne (IR 11/7), KC Norman-Lott (Out; on no list, as in week 8).
+
+**QBs (team sites).**
+- **PHI: Joe Milton III starts** (philadelphiaeagles.com; Hurts on IR). McKee is active as the backup.
+- **CLE: Shedeur Sanders starts** (clevelandbrowns.com); Watson is inactive.
+- **NYG: J.J. McCarthy starts** (giants.com; Dart on IR).
+- WAS: Daniels. LA, KC, DEN, CAR, DAL, IND, NYJ, DET, MIA, NO: their starters are on no list.
+- The sims started Milton, Sanders and McCarthy. P48 gave no charge for King, Ehlinger, Simpson or Nussmeier.
+
+**Stale rows.** ESPN's injury feed answered today (pull 17:43Z, week 9). That retired the week-6 ESPN rows (P79), so no stale Milton, Lane Johnson or Hollywood Brown row is in force. An audit of in-force non-manual rows for all 14 noon teams found no stale rows. Nothing needed clearing.
+
+**Run (game-scoped).**
+| Time (CT) | Step |
+|---|---|
+| 11:45 | Predict |
+| 11:49-11:53 | Sims |
+| 11:55 | Props |
+| 11:56 | TD |
+
+- P81 archived both served lists first: props 17:55:44Z, TD 17:56:09Z.
+- Odds API quota went 441 → 434.
+- **Game lines were not refreshed before the noon run.** Every stored market was from **11/01 23:57Z** (a week old), and the noon predictions compare against it. A fresh pull at 12:03 CT (quota 431), after kickoff, is used only by the later games.
+- Tracker started 11:44 CT (`data/live/tracker_stdout_2026-11-08.log`; it was not running).
+- Dev server started on 5174; dashboard opened.
+
+| Game | Baseline (home margin) | ML | Sim home WP | Market (11/1, stale) |
+|---|---|---|---|---|
+| DEN @ CAR | −1.4 | −6.4 | 0.46 | DEN −2.5, 44.5 |
+| DAL @ IND | +1.4 | −1.7 | 0.55 | DAL −5.5, 52.5 |
+| NYJ @ KC | +8.5 | +12.2 | 0.76 | KC −9.5, 46.5 |
+| DET @ MIA | +3.8 | −0.2 | 0.62 | DET −7, 48.5 |
+| CLE @ NO | +7.0 | +3.4 | 0.71 | NO −2.5, 43 |
+| NYG @ PHI | −0.4 | −1.4 | 0.49 | NYG −2.5, 39.5 |
+| LA @ WAS | −5.0 | −5.5 | 0.35 | LA −5.5, 48.5 |
+
+**Kickoff.** LV @ SF was stored 21:05Z; ESPN and the user's schedule have 3:25 CT. Corrected to 21:25Z in Supabase and the mirror (the P80 open item).
+
+**Late, SNF and MNF: PRELIMINARY** (12:03 CT). They are predicted and simulated on fresh lines, the official Friday reports and the CSV; no inactive list had posted. Each is to be re-run when its list is in.
+
+---
+
 ## 2026-11-01 — P81 served-list archive; TD note moved to weeks 4-8; Props tab label (no pick or model number changed)
 
 **Archive.** `src/served_archive.py` writes each list to `data/archive/served_lists/<kind>/<season>_w<WW>/<stamp>.json`: exact served bytes (picks, lines, prices, model and market chances, rank), read-only, hashed in `index.csv`, with the raw lines kept once by hash. `props.run` and both branches of `td_props.run` call it BEFORE writing the served file. **Decision:** a failed archive now stops the refresh and the last archived list stays up, because an unrecorded list is the failure this exists to stop. `run_sunday` reports the step as failed and carries on. P67 (`data/props_archive`) is unchanged; its failure still never blocks serving, and the props record and report card still read it.
