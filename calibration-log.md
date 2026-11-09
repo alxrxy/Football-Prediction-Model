@@ -155,6 +155,30 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-11-08 — Week-9 SNF TB @ CHI (7:20 CT): official lists applied, re-predicted 18:04, re-simulated 18:07, props/TD 18:10 CT
+
+**Source.** buccaneers.com "Bucs-Bears Inactives | Emeka Egbuka Returns to Action" (posted 5:51 CT). It carries both lists; chicagobears.com had not posted by 18:03 CT and NFL.com's SNF section was still empty. The Bears list is therefore from the opponent's official site, not CHI's own. Stored as `official_team_article` (10 rows).
+- TB inactive: DT DeMonte Capehart, OLB Yaya Diaby, CB Ayden Garnes, G Trevor Keegan, G Billy Schrauth (5; no elevations).
+- CHI inactive: LB Keyshaun Elliott, QB Case Keenum (3rd QB), DT Jayden Loving, RB Kyle Monangai, CB Malik Muhammad (5; RB Salvon Ahmed elevated).
+
+**CSV cross-check (differences).**
+- CHI Malik Muhammad II: CSV Q ("should be good to go") → INACTIVE. CSV row set to Out (the list spells him without the suffix, so the row is set directly as a guard). Charged once, 1.26 pts.
+- CHI Kyle Monangai: CSV Q → inactive (matches Rapoport note). Charged 0.44.
+- CHI Tyrique Stevenson Sr.: Q → active (article: cleared to play).
+- TB Emeka Egbuka: Q → active (cleared to play).
+- TB Tristan Wirfs: no status, Friday LP → active; practice cells blanked (no-status rows are not cleared by a posted list).
+- TB Godwin, Irving, Robinson, Mayfield and others: Friday FP, no charge; all active.
+- Keenum (3rd QB) has no row and carries no charge (P48).
+
+**Result.** QBs: Mayfield (TB) and Williams (CHI), both on the sim.
+- Baseline: CHI +0.7 (PRELIMINARY +1.6). Injury layer: home −3.40, away −0.73.
+- ML: CHI +4.9. Sim: home WP 0.52.
+- Market: CHI −6, total 47.5 (refreshed lines).
+
+**Props.** Served lists archived first (P81), at props/2026_w09/20261109T000947Z.json and td/2026_w09/20261109T001014Z.json. Odds quota 406. The dashboard export was refreshed. The tracker is running.
+
+**Unresolved.** BUF @ MIN (MNF 11/9) stays PRELIMINARY until Monday's lists (~17:45 CT). BUF and MIN have no CSV rows and rely on the nflverse report.
+
 ## 2026-11-08 — Week-9 afternoon window (HOU @ LAC 3:05, LV @ SF / GB @ NE / ARI @ SEA 3:25 CT): official team lists applied, re-predicted and re-simulated 13:43-14:08, props/TD by 14:10 CT
 
 **Lists** (all from the teams' own articles, stored as `official_team_article`). NFL.com's article had no late lists when read at 13:37 and 13:58.
