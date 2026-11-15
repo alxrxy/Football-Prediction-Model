@@ -109,6 +109,7 @@ status only when its adoption test is met.
 | P79 | Injuries: the newest ESPN injury pull stays in force indefinitely when the ESPN feed stops answering, so a week-old ESPN report is charged into later weeks | data / pipeline | 2026-10-29 | `latest_injury_report` retires ESPN rows only by a newer ESPN pull. Since 10/18 none has arrived, so the 10/18 (week-6) ESPN pull, 112 rows, was in force for every week-7 prediction, though the 10/25 runs were logged as "no ESPN feed". Week-7 served breakdowns hold **46 charges (28.2 pts) on players whose only in-force row is that ESPN pull**. That is an upper bound: some 'inactive' rows come from official lists, and many are genuine IR absences (Garrett, Bartch). But some are stale statuses, e.g. MIA Caleb Douglas Q 0.53, who played (2 rec). The week-8 preliminary run carries the same rows | (to confirm with the user) ESPN rows count only for the week they were pulled for (as P19 does for nflverse); IR rows kept until a newer source contradicts them; replay weeks 2-7 on served breakdowns: charges removed only on players who played or were not on that week's official report; MAE / ATS reported, not gated | logged 2026-10-29; nothing built (changes pregame numbers: next boundary at the earliest) **Criteria set 10/29 (R1-R5); shadow replay weeks 5-7: R1 FAILS (12/31 = 38.7% played; Blankenship on report, did not play), R2 PASSES. NOT shipped; redesign proposed (drop only on later snaps / absence from a filed official report).** |
 | P80 | Kickoffs: `ET_UTC_OFFSET_HOURS = 4` stores every game after DST ends (11/1) one hour early, so kickoff gates treat unstarted games as started | bug fix | 2026-11-01 | Week 8: all 12 Sunday games stored 1 h early against ESPN; 4 unstarted rows corrected by hand, MNF and weeks 9+ not | Stored kickoffs match ESPN for weeks 8-18 after a schedule ingest | **FIXED 11/1** (named zones; test first; 152 unplayed rows + mirror re-derived; dry re-ingest changes 0 unplayed) |
 | P81 | Served-list archive: every props and TD refresh stores the exact served list in data/archive/served_lists before publishing | process | 2026-11-01 | Report card: TD lists never archived; TD raw odds overwritten (no week 5 or 8 market left) | `tests/test_served_archive.py` fails if a list being served is not in the archive byte for byte | **BUILT 11/1** (`src/served_archive.py`; no missing week rebuilt) |
+| P82 | Replacement-starter credit: the flat QB-out charge ignores who replaces the starter (Cousins and a rookie cost the same; mid-season arrivals get nothing) | engine | 2026-11-15 | Week 10: MIN Cousins for Murray, MIA McCord, SEA Lock, ARI Beck, LV Mendoza; shadow view logged per game (2026-11-15 board entry) | G1-G6 in the 2026-11-15 rules entry (walk-forward 2016-25, n ≥ 150, MAE CI excludes 0, ATS not worse, 6/10 seasons, k tuned on 2016-21 only) | **proposed 2026-11-15; shadow view only (display, labelled unvalidated); nothing built into the engine** |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -152,6 +153,54 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-11-15 — Week-10 final board: confidence-tier rules and P82 proposal, written BEFORE either is run (display only; nothing served changes)
+
+**Scope (user, 11/15).** A final board for every week-10 game but NE @ DET, built from stored outputs. Rules: the served engine and headline numbers do not change, the baseline stays the headline (P8), first-pregame records stay untouched, and everything unvalidated is labelled so.
+
+**Confidence tiers (user's definitions, made exact here before any game is tiered).**
+- **Inputs.**
+  - Each source's predicted winner. Baseline: the sign of `model_margin_home`. ML: the sign of the ml-v1 margin. Sim: home WP above or below 0.50. Market: the sign of the home spread (negative = home favoured). A value of exactly 0 (margin, a 0.50 sim, or a pick'em line) names no winner and counts as no disagreement.
+  - **Gap** = |baseline margin − market margin|, where market margin = −home spread.
+  - **Lists official** = the game's prediction was made after both teams' official inactive lists were stored (the dashboard's OFFICIAL chip).
+- **Backup QB.** A team's expected starter is not its 2026 regular-season QB snap leader, per official team or NFL.com sources. Snap leaders come from nflverse snap counts, weeks 1-9.
+- **Unconfirmed starter or key player.** Any QB or charged starter (snap share ≥ 0.70) whose game status this log records as not confirmed by an official source at run time.
+- **Disagreements** = the number of the four sources that name a winner and differ from the majority. A 2-2 split counts as 2.
+- **Low** if any of these holds:
+  - backup QB on either side;
+  - unconfirmed starter or key player;
+  - gap > 5.0;
+  - baseline and ML disagree on the winner ("models disagree"; the sim is anchored to the baseline margin, so the sim does not count as an independent model here);
+  - two or more disagreements (my extension: the user's text does not cover it).
+- **Medium** if not Low and any of these holds:
+  - exactly one disagreement;
+  - 3.0 ≤ gap ≤ 5.0;
+  - lists not official (PRELIMINARY; my extension: High requires official lists).
+- **High**: all four agree, gap < 3.0, lists official, no backup QB, nothing unconfirmed.
+- A game re-run on its lists is tiered on that run. A PRELIMINARY game is tiered as PRELIMINARY and re-tiered when re-run.
+
+**P82 (proposal; NOT built into the engine and NOT shipped): replacement-starter credit from the QB's own performance.**
+- **Problem.** When a starting QB is out, the baseline charges a flat 6.0 × snap share × (1 − play probability). It never asks who replaces him (P28 part 2; P78 for arrivals). A competent replacement (Cousins) and a rookie (Beck, Mendoza) cost the same, and a QB who joins mid-season gets no credit.
+- **Method (shadow form, this weekend).**
+  - Data: nflverse play-by-play 2025-2026, regular and post season, qb_dropback plays.
+  - Opponent adjustment: each play's EPA minus that defence's season EPA/dropback allowed above league average.
+  - Per QB: dropbacks, raw and opponent-adjusted EPA/dropback, success rate, CPOE, sack rate.
+  - **Replacement level** = pooled adjusted EPA/dropback of QBs with fewer than 300 dropbacks in the window.
+  - **Shrinkage:** shrunk = (n·adj + k·replacement)/(n + k), with **k = 250 dropbacks**. This is a prior, not fitted, and is to be tuned only inside the gates below.
+  - Point effect = Δ shrunk EPA/dropback × league dropbacks per team-game (2026).
+  - Shadow margin = the headline baseline with the team's flat QB charge added back, minus the effect of the expected starter versus the usual starter (2026 snap leader). Also shown: the effect versus a replacement-level QB.
+  - Low-confidence flag: fewer than 200 career regular-season dropbacks (attempts + sacks, nflverse weekly 2012-2026).
+  - No zero credit: a QB with no sample sits at replacement level, not at 0.
+- **Gates (all required before any ship; user approval after).**
+  - **G1, walk-forward 2016-2025:** every regular-season game where a team's starter (first dropback passer) was not its season-to-date snap leader, with n ≥ 150 such games. Every input is computed only from data before the game.
+  - **G2:** margin MAE versus the flat-charge baseline improves on those games, with a game-bootstrap 95% CI excluding 0.
+  - **G3:** ATS record against the closing line is not worse (difference CI includes or exceeds 0).
+  - **G4:** the sign of the improvement holds in at least 6 of 10 seasons.
+  - **G5:** games with no QB change are byte-identical (by construction; verified).
+  - **G6:** k and the replacement definition are chosen on 2016-2021 only and judged on 2022-2025.
+  - This weekend's shadow results are logged and graded descriptively. They are too few to gate.
 
 ---
 
