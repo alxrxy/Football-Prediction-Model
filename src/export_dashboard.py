@@ -72,6 +72,15 @@ def _slate_for(store, sport: str) -> tuple[str, list[dict], dict]:
 # the page rather than hidden. Remove each entry once the item is fixed or the
 # game has kicked off.
 KNOWN_GAME_ISSUES = {
+    # Week 10 starting-QB notes (display only, 2026-11-15; sources in calibration-log.md).
+    "2026_10_MIN_GB": ("Starting QB: Kirk Cousins (vikings.com, 11/13), who rejoined MIN this week; Kyler Murray is inactive "
+                       "(hamstring), Carson Wentz is the backup and Max Brosmer the emergency third QB. The baseline charges "
+                       "Murray's absence at the flat starter-out value and gives no credit for who replaces him (P28/P78: "
+                       "arrivals are not modeled). The sim starts Cousins (nflverse depth chart QB1)."),
+    "2026_10_MIA_IND": ("Starting QB: Kyle McCord, first NFL start (NFL.com; Malik Willis on IR). The baseline charges Willis "
+                        "at the flat starter-out value; the sim starts McCord (nflverse depth chart QB1)."),
+    "2026_10_LA_ARI": ("Starting QB: Carson Beck, rookie (azcardinals.com, 11/13); Gardner Minshew II hurt (charged as out). "
+                       "The sim starts Beck (nflverse depth chart QB1)."),
     "2026_05_BAL_ATL": (
         "Known issue (starting QB, P53 cross-check): Lamar Jackson is questionable on ESPN's feed (play probability 0.55; he left week 4 early and Tyler Huntley finished), and BAL's official week-5 report hasn't posted yet. The simulation starts Jackson in about 55% of games and Huntley in the rest. The books price only Huntley, who is BAL's QB3 on the nflverse depth chart behind Cooper Rush. Jackson is charged 2.38 points in the baseline. The baseline and ML lines, the simulation and BAL's passing numbers all rest on that 55%. P51 does not apply: it promotes a priced QB only when the depth-chart starter is ruled out. BAL's quarterback props and TD picks are held out; the hold comes off once the official report confirms the starter."
     ),
@@ -139,6 +148,9 @@ WEEK_NOTES = {
 # reports and that week's data. Shown as a banner on the games page and a chip
 # on each such game until it kicks off; display only, no number changes.
 PRELIMINARY_WEEKS = {
+    (2026, 10): ("PRELIMINARY: predicted and simulated Sun 11/15 ~11:00 CST on the official Friday reports, the hand-checked "
+                 "file 2026-wk10.csv and fresh game lines. This game's official inactive lists have not posted (or have not "
+                 "been applied yet), so the numbers will change when it is re-run on them before kickoff."),
     (2026, 8): ("PRELIMINARY: predicted and simulated Thu 10/29 ~16:00 CDT on ratings through the week-7 finals, fresh game lines, and the nflverse week-8 report as of 10/29 (TNF teams have game statuses; Sunday and Monday teams have Wed/Thu practice only, no game status). No Friday report, no hand-checked file, no inactive list. Stored week-6 ESPN injury rows are still in force (P79, logged, not fixed). Traded players carry no arrival or departure adjustment (P78). Numbers will change at the Friday and Sunday refreshes."),
     (2026, 6): ("OFFICIAL REPORTS IN · INACTIVES PENDING: predicted and simulated on Sun 10/18 from the official "
                 "Friday reports (hand-checked file 2026-wk06.csv plus nflverse), play-by-play through SEA @ DEN and "
@@ -166,7 +178,8 @@ def trade_notes(home: str, away: str) -> list[str]:
 
 
 # The short chip shown on each such game; "PRELIMINARY" when a week has none.
-PRELIMINARY_CHIPS = {(2026, 6): "OFFICIAL REPORTS IN · INACTIVES PENDING",
+PRELIMINARY_CHIPS = {(2026, 10): "PRELIMINARY · INACTIVES PENDING",
+                     (2026, 6): "OFFICIAL REPORTS IN · INACTIVES PENDING",
                      (2026, 7): "PRELIMINARY · INACTIVES PENDING",
                      (2026, 8): "PRELIMINARY · NO OFFICIAL REPORTS"}
 # Games the week's label does not fit: (notice, chip). WAS @ SF is not in 2026-wk06.csv.
@@ -284,9 +297,10 @@ def build(sport: str, explain: bool = True) -> dict:
                                 else None),
                 "trade_notes": trade_notes(game.get("home_team"), game.get("away_team")),
                 # Display only (2026-10-29): an unstarted game re-run on its official inactive lists says so.
+                # 2026-11-15 (user): the chip stays after kickoff, so a live or final game still shows that its
+                # stored pregame prediction was made on the official lists.
                 "official_chip": ("OFFICIAL REPORTS + INACTIVE LISTS IN"
-                                  if (k := parse_dt(game.get("kickoff_time"))) and k > datetime.now(timezone.utc)
-                                  and _rerun_on_inactives(game, baseline, inactives) else None),
+                                  if _rerun_on_inactives(game, baseline, inactives) else None),
                 "preliminary_chip": (PRELIMINARY_GAMES[gid][1] if gid in PRELIMINARY_GAMES else
                                      PRELIMINARY_CHIPS.get((int(game.get("season") or 0), int(game.get("week") or 0)))),
             }

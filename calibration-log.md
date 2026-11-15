@@ -155,6 +155,59 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-11-15 — Week-10 noon window (7 games, 12:00 CT): official lists applied, re-predicted 11:16, re-simulated by 11:22, props/TD by 11:23 CT; late/SNF/MNF games PRELIMINARY
+
+**Not touched:** NE @ DET (Munich, user rule). **WAS @ NYG (TNF) has no stored week-10 prediction at all**, so nothing exists to grade; per the user it was not re-run. Both show on the dashboard without numbers.
+
+**First-pregame archive (user rule, new this week).** `data/archive/pregame_first/2026_w10/` holds read-only JSON copies of the predictions and sims rows: `…172633Z_noon.json` (the 7 noon games, made on their official lists; graded record) and `…173419Z_late_preliminary.json` (late, SNF, MNF; PRELIMINARY). `…164513Z.json` is the empty 10:45 snapshot (no week-10 rows existed). The engine already refuses to re-predict or re-simulate a game after kickoff, so no LATE version was needed or made in this window.
+
+**Manual file.** The user's `2026-wk10.csv` (261 rows, 22 teams) passed the validator. The original is in the session scratchpad. The user's rows won. Cell edits, each with a `# NOTE CC 11/15` line keeping the original row:
+- No-status rows with a DNP/LP last practice, active on the official list: practice cells blanked (week-9 method). ATL Matthews, J. Taylor; CLE Ward, McMillon; MIN Darrisaw, H. Smith; GB Banks, S. Williams; JAX A. Johnson, Tuten, Rodriguez, Meyers, Walker; BUF Oliver, Bernard; MIA Addington.
+- HOU Jaylin Smith, Q → Out. houstontexans.com transactions (11/14 12:13) say he "will not travel ... ruled out for Week 10"; IR-R, not activated.
+- P74 workaround rows added (blank status + FP). Each is an inactive backup or emergency-third QB charged at a QB slot while a healthy starter plays: BUF Buechele (2.10), NO Z. Wilson (2.10), CLE Gabriel (3.37), ATL Strand (2.52), then ATL Dalton (2.10, who took the slot once Strand was cleared), IND Leonard (2.36). After the rows, the only QB charges left are genuine starter absences: MIN Murray (5.17), MIA Willis (6.0, IR), ARI Minshew (4.26), and SEA Lock's practice charge (0.87, late game).
+
+**Lists.** ESPN had lists for all 14 noon teams, and **P77 flagged every one** (HOU 12 names vs 7 official). They were not stored: the ESPN inactives pull was skipped this run, and the official lists were stored by hand.
+- Source `official_team_article`, read in full: houstontexans.com (10:30), clevelandbrowns.com (11:30), vikings.com (10:30), packers.com (10:30), jaguars.com (11:32), tennesseetitans.com (10:30, both teams; matches jaguars.com), panthers.com (11:33), neworleanssaints.com (10:30, both teams; matches panthers.com), atlantafalcons.com (11:29), colts.com (11:32), buffalobills.com (11:29), newyorkjets.com (11:30, both teams; matches buffalobills.com). Page times have no time zone (taken as ET).
+- Source `nfl_com_list`: **KC and MIA**. Neither team had posted an article by ~11:05 CT. NFL.com's week-10 inactives article was the source. Its ATL and IND lists match the team sites name for name, and its HOU/CLE lists match too.
+
+**CSV vs official (every difference).**
+- Q/D → inactive: HOU Teller; MIN Addison; GB Franklin (D), Zeitler; CAR W. Lee III; NYJ Brownlee; KC Ott; MIA C. Bell (D).
+- No status → inactive: TEN Jaylon Jones; BUF Reed-Adams, Gaines.
+- Q/D → active: ATL Dexter, Pearce (atlantafalcons.com: "Both are active"), Woods; BUF S. Brown (D; buffalobills.com "upgraded to active"), Benford, Hancock (activated from IR 11/14), Franklin; CAR Phillips, Legette (activated from IR); CLE Boston; GB McKinney, Van Ness, Bullard, Glover, C. Brooks and S. Moore (both activated 11/14); HOU Hummel, T. Brown, Anderson, Braden Smith; JAX Hainsey (cleared protocol); MIN Metellus, Van Noy; NO Emerson, Etienne; NYJ Mitchell, G. Wilson, Phillips, Ossai, N. Wright, Cooper, Payne (activated from IR); TEN Spears; KC Delane.
+- Out/IR in the CSV and on no list; the charge stays (not activated or on IR): CAR Christensen, M. Jackson, Brooks (panthers.com 11/14: "were not activated, so they've been ruled out"); BUF Shavers (buffalobills.com roster moves 11/14 activate only Hancock); MIA Baker (miamidolphins.com roster moves 11/14 name no Baker activation); GB Whyle, Parsons; CLE Burton; IND Davis-Gaither, Alie-Cox; JAX B.J. Green; KC Norman-Lott; NO C. Miller; TEN Skoronski.
+- Inactive and not in the CSV (depth, 3QB): ATL Terrell, Longerbeam, Dalton, C. Williams, Strand; BUF Bowry, Danna, Buechele, Kilgore; CAR Sanders, Hecht, King, Dillon, Edwards; CLE Jefferson, Igbinoghene, Gabriel, Brailsford, Green; GB D. Jennings, P. Strong; IND Leonard; JAX W. Williams, CJ Williams, Regis, Bates and J. Davis (both traded in this week); KC Nussmeier, VanSumeren, M. Smith; MIA Joly, Dial, Wallace; MIN Brosmer; NO Z. Wilson, Reid, Ford; NYJ Woods, Patrick, Lynn; TEN Singleton, Crenshaw-Dickson, Marshall. (The other names on these lists are Out in the CSV and match.)
+
+**QBs.**
+- **MIN: Kirk Cousins starts** (vikings.com 11/13), rejoining MIN this week. Murray is inactive, Wentz the backup, Brosmer the emergency third QB. The baseline charges Murray's absence at the flat starter-out value and gives Cousins no credit (P28/P78). The sim starts Cousins, who is nflverse depth-chart QB1 (14:41Z).
+- **MIA: Kyle McCord, first start** (NFL.com; Willis on IR).
+- **CLE: Watson** (clevelandbrowns.com 11/11). **ATL: Penix** (100% of snaps weeks 3-9, on no report; no team article names him). KC Mahomes, HOU, JAX, TEN, IND Jones, CAR Young, NO, BUF Allen, NYJ, GB: their starters are on no list.
+- No `[warn]` QB mismatch from the sim: each sim QB1 is the books' priced passer.
+- Dashboard notes (display only): MIN@GB, MIA@IND, LA@ARI.
+
+**Stale rows.** The nflverse report and ESPN's injury feed both answered. P68 C listed 17 ESPN-only out rows. Every noon-team row among them is on an official list, so it is correct, and the charges are small. No stale row needed clearing.
+
+**Run (game-scoped; `run_sunday` was not used, so ESPN's stale lists were never stored).**
+- 11:01-11:06: injuries, weather and **fresh game lines** (pulled 17:0xZ, quota 403), predict ×3 (P74 rows).
+- 11:16: final predict, with the KC/MIA lists and the Dalton row.
+- 11:19-11:26: props pull, TD lines pull (7 games, quota 312), sims, props rank, TD rank, export.
+- P81 archived both served lists first: props 17:22:30Z, TD 17:22:57Z. Earlier, superseded lists from 17:09Z are also archived.
+- Tracker started 11:08 CT (`data/live/tracker_stdout_2026-11-15.log`; it was not running). Dev server started on 5174, `vite build` clean, page opened in the default browser (the Chrome extension was not connected).
+- Dashboard (display only): a week-10 PRELIMINARY label and chip, and the OFFICIAL chip now stays after kickoff.
+
+| Game | Baseline (home margin) | ML | Sim home WP | Market (home line, 11/15) |
+|---|---|---|---|---|
+| KC @ ATL | +0.2 | −4.2 | 0.51 | +3 |
+| HOU @ CLE | +1.2 | −1.0 | 0.52 | +3.5 |
+| MIN @ GB | +6.8 | +4.5 | 0.71 | −3 |
+| JAX @ TEN | −9.6 | −8.6 | 0.20 | +10.5 |
+| MIA @ IND | +8.6 | +7.1 | 0.76 | −4.5 |
+| CAR @ NO | +2.6 | +1.9 | 0.57 | +1 |
+| BUF @ NYJ | −4.0 | −9.8 | 0.36 | +7.5 |
+
+**Late, SNF and MNF: PRELIMINARY** (11:20 CT). They run on the Friday reports, the CSV and fresh lines, with no inactive lists. SEA @ LV, LA @ ARI, SF @ DAL, PIT @ CIN and LAC @ BAL (MNF, on the nflverse report; no CSV rows) are each to be re-run on their own lists. SF @ DAL kickoff is already stored as 21:25Z.
+
+---
+
 ## 2026-11-08 — Week-9 SNF TB @ CHI (7:20 CT): official lists applied, re-predicted 18:04, re-simulated 18:07, props/TD 18:10 CT
 
 **Source.** buccaneers.com "Bucs-Bears Inactives | Emeka Egbuka Returns to Action" (posted 5:51 CT). It carries both lists; chicagobears.com had not posted by 18:03 CT and NFL.com's SNF section was still empty. The Bears list is therefore from the opponent's official site, not CHI's own. Stored as `official_team_article` (10 rows).
