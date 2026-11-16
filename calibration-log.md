@@ -156,6 +156,43 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-11-15 — Week 9 graded (13 games; CIN @ ATL and JAX @ BAL excluded, no pregame prediction); props and TD through week 9
+
+**Games** (`grade.run(refresh=True)`; each game graded on its last stored pregame prediction). Margins are home; the market is the home line stored with the prediction.
+- The **noon games' market is the stale 11/01 line** (see the week-9 noon entry), so their ATS results are against a week-old number.
+
+| Game | Final | Baseline | ML | Market | Actual | SU | ATS |
+|---|---|---|---|---|---|---|---|
+| ARI @ SEA | 3-17 | +5.8 | +7.9 | −8.5 | +14 | W | L |
+| BUF @ MIN | 23-6 | −4.0 | −4.7 | +3 | −17 | W | W |
+| CLE @ NO | 22-23 | +7.0 | +3.4 | −2.5 | +1 | W | L |
+| DAL @ IND | 27-23 | +1.4 | −1.7 | +5.5 | −4 | L | W |
+| DEN @ CAR | 26-21 | −1.4 | −6.4 | +2.5 | −5 | W | L |
+| DET @ MIA | 19-9 | +3.8 | −0.2 | +7 | −10 | L | L |
+| GB @ NE | 45-27 | +5.7 | +2.7 | −3 | −18 | L | L |
+| HOU @ LAC | 44-22 | −2.9 | −4.1 | +5.5 | −22 | W | L |
+| LA @ WAS | 20-13 | −5.0 | −5.5 | +5.5 | −7 | W | L |
+| LV @ SF | 17-38 | +8.7 | +11.6 | −9.5 | +21 | W | L |
+| NYG @ PHI | 19-11 | −0.4 | −1.4 | +2.5 | −8 | W | L |
+| NYJ @ KC | 12-35 | +8.5 | +12.2 | −9.5 | +23 | W | L |
+| TB @ CHI | 24-27 | +0.7 | +4.9 | −6 | +3 | W | W |
+
+- **Baseline:** MAE 10.11, straight-up 10/13, ATS 3-10. **ML:** MAE 7.94.
+- Season to date (grade.run): 270 graded spread results; baseline ATS at edge ≥ 0 is 67/135 (49.6%). CLV: baseline n = 139, +0.00 pp; ML n = 138, −0.06 pp. Nothing beats −110. Flags stay off, and the baseline stays the headline (P8).
+
+**Props and TD, weeks 4-9** (`calibration/report_card_wk4_9.py`, a copy of `report_card.py` with week 9 added; stats from nflverse `stats_player_week_2026.csv`, release download 11/15). Output: `calibration/2026-11-15_report_card_wk4-9.md` / `.html`. Some section text inside still reads "weeks 4-8" from the original.
+- **Props, all served rows:** 1,125 rows in 58 games, 49.2%, −6.1% ROI (CI −11 to −0).
+- **F2-kept rows:** 697 rows, 53.1%, +1.2% ROI (CI −7 to +9): **break-even at best**.
+- **Week 9 kept (F2 live, so out of sample):** 163 rows in 12 games, 87-76, 53.4%, +1.1% ROI (CI −12 to +15): thin.
+- **Week 9 held by F2:** 164 rows, 90-74, +6.5% ROI (CI −5 to +19). F2 held rows that would have done better this week; this is one week and decides nothing.
+- **TD:**
+  - Sim calibration now covers 1,344 player-games in 83 games (weeks 4-9). It still beats naive position rates (Brier −0.012, CI −0.018 to −0.006).
+  - The market comparison is unchanged at weeks 4, 6 and 7, the only stored odds; sim vs market +0.0035, CI −0.002 to +0.010, so the market is no worse.
+  - Week 9's archived served TD list (P81) was **not graded separately**; open item.
+- The Props page label now reads weeks 4-9 (display only).
+
+---
+
 ## 2026-11-15 — Week-10 afternoon MISSED (session paused), SNF PIT @ CIN on official lists (re-predicted 18:08, sim/props/TD 18:15 CT), final board, P82 shadow logged for grading
 
 **Afternoon window missed.** The session was paused by a usage limit from about 11:56 to 17:21 CT. SEA @ LV and LA @ ARI (3:05) and SF @ DAL (3:25) kicked off on their **PRELIMINARY** 11:20 run, which is their graded pregame record (`pregame_first/2026_w10/…173419Z_late_preliminary.json`).
