@@ -48,6 +48,7 @@ export default function GameView({ sport, gameId, feed, onBack, onPast }) {
         <div className="split-main">
           {game?.preliminary ? <div className="caveat preliminary-notice">{game.preliminary}</div> : null}
           {game?.known_issue ? <div className="caveat">{game.known_issue}</div> : null}
+          {game?.board?.tier ? <BoardPanel board={game.board} /> : null}
           {game ? <ScenarioPanel gameId={gameId} /> : null}
           {game ? <WhyBox explanation={game.explanation} /> : null}
           <div className="card">
@@ -149,3 +150,51 @@ const Stat = ({ label, value, sub }) => (
     {sub ? <span>{sub}</span> : null}
   </div>
 )
+
+
+// Week-10 final board (display only; calibration/board_wk10.py). Tier rules and P82 are in calibration-log.md.
+function BoardPanel({ board }) {
+  const sh = board.shadow
+  const f = (x) => (x == null ? '—' : `${x > 0 ? '+' : ''}${Number(x).toFixed(1)}`)
+  return (
+    <div className="card board-panel">
+      <h3>
+        Final board · <span className={`tag tier tier-${board.tier.toLowerCase()}`}>{board.tier} confidence</span>{' '}
+        <span className="muted small">{board.label}</span>
+      </h3>
+      <p className="small">
+        Baseline (headline) {f(board.baseline_margin_home)} · ML {f(board.ml_margin_home)} · sim home win{' '}
+        {board.sim_home_wp != null ? `${Math.round(board.sim_home_wp * 100)}%` : '—'} · market {board.market_spread_home} / O/U{' '}
+        {board.market_total ?? '—'} · model − market {f(board.model_vs_market)} (home margins)
+      </p>
+      <p className="small">
+        Injury charge totals:{' '}
+        {Object.entries(board.injury_total || {}).map(([t, v]) => `${t} −${Number(v).toFixed(2)}`).join(' · ')}
+      </p>
+      <p className="small"><strong>Tier:</strong> {(board.tier_reasons || []).join('; ')}</p>
+      {sh ? (
+        <div className="caveat">
+          <strong>P82 shadow, UNVALIDATED (not the headline):</strong> headline {f(sh.headline_margin_home)} → shadow{' '}
+          {f(sh.shadow_margin_home)} ({f(sh.difference)}).
+          <ul>
+            {sh.teams.map((t) => (
+              <li key={t.team}>
+                {t.team} {t.expected_starter.name}: {t.expected_starter.dropbacks_2025_26} dropbacks 2025-26 (
+                {t.expected_starter.career_dropbacks_2015_26} career){t.low_confidence ? ' · LOW CONFIDENCE (<200 career dropbacks)' : ''};
+                shrunk EPA/db {t.expected_starter.epa_db_shrunk}; vs usual {f(t.pts_vs_usual)} pts, vs replacement{' '}
+                {f(t.pts_vs_replacement)} pts; flat charge in headline {Number(t.flat_qb_charge_in_headline).toFixed(2)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {board.notes ? (
+        <ul className="small">
+          {Object.entries(board.notes).map(([k, v]) => (
+            <li key={k}><strong>{k}:</strong> {v}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}

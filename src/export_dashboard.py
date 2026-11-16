@@ -292,8 +292,7 @@ def build(sport: str, explain: bool = True) -> dict:
                                 else KNOWN_GAME_ISSUES.get(gid)),
                 "preliminary": ((PRELIMINARY_GAMES[gid][0] if gid in PRELIMINARY_GAMES else
                                  PRELIMINARY_WEEKS.get((int(game.get("season") or 0), int(game.get("week") or 0))))
-                                if (k := parse_dt(game.get("kickoff_time"))) and k > datetime.now(timezone.utc)
-                                and not _rerun_on_inactives(game, baseline, inactives)
+                                if baseline and not _rerun_on_inactives(game, baseline, inactives)
                                 else None),
                 "trade_notes": trade_notes(game.get("home_team"), game.get("away_team")),
                 # Display only (2026-10-29): an unstarted game re-run on its official inactive lists says so.
@@ -301,12 +300,25 @@ def build(sport: str, explain: bool = True) -> dict:
                 # stored pregame prediction was made on the official lists.
                 "official_chip": ("OFFICIAL REPORTS + INACTIVE LISTS IN"
                                   if _rerun_on_inactives(game, baseline, inactives) else None),
-                "preliminary_chip": (PRELIMINARY_GAMES[gid][1] if gid in PRELIMINARY_GAMES else
+                # 2026-11-15 (user): a game that kicked off on a PRELIMINARY run keeps the label, reworded.
+                "preliminary_chip": ("PRELIMINARY PREGAME · lists not applied"
+                                     if (k := parse_dt(game.get("kickoff_time"))) and k <= datetime.now(timezone.utc)
+                                     else PRELIMINARY_GAMES[gid][1] if gid in PRELIMINARY_GAMES else
                                      PRELIMINARY_CHIPS.get((int(game.get("season") or 0), int(game.get("week") or 0)))),
             }
         )
 
     if sport == "nfl" and out_games:
+        # Display only (user, 2026-11-15): the week-10 final board (calibration/board_wk10.py): tier, P82 shadow
+        # (unvalidated) and notes per game. No number reads it.
+        try:
+            board = json.loads((config.DATA_DIR / "board" / "board_2026_w10.json").read_text(encoding="utf-8"))
+            rows = {r["game_id"]: r for r in board.get("games", [])}
+            for g in out_games:
+                if g.get("game_id") in rows:
+                    g["board"] = {**rows[g["game_id"]], "shadow_label": board["labels"]["shadow"]}
+        except (OSError, ValueError, KeyError):
+            pass
         # Display only (P48 labels): where each charged player's snap share came from.
         season = int(games[0].get("season") or datetime.now(timezone.utc).year)
         label_share_sources(out_games, season)

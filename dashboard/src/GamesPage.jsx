@@ -81,10 +81,10 @@ function GameCard({ game, sim, lg, onOpen, trust }) {
       <div className="gc-top">
         <span className="gc-time">
           {kickoffLabel(game.kickoff)}
-          {game.preliminary && !live && !final ? (
+          {game.preliminary ? (
             <strong className="prelim-chip" title={game.preliminary}> · {game.preliminary_chip || 'PRELIMINARY'}</strong>
           ) : null}
-          {game.official_chip && !game.preliminary && !live && !final ? (
+          {game.official_chip && !game.preliminary ? (
             <strong className="prelim-chip official" title="Re-predicted and re-simulated on the official injury reports and inactive lists">
               {' '}· {game.official_chip}
             </strong>
@@ -134,6 +134,17 @@ function GameCard({ game, sim, lg, onOpen, trust }) {
           : <span className="tag flag">passes Stage 1 · unvalidated</span>
       ) : null}
       {game.known_issue ? <span className="tag flag">known issue · treat with caution</span> : null}
+      {game.board?.tier ? (
+        <span className={`tag tier tier-${game.board.tier.toLowerCase()}`} title={(game.board.tier_reasons || []).join('; ')}>
+          {game.board.tier} confidence
+        </span>
+      ) : null}
+      {game.board?.shadow ? (
+        <span className="tag unvalidated" title={game.board.shadow_label || ''}>
+          P82 shadow (unvalidated): {spreadLabel(-game.board.shadow.shadow_margin_home, home, away)} vs headline{' '}
+          {spreadLabel(-game.board.shadow.headline_margin_home, home, away)}
+        </span>
+      ) : null}
     </article>
   )
 }

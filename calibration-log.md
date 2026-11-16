@@ -156,6 +156,76 @@ counts it as a loss, 4-10), MAE 12.08.
 
 ---
 
+## 2026-11-15 — Week-10 afternoon MISSED (session paused), SNF PIT @ CIN on official lists (re-predicted 18:08, sim/props/TD 18:15 CT), final board, P82 shadow logged for grading
+
+**Afternoon window missed.** The session was paused by a usage limit from about 11:56 to 17:21 CT. SEA @ LV and LA @ ARI (3:05) and SF @ DAL (3:25) kicked off on their **PRELIMINARY** 11:20 run, which is their graded pregame record (`pregame_first/2026_w10/…173419Z_late_preliminary.json`).
+- **No LATE run was made.** By 17:21 the games were in the second half, and a run on in-game lines would compare with nothing pregame.
+- The dashboard now keeps the label after kickoff: "PRELIMINARY PREGAME · lists not applied".
+- Their official lists were read at ~17:30 and stored for the record only. No stored prediction changed (they were generated before the lists). Sources: seahawks.com and raiders.com (11:35 PT, identical); therams.com (11:51 PT, both teams) and azcardinals.com (12:35 MST; ARI matches); 49ers.com (11:55 PT). DAL: NFL.com list (no dallascowboys.com article found).
+- What the lists say against the run (for grading):
+  - SF: West and Hobbs ruled OUT, "remain on Injured Reserve" (the CSV had them Out); Trent Williams active (charged 1.24 at Q).
+  - DAL: Jake Ferguson and Juanyeh Thomas (Doubtful) inactive; Ferguson was not charged.
+  - LA: Cardona inactive; Garrett, Curl and McDuffie not on the list.
+  - ARI: J. Williams, Gaines, Froholdt inactive; Wingard and Lopez active.
+  - SEA: Darnold inactive; Lock starts.
+
+**SNF PIT @ CIN (official lists).**
+- steelers.com (6:58 PM ET): Allar, Howard (3rd QB), **DeShon Elliott (knee, hurt in pregame warmups)**, Murphy-Bunting, Heidenreich. Harmon active, placed on the 53 Saturday.
+- bengals.com (7:00 PM ET): Dugger, Lew, Hinton, L. Robinson. NFL.com matches both.
+- ESPN had posted no list (probe 17:51). The first fetches were cached copies; a cache-busting re-fetch at ~18:05 got the posted pages.
+- CSV edits, each with a NOTE:
+  - CIN B.J. Hill, Dexter Lawrence II, Jonathan Allen: no-status, active; practice cells blanked.
+  - Before the window, from official sources: DAL Devin Moore Q → Out (dallascowboys.com 11/13, "officially out"); CIN Jalen Davis and Brian Parker II D → Out (bengals.com, updated 11/15, "downgraded to OUT").
+- Run:
+  - predict 18:08 (fresh lines; started games kept their pregame line; quota 309);
+  - props and TD lines pulled (quota 304), sim, rank and export done 18:15;
+  - P81 archived both lists first (props 00:12:30Z, TD 00:12:54Z);
+  - pregame record archived `…20261116T001605Z_snf_official.json` (the PRELIMINARY first record is kept).
+- Result: baseline PIT by 1.8, ML CIN by 1.8, sim CIN 0.44, market CIN −3.5 / 49.5.
+
+**Stale-row audit, all weeks (SEA LV LA ARI SF DAL PIT CIN LAC BAL).**
+- In-force rows: 56 manual, 15 nflverse, 12 ESPN, **all week 10** (pulled 11/15). No feed row older than the current week is in force for any of these teams.
+- The week-10 ESPN IR rows were checked against official sources. **BAL Lamar Jackson IR (4.25) is correct:** nfl.com 11/5, "placed on injured reserve" (thumb); baltimoreravens.com 11/13, 6-10 weeks. Brissett makes his BAL debut (baltimoreravens.com 11/14).
+- No official source contradicts ARI M. Wilson IR (in the user's IR note), LA Nacua IR (user note; therams.com headline), LA Adams IR (nfl.com), PIT Pittman and Joseph-Day, CIN Howell, or SF Halton.
+- **Nothing cleared.**
+
+**Final board** (`calibration/board_wk10.py`).
+- Outputs: `data/board/board_2026_w10.json` and **`data/board/board_2026_w10.html`**. Each game's row is on the dashboard (tier chip, P82 shadow line, board panel).
+- Display only: the baseline headline and every served number are unchanged.
+- Tiers follow the rules entry above, written and committed (56ff8fd) before they were applied.
+- **High:** JAX @ TEN.
+- **Medium:** BUF @ NYJ (gap 3.5), CAR @ NO (market disagrees; gap 3.6).
+- **Low:**
+  - HOU @ CLE and KC @ ATL: baseline and ML disagree;
+  - MIA @ IND, MIN @ GB, LA @ ARI, LAC @ BAL: backup QB;
+  - SEA @ LV: two backup QBs, gap 5.5;
+  - SF @ DAL: unconfirmed at the run;
+  - PIT @ CIN: gap 5.3, baseline and ML disagree.
+- No tier for WAS @ NYG (no stored prediction) or NE @ DET (not touched).
+
+**P82 shadow, per game (UNVALIDATED; for grading after the weekend).**
+- Parameters: replacement −0.146 EPA/dropback (QBs < 300 dropbacks, 2025-26), 37.1 dropbacks per team-game, k = 250. Margins are home.
+
+| Game | Starter (dropbacks 25-26 / career) | Shrunk EPA/db | vs usual (pts) | vs repl. (pts) | Flat charge in headline | Headline | Shadow | Diff |
+|---|---|---|---|---|---|---|---|---|
+| MIN @ GB | Cousins 616 / 6,272 | −0.028 (Murray −0.066) | +1.4 | +4.4 | 5.17 | +6.8 | +0.2 | −6.6 |
+| MIA @ IND | McCord 0 / 0 **LOW-CONF** | −0.146 (Willis −0.037) | −4.1 | 0.0 | 6.00 | +8.6 | +6.6 | −1.9 |
+| SEA @ LV | Lock 83 / 1,155 | −0.056 (Darnold +0.036) | −3.4 | +3.4 | 0.87 | −1.0 | −3.0 | −2.0 (net, both teams) |
+| SEA @ LV | Mendoza 9 / 9 **LOW-CONF** | −0.151 (Cousins −0.028) | −4.6 | −0.2 | 0 | | | |
+| LA @ ARI | Beck 0 / 0 **LOW-CONF** | −0.146 (Brissett −0.037) | −4.1 | 0.0 | 4.26 | −6.6 | −6.4 | +0.2 |
+| LAC @ BAL | Brissett 883 / 2,912 | −0.037 (Huntley/Lamar, snap-weighted) | −0.8 | +4.1 | 4.25 | +1.1 | +4.5 | +3.4 |
+
+- Grading plan: for each game, compare |shadow − actual| with |headline − actual| and report it. It is descriptive only, 5 games, and gates nothing (G1-G6 stand).
+- Caveats:
+  - The injury layer caps a team's charges at 8.0 (MIN, MIA, ARI all hit it), so "adding back" the flat QB charge can overstate it where the cap bound.
+  - BAL's "usual" is a mix of two IR QBs.
+
+**Props page label (display only).** It now adds: "The F2 filter and the ranking are UNVALIDATED; graded results show break-even at best (week 9 not yet graded)". The weeks 4-8 numbers are unchanged.
+
+**Dashboard (display only).** OFFICIAL and PRELIMINARY labels stay after kickoff. Added a tier chip and a P82 shadow tag on each card, and a board panel on each game page. `vite build` is clean, the page was reloaded and opened in the default browser, and the tracker is running.
+
+---
+
 ## 2026-11-15 — Week-10 final board: confidence-tier rules and P82 proposal, written BEFORE either is run (display only; nothing served changes)
 
 **Scope (user, 11/15).** A final board for every week-10 game but NE @ DET, built from stored outputs. Rules: the served engine and headline numbers do not change, the baseline stays the headline (P8), first-pregame records stay untouched, and everything unvalidated is labelled so.
@@ -216,7 +286,7 @@ counts it as a loss, 4-10), MAE 12.08.
 - P74 workaround rows added (blank status + FP). Each is an inactive backup or emergency-third QB charged at a QB slot while a healthy starter plays: BUF Buechele (2.10), NO Z. Wilson (2.10), CLE Gabriel (3.37), ATL Strand (2.52), then ATL Dalton (2.10, who took the slot once Strand was cleared), IND Leonard (2.36). After the rows, the only QB charges left are genuine starter absences: MIN Murray (5.17), MIA Willis (6.0, IR), ARI Minshew (4.26), and SEA Lock's practice charge (0.87, late game).
 
 **Lists.** ESPN had lists for all 14 noon teams, and **P77 flagged every one** (HOU 12 names vs 7 official). They were not stored: the ESPN inactives pull was skipped this run, and the official lists were stored by hand.
-- Source `official_team_article`, read in full: houstontexans.com (10:30), clevelandbrowns.com (11:30), vikings.com (10:30), packers.com (10:30), jaguars.com (11:32), tennesseetitans.com (10:30, both teams; matches jaguars.com), panthers.com (11:33), neworleanssaints.com (10:30, both teams; matches panthers.com), atlantafalcons.com (11:29), colts.com (11:32), buffalobills.com (11:29), newyorkjets.com (11:30, both teams; matches buffalobills.com). Page times have no time zone (taken as ET).
+- Source `official_team_article`, read in full: houstontexans.com (10:30), clevelandbrowns.com (11:30), vikings.com (10:30), packers.com (10:30), jaguars.com (11:32), tennesseetitans.com (10:30, both teams; matches jaguars.com), panthers.com (11:33), neworleanssaints.com (10:30, both teams; matches panthers.com), atlantafalcons.com (11:29), colts.com (11:32), buffalobills.com (11:29), newyorkjets.com (11:30, both teams; matches buffalobills.com). Page times carry no zone; they are each team's local time (e.g. vikings.com 10:30 CT, jaguars.com 11:32 ET).
 - Source `nfl_com_list`: **KC and MIA**. Neither team had posted an article by ~11:05 CT. NFL.com's week-10 inactives article was the source. Its ATL and IND lists match the team sites name for name, and its HOU/CLE lists match too.
 
 **CSV vs official (every difference).**
