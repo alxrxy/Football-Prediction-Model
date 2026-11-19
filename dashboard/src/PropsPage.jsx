@@ -118,7 +118,7 @@ export default function PropsPage({ tabs = null }) {
           ) : (
             <>
               <div className="caveat" role="note">
-                <strong>Weeks 4-9: served picks 49.2%, -6.1% ROI; kept picks 53.1%, +1.2% ROI (95% CI -7 to +9), break-even at best; ranking within the list not validated.</strong>{' '}<strong>The F2 filter and the ranking are UNVALIDATED.</strong>
+                <strong>Weeks 4-10: served picks 49.4%, -5.8% ROI; kept picks 52.7%, +0.4% ROI (95% CI -7 to +7), break-even at best; ranking within the list not validated.</strong>{' '}<strong>The F2 filter and the ranking are UNVALIDATED.</strong>
               </div>
               {data.bias_adjust?.applied ? <BiasNote fit={data.bias_adjust} /> : (
                 <div className="caveat">

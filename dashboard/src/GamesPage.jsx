@@ -3,6 +3,7 @@ import { kickoffLabel, shortDate, spreadLabel } from './format.js'
 import { matchupColors, team } from './teams.js'
 import { PageHead, StatusChip, TeamLogo, WinBar, n0 } from './ui.jsx'
 import { UNVALIDATED_TEXT, flagTrust, labelled, trustTitle } from './flagTrust.js'
+import TdBoard from './TdBoard.jsx'
 
 // Every game of the week as a card, grouped by day. A card opens the game's
 // full page: prediction, simulation and the Claude Q&A.
@@ -28,6 +29,8 @@ export default function GamesPage({ sport, feed, onOpen }) {
       />
       {sport.notice ? <div className="caveat preliminary-notice">{sport.notice}</div> : null}
       {!games.length && <p className="muted">No games loaded. Run the pipeline, then python -m src.export_dashboard.</p>}
+      <div className="games-with-td">
+      <div className="games-col">
       {days.map((d) => (
         <section key={d.day} className="day">
           <h3 className="day-head">
@@ -48,6 +51,10 @@ export default function GamesPage({ sport, feed, onOpen }) {
           </div>
         </section>
       ))}
+      </div>
+      {/* TD board beside the ML / spread cards: experimental, display only. */}
+      {games.length ? <TdBoard compact /> : null}
+      </div>
     </div>
   )
 }

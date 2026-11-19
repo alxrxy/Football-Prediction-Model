@@ -72,6 +72,19 @@ def _slate_for(store, sport: str) -> tuple[str, list[dict], dict]:
 # the page rather than hidden. Remove each entry once the item is fixed or the
 # game has kicked off.
 KNOWN_GAME_ISSUES = {
+    # Week 11 (2026-11-19, PRELIMINARY): starting-QB notes. Display only; press reports unless a team site is named.
+    "2026_11_MIN_SF": ("Mexico City (neutral): no home field is credited; altitude and travel are NOT modelled. MIN is charged "
+                       "the flat 5.17 for Kyler Murray (Out on the Wed report) although Kirk Cousins took over in week 10; "
+                       "the unvalidated P82 shadow has MIN by 2.3 against the headline SF by 4.5."),
+    "2026_11_MIA_BUF": "Starting QB: Kyle McCord, second start (Malik Willis on IR, charged the flat 6.0). MIA has posted no game statuses yet.",
+    "2026_11_ARI_KC": "Starting QB: Carson Beck, rookie, second start (Gardner Minshew II on IR, charged 4.26). Four ARI Wed rest-type DNPs are not charged and are unverified.",
+    "2026_11_BAL_CAR": "Starting QB: Jacoby Brissett (Lamar Jackson and Tyler Huntley on IR; flat charge 4.42). The baseline and the ML disagree on the winner.",
+    "2026_11_LV_DEN": "Starting QB: Fernando Mendoza, rookie, second start. Kirk Cousins was traded; the engine charges nothing for a departed player (P78), so LV is probably too strong here.",
+    "2026_11_PIT_PHI": "PHI starting QB NOT CONFIRMED: no starter named as of Mon 11/16 (Joe Milton III started week 9; Tanner McKee practiced fully). Jalen Hurts is on IR (flat 5.9).",
+    "2026_11_JAX_NYG": "Starting QB: J.J. McCarthy (Jaxson Dart on IR since week 2; the 3.36 charge is on Dart). The baseline's pick'em comes from JAX's long Questionable list.",
+    "2026_11_TB_DET": "TB starting QB NOT CONFIRMED: Baker Mayfield (foot/thumb) missed Wednesday, practiced Thursday; the coach decides Friday. See the two scenarios; the served number blends them.",
+    "2026_11_NYJ_LAC": "NYJ starting QB NOT CONFIRMED: Geno Smith (ankle) limited Wednesday; the coach says he starts if healthy. See the two scenarios; the served number blends them.",
+    "2026_11_CIN_WAS": "MNF: neither team has posted a practice report. Rows come from IR / list pages only; Burrow and Daniels are assumed. Refresh Fri / Sat / Sun / Mon.",
     # Week 10 starting-QB notes (display only, 2026-11-15; sources in calibration-log.md).
     "2026_10_MIN_GB": ("Starting QB: Kirk Cousins (vikings.com, 11/13), who rejoined MIN this week; Kyler Murray is inactive "
                        "(hamstring), Carson Wentz is the backup and Max Brosmer the emergency third QB. The baseline charges "
@@ -148,6 +161,11 @@ WEEK_NOTES = {
 # reports and that week's data. Shown as a banner on the games page and a chip
 # on each such game until it kicks off; display only, no number changes.
 PRELIMINARY_WEEKS = {
+    (2026, 11): ("PRELIMINARY: predicted and simulated Thu 11/19 ~14:30 CST on the Wednesday practice reports (the "
+                 "hand-checked file 2026-wk11.csv; TNF teams have Mon-Wed), ratings through week 10 and fresh game lines. "
+                 "No Friday report and no official inactive list is in for this game, several starting QBs are "
+                 "unconfirmed (TB and NYJ are shown under both scenarios), and CIN / WAS have no practice report yet. "
+                 "Every number will change when the game is re-run on its official report and lists."),
     (2026, 10): ("PRELIMINARY: predicted and simulated Sun 11/15 ~11:00 CST on the official Friday reports, the hand-checked "
                  "file 2026-wk10.csv and fresh game lines. This game's official inactive lists have not posted (or have not "
                  "been applied yet), so the numbers will change when it is re-run on them before kickoff."),
@@ -169,6 +187,8 @@ TRADES = [
     ("Quenton Nelson", "G", "IND", "SEA", "10/27"), ("Marvin Harrison Jr.", "WR", "ARI", "HOU", "10/12"),
     ("Cam Jurgens", "C", "PHI", "BAL", "10/07"), ("Joey Porter Jr.", "CB", "PIT", "DAL", "10/01"),
     ("J.J. McCarthy", "QB", "MIN", "NYG", "09/28"),
+    # Added 2026-11-19 from the week-10 log entries and press reports (dates as reported, not re-verified on NFL.com).
+    ("Jacoby Brissett", "QB", "ARI", "BAL", "11/05"), ("Kirk Cousins", "QB", "LV", "MIN", "wk 10"),
 ]
 
 
@@ -178,7 +198,8 @@ def trade_notes(home: str, away: str) -> list[str]:
 
 
 # The short chip shown on each such game; "PRELIMINARY" when a week has none.
-PRELIMINARY_CHIPS = {(2026, 10): "PRELIMINARY · INACTIVES PENDING",
+PRELIMINARY_CHIPS = {(2026, 11): "PRELIMINARY · WED REPORTS ONLY",
+                     (2026, 10): "PRELIMINARY · INACTIVES PENDING",
                      (2026, 6): "OFFICIAL REPORTS IN · INACTIVES PENDING",
                      (2026, 7): "PRELIMINARY · INACTIVES PENDING",
                      (2026, 8): "PRELIMINARY · NO OFFICIAL REPORTS"}
@@ -312,11 +333,13 @@ def build(sport: str, explain: bool = True) -> dict:
         # Display only (user, 2026-11-15): the week-10 final board (calibration/board_wk10.py): tier, P82 shadow
         # (unvalidated) and notes per game. No number reads it.
         try:
-            board = json.loads((config.DATA_DIR / "board" / "board_2026_w10.json").read_text(encoding="utf-8"))
-            rows = {r["game_id"]: r for r in board.get("games", [])}
-            for g in out_games:
-                if g.get("game_id") in rows:
-                    g["board"] = {**rows[g["game_id"]], "shadow_label": board["labels"]["shadow"]}
+            # 2026-11-19: every week's board file is read (week 10 final, week 11 preliminary, ...).
+            for path in sorted((config.DATA_DIR / "board").glob("board_2026_w*.json")):
+                board = json.loads(path.read_text(encoding="utf-8"))
+                rows = {r["game_id"]: r for r in board.get("games", [])}
+                for g in out_games:
+                    if g.get("game_id") in rows:
+                        g["board"] = {**rows[g["game_id"]], "shadow_label": board["labels"]["shadow"]}
         except (OSError, ValueError, KeyError):
             pass
         # Display only (P48 labels): where each charged player's snap share came from.

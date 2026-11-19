@@ -106,10 +106,10 @@ status only when its adoption test is met.
 | P75 | `ingest_props.run` raises KeyError 'players' on its summary line when a carried-forward game has no `players` key; the file is already written, so only the printout fails | bug | 2026-10-18 | Noon props pull 10/18 16:24Z: file written (7 games priced), crash at `priced = sum(...)`. 10/18 SNF: cause found. A targeted pull (`only_games`) carries a game with no prior entry forward as a stub holding only `pulled_at` (never-pulled ARI_LA, BUF_LV, LAC_KC, WAS_SF), and `props.rank` crashes on the same stub (`g["players"]`), so ranking fails too, not just the printout. Worked around in-process for SNF only (stubs filtered before `rank`); that wrapper skipped the P62 shadow refresh (nothing served) | open, cause known, nothing built **FIXED 2026-10-25 (`c1197a7`, user-approved): stubs are skipped in `props.rank` and in the props / TD pull summaries; regression test `test_carried_forward_stub_is_skipped` (fails before the fix, passes after); suite 299. Live check: the 10/25 noon pull carried 32 stubs, and the ranking ran clean (archived `2026_w07/20261025T155050Z.json`). Criterion 2 (re-rank the 10/18 16:24Z file) could not be run: that file was overwritten** |
 | P76 | Live: an overtime walk-off score is treated as a kickoff after a score, so the game shows ~1% instead of final | live model | 2026-10-25 | P73 V4 review, PIT @ TB 10/18 20:33Z (PIT TD in OT → kickoff to TB, TB 0.85%). The guard behaved correctly by its rule; the engine has no game-over state for a sudden-death OT score | (to set with the user) e.g. an OT touchdown, or any OT score that ends the game, gives a final state with WP 0 / 1 | logged 2026-10-25 (user: small tracker item); nothing built |
 | P78 | No arrival or departure credit for traded players: the old team's rating keeps him, the new team gets nothing | engine | 2026-10-29 | 7 in-season trades (see the 10/29 trades entry); a departure Out row would be worth 0.97-5.50 pts to the old team | walk-forward 2016-25 trades; MAE improves with game-bootstrap CI excluding 0 (criteria to confirm with the user) | proposed 2026-10-29; nothing built |
-| P79 | Injuries: the newest ESPN injury pull stays in force indefinitely when the ESPN feed stops answering, so a week-old ESPN report is charged into later weeks | data / pipeline | 2026-10-29 | `latest_injury_report` retires ESPN rows only by a newer ESPN pull. Since 10/18 none has arrived, so the 10/18 (week-6) ESPN pull, 112 rows, was in force for every week-7 prediction, though the 10/25 runs were logged as "no ESPN feed". Week-7 served breakdowns hold **46 charges (28.2 pts) on players whose only in-force row is that ESPN pull**. That is an upper bound: some 'inactive' rows come from official lists, and many are genuine IR absences (Garrett, Bartch). But some are stale statuses, e.g. MIA Caleb Douglas Q 0.53, who played (2 rec). The week-8 preliminary run carries the same rows | (to confirm with the user) ESPN rows count only for the week they were pulled for (as P19 does for nflverse); IR rows kept until a newer source contradicts them; replay weeks 2-7 on served breakdowns: charges removed only on players who played or were not on that week's official report; MAE / ATS reported, not gated | logged 2026-10-29; nothing built (changes pregame numbers: next boundary at the earliest) **Criteria set 10/29 (R1-R5); shadow replay weeks 5-7: R1 FAILS (12/31 = 38.7% played; Blankenship on report, did not play), R2 PASSES. NOT shipped; redesign proposed (drop only on later snaps / absence from a filed official report).** |
+| P79 | Injuries: the newest ESPN injury pull stays in force indefinitely when the ESPN feed stops answering, so a week-old ESPN report is charged into later weeks | data / pipeline | 2026-10-29 | `latest_injury_report` retires ESPN rows only by a newer ESPN pull. Since 10/18 none has arrived, so the 10/18 (week-6) ESPN pull, 112 rows, was in force for every week-7 prediction, though the 10/25 runs were logged as "no ESPN feed". Week-7 served breakdowns hold **46 charges (28.2 pts) on players whose only in-force row is that ESPN pull**. That is an upper bound: some 'inactive' rows come from official lists, and many are genuine IR absences (Garrett, Bartch). But some are stale statuses, e.g. MIA Caleb Douglas Q 0.53, who played (2 rec). The week-8 preliminary run carries the same rows | (to confirm with the user) ESPN rows count only for the week they were pulled for (as P19 does for nflverse); IR rows kept until a newer source contradicts them; replay weeks 2-7 on served breakdowns: charges removed only on players who played or were not on that week's official report; MAE / ATS reported, not gated | logged 2026-10-29; nothing built (changes pregame numbers: next boundary at the earliest) **Criteria set 10/29 (R1-R5); shadow replay weeks 5-7: R1 FAILS (12/31 = 38.7% played; Blankenship on report, did not play), R2 PASSES. NOT shipped; redesign proposed (drop only on later snaps / absence from a filed official report).** **Redesign tested 2026-11-19 (evidence-based clearing: snaps since, or off a filed report and on the depth chart; never IR / reserve; walk-forward weeks 1-10): R1a FAILS 5/11 = 45.5%, R1b FAILS (1), R2 passes. NOT shipped. Handled at the source instead: the ESPN pull is refreshed every week again (`--no-espn-inactives`, feed-health guard), and the audit finds 0 stale rows in force.** |
 | P80 | Kickoffs: `ET_UTC_OFFSET_HOURS = 4` stores every game after DST ends (11/1) one hour early, so kickoff gates treat unstarted games as started | bug fix | 2026-11-01 | Week 8: all 12 Sunday games stored 1 h early against ESPN; 4 unstarted rows corrected by hand, MNF and weeks 9+ not | Stored kickoffs match ESPN for weeks 8-18 after a schedule ingest | **FIXED 11/1** (named zones; test first; 152 unplayed rows + mirror re-derived; dry re-ingest changes 0 unplayed) |
 | P81 | Served-list archive: every props and TD refresh stores the exact served list in data/archive/served_lists before publishing | process | 2026-11-01 | Report card: TD lists never archived; TD raw odds overwritten (no week 5 or 8 market left) | `tests/test_served_archive.py` fails if a list being served is not in the archive byte for byte | **BUILT 11/1** (`src/served_archive.py`; no missing week rebuilt) |
-| P82 | Replacement-starter credit: the flat QB-out charge ignores who replaces the starter (Cousins and a rookie cost the same; mid-season arrivals get nothing) | engine | 2026-11-15 | Week 10: MIN Cousins for Murray, MIA McCord, SEA Lock, ARI Beck, LV Mendoza; shadow view logged per game (2026-11-15 board entry) | G1-G6 in the 2026-11-15 rules entry (walk-forward 2016-25, n ≥ 150, MAE CI excludes 0, ATS not worse, 6/10 seasons, k tuned on 2016-21 only) | **proposed 2026-11-15; shadow view only (display, labelled unvalidated); nothing built into the engine** |
+| P82 | Replacement-starter credit: the flat QB-out charge ignores who replaces the starter (Cousins and a rookie cost the same; mid-season arrivals get nothing) | engine | 2026-11-15 | Week 10: MIN Cousins for Murray, MIA McCord, SEA Lock, ARI Beck, LV Mendoza; shadow view logged per game (2026-11-15 board entry) | G1-G6 in the 2026-11-15 rules entry (walk-forward 2016-25, n ≥ 150, MAE CI excludes 0, ATS not worse, 6/10 seasons, k tuned on 2016-21 only) | **proposed 2026-11-15; shadow view only (display, labelled unvalidated); nothing built into the engine** **Gates run 2026-11-19 (G7 added: 2026 weeks 1-10): G1 pass (855 games), G2 FAILS (2022-25 MAE diff −0.0145, CI −0.071 to +0.043), G3 pass, G4 pass (8/10), G5 pass, G7 FAILS (+0.003 on 38 games). NOT shipped; the shadow line stays, labelled unvalidated.** |
 
 Not proposed: **raising VALUE_EDGE_THRESHOLD on its own.** On both slates the
 baseline's edge had no positive relationship to the cover result (CFB w =
@@ -153,6 +153,211 @@ straight up. See P4.
 
 NFL ML model (ml-v1), to date: SU 11/14, ATS 4-9 (1 no-lean; `grade.py`
 counts it as a loss, 4-10), MAE 12.08.
+
+---
+
+## 2026-11-19 — Week 10 graded (12 games: baseline MAE 12.13, SU 7/12, ATS 2-10); **P82 FAILS (G2, G7) and the P79 redesign FAILS (R1): NO engine change ships**; injury feed repaired (coupling, not an outage); week-11 PRELIMINARY board (13 games, all Low); TD board built (experimental)
+
+Gates, rules and criteria for everything below are in the entry beneath this one, written first (14:18 CT; one amendment at 14:20 and the P82 test design at 14:45, each before its run).
+
+**Week 10, games** (`grade.run(refresh=True)`; each game on its last stored pregame prediction). Margins are home. WAS @ NYG (no stored prediction) and NE @ DET (not touched) are excluded.
+
+| Game | Final | Baseline | ML | Market | Actual | SU | ATS | Why (wrong or right) |
+|---|---|---|---|---|---|---|---|---|
+| BUF @ NYJ | 31-12 | −4.0 | −9.8 | −7.5 | −19 | W | L | Geno Smith hurt in-game (Klubnik finished); the model was 3.5 short of the line on BUF |
+| CAR @ NO | 20-17 | +2.6 | +1.9 | −1.0 | −3 | L | L | One-score game; NO's line charges (Fuaga 1.80, McCoy 1.45) were applied, CAR's were larger (5.8). No single cause |
+| HOU @ CLE | 24-27 | +1.2 | −1.0 | −3.5 | +3 | W | W | Injury edge (HOU 5.0 vs CLE 1.9) pointed the right way |
+| JAX @ TEN | 40-23 | −9.6 | −8.6 | −10.5 | −17 | W | L | Right side, 0.9 short of the line |
+| KC @ ATL | 35-13 | +0.2 | −4.2 | −3.0 | −22 | L | L | **Rating**: no injury or QB cause; the baseline rated ATL level with KC and the ML did not |
+| MIA @ IND | 22-24 | +8.6 | +7.1 | +4.5 | +2 | W | L | **QB**: the flat 6.0 Willis charge (MIA at the 8.0 cap) overstated the drop to McCord, who kept it close |
+| MIN @ GB | 30-10 | +6.8 | +4.5 | +3.0 | −20 | L | L | **QB**: MIN charged the flat 5.17 for Murray while Cousins played well (207 yds, 2 TD). The largest miss of the week (26.8) |
+| LA @ ARI | 34-6 | −6.6 | −9.4 | −10.0 | −28 | W | L | **QB, the other way**: rookie Beck (2 INT) was worse than the flat charge; ARI already at the cap. PRELIMINARY run (afternoon window missed) |
+| SEA @ LV | 21-13 | −1.0 | −6.8 | −6.5 | −8 | W | L | **QB / trade**: LV carried no charge for the traded Cousins (P78) with Mendoza starting; SEA charged 5.0. PRELIMINARY run |
+| SF @ DAL | 46-40 | −0.1 | −4.9 | −4.0 | −6 | W | L | PRELIMINARY run: Trent Williams charged 1.24 and played, Ferguson inactive and not charged (the lists were read after kickoff) |
+| PIT @ CIN | 18-38 | −1.8 | +1.8 | +3.5 | +20 | L | L | **Rating** (baseline and ML disagreed; the ML and market had CIN). Elliott's warm-up injury was in the run |
+| LAC @ BAL | 23-20 | +1.1 | +4.7 | +4.5 | −3 | L | W | Brissett's debut. MNF kept its Sunday PRELIMINARY run: **no Monday refresh, no lists applied** |
+
+- **Baseline:** MAE 12.13 (line 9.71), straight-up 7/12, **ATS 2-10**, Brier 0.226. **ML:** MAE 10.07, SU 8/12, ATS 5-7.
+- Pattern: favourites covered by a lot (seven games decided by 17+). In 9 of the 10 ATS losses the baseline sat on the underdog side of the line.
+- Wrong winners, by cause: QB treatment 1 (MIN @ GB); rating 2 (KC @ ATL, PIT @ CIN); close game 1 (CAR @ NO); preliminary MNF 1 (LAC @ BAL). ATS losses tied to the QB treatment: MIA @ IND, MIN @ GB, LA @ ARI, SEA @ LV.
+- Season CLV after the grade: baseline n = 141, −0.01 pp; ML n = 140, −0.09 pp. Flags stay off; the baseline stays the headline (P8).
+- **P82 shadow, week 10 (descriptive, 5 games):** |shadow − actual| vs |headline − actual|: MIN @ GB 20.2 vs 26.8, MIA @ IND 4.6 vs 6.6, SEA @ LV 5.0 vs 7.0, LA @ ARI 21.6 vs 21.4, LAC @ BAL 7.5 vs 4.1. Closer in 3 of 5; mean 11.8 vs 13.2. Five games gate nothing.
+
+**Process gaps found in the week-10 record.**
+- Four games were graded on PRELIMINARY runs: the three afternoon games (session paused) and MNF (never refreshed). WAS @ NYG (TNF) had no prediction at all (P71 again).
+- `report_card_wk4_9.py` globbed `2026_w0*`, so week 10 would have been silently left out of every props and TD number. Fixed in the week-10 copy.
+- `tests/test_served_archive.py::test_props_tab_label` still pinned the weeks 4-8 label and was **failing at HEAD**; it now pins the current label.
+- The week-10 P82 shadow read a dropback cache built before the week-10 games (`data/cache/p82_dropbacks_2024_2026.parquet`; 969 plays short). Rebuilt by `calibration/p82_build_dropbacks.py`.
+- The week-9 archived TD list was never graded; it is graded now (below).
+
+**Props and TD, weeks 4-10** (`calibration/report_card_wk4_10.py`; nflverse `stats_player_week_2026.csv`, downloaded 11/19; output `calibration/2026-11-19_report_card_wk4-10.md` / `.html`; forward bars `calibration/forward_bars.py` → `data/board/forward_bars.json`).
+- **Props, all served rows:** 1,254 rows in 66 games, 619-635 (49.4%), −5.8% ROI (CI −11 to −1).
+- **F2-kept rows:** 826 rows, 435-391 (52.7%), +0.4% ROI (CI −7 to +7): break-even at best. Held by F2: 744 rows, 47.2%, −9.6% ROI (CI −17 to −2).
+- **Week 10 kept:** 129 rows, 65-64 (50.4%), −3.8% ROI (CI −13 to +6).
+- **Forward bar (F2 live, weeks 8-10):** 367 kept rows in **25 games**, 192-175 (52.3%), ROI −0.7% (CI −8.3 to +7.8); every-under baseline on the same rows −6.4%. Rows ≥ 300 yes; games ≥ 30 **no**; ROI interval above zero **no**; beats the under baseline yes. **Bar not met: the Props label keeps its wording** (numbers moved to weeks 4-10; "UNVALIDATED" stays).
+- **TD, sim calibration:** 1,536 player-games in 95 games (weeks 4-10), sim Brier 0.1669 vs naive position 0.1786.
+- **TD, archived served lists graded forward (weeks 8-10; week 9's open item closed):** top-25 "yes" picks **8 of 60 (13.3%)** against 25.9% predicted and 18.3% market, −39.9% ROI at the posted prices. On 405 priced players in 21 games the market beat the simulation: Brier 0.1449 vs 0.1562, difference +0.0114 (CI +0.0068 to +0.0160, **excludes zero**). Yes picks ≥ 150 no; games ≥ 40 no; beats the market no. **Bar not met: the TD label stays "experimental".** The earlier history (7 of 38 against 30% predicted) stays on the page beside it.
+
+**Engine candidates. Neither passes; nothing ships to the pregame engine this boundary.**
+
+*P82 (`calibration/p82_gates.py`, output `calibration/2026-11-19_p82_gates.txt`).* 2,661 games 2016-2025; 855 backup-QB games (376 with a starter-absence charge on the backup's team). G6 grid on 2016-21 froze **k = 1000, replacement pool < 200 dropbacks** (MAE 10.9125 vs flat 10.9480).
+
+| Gate | Result | Numbers |
+|---|---|---|
+| G1 n ≥ 150 | PASS | 855 backup-QB games |
+| G2 MAE improves, CI excludes 0 (2022-25) | **FAIL** | 10.133 → 10.119, diff −0.0145 (CI −0.071 to +0.043); n 408; credit non-zero in 121 games (there −0.049) |
+| G3 ATS not worse (2022-25) | PASS | 213-181 → 212-182, diff −0.0025 (CI −0.015 to +0.010); 7 picks changed |
+| G4 sign in ≥ 6 of 10 seasons | PASS | 8 of 10 (2017 and 2024 no improvement) |
+| G5 no-change games identical | PASS | 1,806 games, max change 0 |
+| G6 chosen on 2016-21, judged 2022-25 | done | as above |
+| G7 2026 weeks 1-10 MAE lower | **FAIL** | 38 backup-QB games (15 with a credit): 12.510 → 12.513 (+0.003, CI −0.23 to +0.23) |
+
+- Reported, not gated: all ten seasons −0.026 (CI −0.063 to +0.012). The credit is small (mean 0.85 points where it fires) and its effect is inside noise.
+- G7 detail worth keeping: the credit helped where the backup was a veteran (MIN @ GB +2.74 toward MIN, BUF @ MIN +2.06) and hurt where the charged team then lost big anyway (CIN @ BAL, BAL @ ATL). The week-10 shadow's "vs usual starter" form, which looked better on 5 games, is a different quantity from the gated credit.
+- **Verdict: P82 not shipped.** The shadow line stays on the dashboard, labelled unvalidated.
+
+*P79 redesign (`calibration/p79b_replay.py`, output `calibration/2026-11-19_p79b_replay_wk1-10.txt`).* Stale feed-sourced charged rows exist only in weeks 7 (47), 8 (47) and 9 (3). The rule cleared 11 (5.38 pts: 6 by filed report + depth chart, 5 by snaps since) and kept 86 (49 no report filed, 29 IR, 8 reserve). Minimum sample (≥ 10) met.
+
+| Gate | Result | Numbers |
+|---|---|---|
+| R1a ≥ 80% of cleared charges on players who played | **FAIL** | 5 of 11 = 45.5% (first design: 38.7%) |
+| R1b every cleared player played or was off that week's official report | **FAIL** | 1: SEA Brandon Pili (week 8, cleared by snaps, on the report, did not play) |
+| R2 no long-term absence cleared | PASS | 0 |
+| R3 own-week / manual / inactive rows untouched | by construction | |
+| R4 (reported) | | 7 changed games, MAE 10.82 → 10.58; ATS 2 → 2 |
+| R5 | not built | |
+
+- Why it fails: "off the filed report and on the depth chart" cleared Lane Johnson, three DEN linemen and Milroe, none of whom played. Absence from a report is not evidence of availability. And 18 kept rows were on players who did play (Darrisaw, Addison, Hockenson in week 7), because their teams had no stored report at prediction time.
+- **Verdict: P79 redesign not shipped.** The stale-row exposure is now handled at the source instead (feed repair, next), which is a data fix and not an engine change: with a current ESPN pull every week there are no stale feed rows to clear (audit below: 0).
+
+**Ship rule outcome: neither passes, so neither ships.** No gate was edited after a result.
+
+**Injury feed: diagnosis and repair (data fix).**
+- **Cause.** The ESPN injury feed never stopped answering. From 10/18 `ingest_injuries.run` was deliberately not called on game days, because it ends with the ESPN inactive-list ingest that had stored stale lists (logged 10/25: "`ingest_injuries.run` was not called, because it ends with the ESPN inactives ingest"). That also skipped the ESPN injury pull, so the 10/18 pull stayed in force through weeks 7 and 8 (P79). The pull resumed on 11/08.
+- **Before / after, stored ESPN rows by week:** week 6: 118 (pull 10/18); **week 7: 0; week 8: 0**; week 9: 150 (11/08-09); week 10: 151; week 11: 231 pulled today 20:45Z (53 stored under `espn` after the manual and official rows take their keys).
+- **Fresh, proven:** pull stamp 2026-11-19T20:45Z; 36 rows not in the week-10 pull and 8 with a changed status, and these match the user's week-11 file: KC Jared Wiley out → IR (file: IR 11/18), MIA Zeek Biggers Q → IR, MIN Bo Richter Q → IR, ARI Jordan Burch Q → IR, IND Akeem Davis-Gaither IR.
+- **Fix.** (1) `python -m src.ingest_injuries --no-espn-inactives` (and `run(..., espn_inactives=False)`) refreshes the feeds without asking ESPN for inactive lists, so avoiding stale lists no longer means skipping the injury refresh. (2) `espn_feed_health`: every refresh prints and logs (`data/espn_feed_flags/feed_health.log`) the rows ESPN returned and the age and week of the newest stored ESPN pull, with a loud `[WARN][ESPN FEED STALE]` when ESPN returns nothing or the newest pull is from an earlier week. Tests `tests/test_espn_feed_guard.py` (4; the October gap is a test case).
+- No source was replaced: the feed is answering.
+
+**Stale-row audit, all weeks** (`calibration/stale_row_audit.py 2026 11`). 4,056 stored injury rows; 274 in force: 217 manual, 53 ESPN, 4 nflverse, **all week 11**. In-force rows from an earlier week: **0** (26 teams playing). 32 in-force rows sit on bye teams and are not used. P77: no ESPN inactive list is inside its read window yet (run again at the TNF window). P81: the week-11 TD list was archived at 20:54:46Z, before it was shown.
+
+**Roster and QB verification (official team pages do not return through search; these are press reports unless stated, and each is a lead to re-check on Friday's reports).**
+- **LAC Daiyan Henley:** the 11/10 trade to Denver was announced by both clubs and then **voided** (Denver, 11/11: "will not be finalized"; chargers.com posted "Welcome back"). He is a Charger; the Chargers' 11/18 report is right and the research doc is out of date. Row kept (Q, knee, DNP).
+- **CAR IR-R guard:** Brady Christensen (the week-9 and week-10 files' name). Not activated per the user's file; no official activation found.
+- **QBs.** ARI Beck (coach confirmed him as the starter; 11-18, 2 INT in week 10). MIA McCord (Willis on IR through at least week 13). LV Mendoza (second start). MIN Cousins (started and won week 10; Murray Out on the Wednesday report). BAL Brissett (started MNF; Lamar and Huntley on IR). NYG McCarthy (starter since week 7). **PHI not named** as of Mon 11/16 (Milton started week 9). **TB Mayfield** practiced Thursday; Bowles decides Friday. **NYJ Smith** limited Wednesday; Glenn: starts if healthy. CIN Burrow and WAS Daniels: no report yet, assumed.
+- IR-R / PUP-R rows marked "not activated" in the file stay Out: no official activation was found for any of them today.
+- Wednesday DNPs with no listed injury (15 rows) are not charged and are UNVERIFIED (see the amendment below).
+
+**Week-11 PRELIMINARY predictions** (baseline 14:20-14:31 CT; first pregame records `data/archive/pregame_first/2026_w11/20261119T201608Z_tnf_preliminary.json` and `…203144Z_sun_mon_preliminary.json`, read-only). Margins are home. Tiers by the rules below: **all 13 are Low today** (every game but TEN @ DAL has a backup or unconfirmed QB or an unconfirmed starter; TEN @ DAL has a 5.6 gap).
+
+| Game | Baseline | ML | Sim home WP | Market (home line / total) | P82 shadow (unvalidated) | Note |
+|---|---|---|---|---|---|---|
+| IND @ HOU (TNF) | +10.1 | +5.6 | 0.79 | −12.5 / 44 | | IND at the 8.0 cap; lists at 5:45 PM |
+| ARI @ KC | +13.0 | +14.8 | 0.85 | −16 / 41 | +13.5 | Beck; ARI at the cap |
+| BAL @ CAR | +6.3 | −0.4 | 0.70 | −3 / 43.5 | +2.5 | Brissett; baseline and ML disagree |
+| JAX @ NYG | −0.2 | −5.7 | 0.49 | +6 / 46.5 | −0.9 | McCarthy; gap 5.8 from JAX's long Q list |
+| MIA @ BUF | +15.4 | +15.4 | 0.89 | −16.5 / 44.5 | +14.1 | McCord; MIA at the cap |
+| NO @ CHI | +8.8 | +8.9 | 0.76 | −11.5 / 48.5 | | McCoy, Fuaga Doubtful |
+| TB @ DET | +4.5 | +9.6 | 0.64 | −6.5 / 45.5 | +4.1 (Daniels only) | **Mayfield plays: +0.2; Daniels starts: +6.0** |
+| TEN @ DAL | +2.4 | +5.2 | 0.58 | −8 / 55 | | gap 5.6 |
+| NYJ @ LAC | +7.3 | +7.6 | 0.72 | −3 / 42 | +7.7 (Klubnik only) | **Smith plays: +4.8; Klubnik starts: +9.6** |
+| LV @ DEN | +7.0 | +10.1 | 0.71 | −10 / 40.5 | +11.5 | Mendoza; no charge for the traded Cousins (P78) |
+| PIT @ PHI | −2.2 | −0.1 | 0.43 | +4.5 / 37.5 | −1.8 | PHI QB not named; PHI at the cap |
+| MIN @ SF (Mexico City) | +4.5 | +4.8 | 0.63 | −3 / 46.5 | **−2.3** | neutral, no home field; altitude and travel not modelled; flat Murray charge with Cousins starting |
+| CIN @ WAS (MNF) | −1.5 | −1.6 | 0.44 | +6.5 / 54 | | no practice reports yet |
+
+- QB scenarios (`python -m src.scenarios --publish`, 10,000 sims each; the control reproduces the served number): TB @ DET and NYJ @ LAC, on the dashboard's scenario panel.
+- Shadow view: `calibration/p82_shadow_wk11.py` → `data/board/p82_shadow_2026_w11.json` (parameters as week 10; replacement −0.118 on the refreshed cache). Low-confidence flags (< 200 career dropbacks): McCord 37, Beck 24, Mendoza 48, Milton 104, Daniels 123, Klubnik 26.
+- Board: `calibration/board_wk11.py` → `data/board/board_2026_w11.json` / `.html`, notes in `notes_2026_w11.json`, unconfirmed list in `unconfirmed_2026_w11.json`.
+- No P74 workaround row was needed: no healthy starter's backup holds a QB slot charge.
+- QB props are held: no props pull or ranking was run today (TD lines only).
+
+**TD section rebuild (display / shadow).** `src/td_board.py` → `data/td_board.json` and the dashboard copy; `dashboard/src/TdBoard.jsx`.
+- 208 players in 13 games (every player the simulator gives touchdown usage to, about eight a team), 203 with a market price. 1+ TD and 2+ TD are the stored simulations' own shares (`anytime_td`, `two_plus_td`); nothing is approximated.
+- Sort controls: most likely 1+ TD, most likely 2+ TD, edge vs market. A game filter. Gaps past 20 points carry a "likely usage miss" tag.
+- Click-through per player: team TD profile (TDs a game, rush / pass split, red-zone trips and conversion), TDs the opponent allows to his position with league rank, his red-zone / inside-10 / goal-line targets and carries with team share, the game script (spread, total, implied points, simulated points, team TDs, plays, win chance), and the injuries that move his role (from the simulation's `injury_shifts`), all through week 10.
+- On the main Games page beside the game cards (sticky side panel, top 12 with "show all"), and at the top of the Anytime TD tab. Labelled EXPERIMENTAL · UNVALIDATED, 2+ TD marked new, and the graded history is on the panel itself.
+- Tests `tests/test_td_board.py` (5). The component was server-rendered against the real file in all three sort orders, compact and full, with a row expanded (12 / 208 rows, explanation present).
+
+**Dashboard.** Week-10 grades on the Record page; 13 week-11 games with the PRELIMINARY chip ("WED REPORTS ONLY"), tier chips, shadow tags, QB notes, scenario panels and trade notes (Brissett and Cousins added). `export_dashboard` now reads every week's board file. Game explanations were regenerated for the 13 games (Claude API, about $0.11). Suite **338 passed**; `vite build` clean; dev server on 5174; opened in the default browser 15:04 CT (the Chrome extension was not connected, so the page was not inspected visually).
+
+**Quota.** Odds API 288 after one game-lines pull (3) and one TD pull (13).
+
+---
+
+## 2026-11-19 — Week 11 boundary: rules, gates and criteria written BEFORE anything is tiered, tested or graded (P82 gates, P79 redesign gates, tier rules, feed repair, TD rebuild); TNF IND @ HOU PRELIMINARY 14:11-14:16 CT
+
+Everything in this entry was written at 14:18 CT on Thu 11/19, before the week-10 grade, before any week-11 tier, before either engine test, and before the TD rebuild. The only thing already run is the TNF preliminary below (done first because of the kickoff).
+
+**Standing rules (user, 11/19).** Diagnose first; walk-forward only; at most ONE pregame-engine change ships this boundary and only if its gates pass; unvalidated things are labelled; only official sources clear a flag; QB props held until official confirmation; no push; no Supabase deletions; no played game is re-predicted or re-simulated; each game's first pregame record is read-only in `data/archive/pregame_first/2026_w11/` and any later run is stored as LATE.
+
+**Ingest (14:06-14:11 CT).**
+- Schedule: all 13 matchups in the user's file match the stored schedule (IND@HOU TNF, ARI@KC, NO@CHI, TB@DET, TEN@DAL, BAL@CAR, MIA@BUF, PIT@PHI, NYJ@LAC, LV@DEN, JAX@NYG, MIN@SF at Estadio Banorte (neutral), CIN@WAS MNF). **IND @ HOU kickoff 01:15Z = 7:15 PM CT**; T-90 = 5:45 PM CT.
+- nflverse (ratings: 18,447 2026 plays, prior season ~61%), weather (17 outdoor forecasts), fresh game lines 20:0xZ (29 events, quota 301).
+- `data/manual_injuries/2026-wk11.csv`: the original is kept in the session scratchpad. The validator rejected it on one line (position `PK`). Three cell edits, each with a `# NOTE CC 11/19` line keeping the original row: LV Matt Gay `PK` → `K`; CAR `Christensen` → `Brady Christensen` (the wk9/wk10 files' name; to confirm on panthers.com); LAC `Dalyan Henley` → `Daiyan Henley` (wk9 spelling; the trade conflict is still open). 263 rows valid; merge: 195 override, 28 listed healthy, 37 added, 3 cleared. Injuries after the merge: 319 rows, 95 ruled out, 32/32 teams.
+- ESPN injury feed answered today: 230 rows (see the feed-repair criteria below).
+
+**TNF IND @ HOU, PRELIMINARY (no official inactive lists; Mon/Tue/Wed practice from the CSV).**
+- Baseline **HOU by 10.1** (home WP 0.78), ML HOU by 5.6 (0.67), sim HOU 0.785 (27.8-17.9), market **HOU −12.5 / 44**.
+- Layer 1 +3.52, home field 1.9, travel 0.39, injuries +4.26 (IND −8.0, **at the cap**; HOU −3.74).
+- IND charges: Travis 1.67, Raimann 1.59, Ward 1.46, Davis-Gaither (IR) 1.10, Gardner Q/DNP at 0.25 to play 1.10, Carlies 0.58. HOU: Hunter 1.36, Al-Shaair 1.12, Marks 0.65, Harrison Jr. 0.38, Hummel 0.08, B. Jordan 0.08.
+- No QB charge either side; sim QBs Daniel Jones (IND), C.J. Stroud (HOU).
+- Because IND sits at the 8.0 cap, Gardner's and Heck's statuses may not move the margin as much as their own charges suggest.
+- Archived read-only: `data/archive/pregame_first/2026_w11/20261119T201608Z_tnf_preliminary.json` (`calibration/archive_pregame.py`, new; it refuses a game that has kicked off and never overwrites). The LATE run on official lists will be stored beside it, not over it. QB props are held until the lists confirm both starters.
+
+**Confidence tiers, week 11 (display only).** The 11/15 rules entry applies unchanged (inputs, gap, backup QB, unconfirmed, disagreements, Low / Medium / High). Week-11 specifics, fixed now:
+- Snap leaders: nflverse snap counts, weeks 1-10.
+- A game shown under two QB scenarios (TB, NYJ) is **Low** in both (unconfirmed starter) until an official source names the starter.
+- Every Sunday / Monday game run today is PRELIMINARY (no Friday report, no lists), so its best possible tier today is **Medium**.
+- A player with a Wednesday DNP and no listed injury or status is **not charged** (practice cells blanked, with a NOTE) only when an official team source shows rest / no injury designation; otherwise the row stands as transcribed and the game counts as "unconfirmed" if his snap share is ≥ 0.70.
+- **Amended 14:20 CT, before any Sunday / Monday game was run:** the rule in the line above is replaced for rows with **no listed injury**. The official Wednesday reports could not be retrieved by search, and the user's file says of these rows "VERIFY, do not charge". So a Wed DNP with no listed injury and no status is **not charged** (practice cell blanked, NOTE line keeps the original): ARI Baker, Seumalo, Sweat, M. Wilson; BUF Torrence; CAR Hubbard; DAL Von Miller; JAX Armstead; LAC Mack; NO Reid; PIT Heyward, Washington, Ramsey, Watt; SF McCaffrey. Each is UNVERIFIED and is re-checked on Friday's report. A no-status DNP **with** a listed injury (NO Kamara back, SF Trent Williams shoulder, BUF Benford, Kincaid, Alford, D. Williams and the others) stands as transcribed (0.60 to play). For the tier, an unverified row with snap share ≥ 0.70 makes the game "unconfirmed".
+- Backup-QB rules as last week: the engine's flat starter-out charge stays in the headline; the P82 shadow line is shown beside it, labelled unvalidated; P74 workaround rows only for a verified inactive backup charged at a QB slot while the healthy starter plays.
+
+**Engine candidates this boundary: P82 and the P79 redesign. Gates, written before any test.**
+
+*P82 (replacement-starter credit).* Design as logged 11/15 (own EPA/dropback over the last two seasons, opponent-adjusted, shrunk toward replacement level by dropbacks, flag under 200 career dropbacks, no zero credit). Added now, before the test:
+- The credit also reports success rate, CPOE and sack rate per QB; the point effect uses the shrunk opponent-adjusted EPA/dropback only (one number, no hand-weighted blend).
+- **No double-count with P74:** P82 acts only on the team's *starter-absence* charge (a charged row for the team's season-to-date QB snap leader). A QB-slot charge on a non-starter (the P74 case) is not touched and gets no credit.
+- The team keeps the starter-absence charge; the credit is added on top: credit = (shrunk EPA/db of the expected starter − replacement level) × league dropbacks per team-game, floored at 0 and capped at the flat charge (a backup can cancel the charge, never exceed it).
+- **Gates G1-G6 of 11/15 stand exactly as written** (walk-forward 2016-2025, n ≥ 150 backup-QB games, MAE CI excludes 0, ATS not worse, sign in ≥ 6 of 10 seasons, no-change games byte-identical, k and the replacement definition chosen on 2016-21 and judged on 2022-25).
+- **G7 (added, user 11/19): 2026 weeks 1-10 backup-QB games**, walk-forward (each game sees only earlier plays): margin MAE with the credit must be lower than the served headline's on those games. Reported with n and a game-bootstrap CI; the CI is not required to exclude 0 at this n, but the sign must be an improvement.
+- P82 ships only if G1-G7 all pass. The week-10 shadow rows (5 games) are graded descriptively and gate nothing.
+
+- **Test design, fixed 14:45 CT before the harness was written or run** (`calibration/p82_gates.py`):
+  - Flat-charge baseline for 2016-2025 = the live rating replayed walk-forward (P22 A+B: ridge 300, carry 0.459 / 0.394, `research/p22/p22_phase1.py`) plus the live situational terms plus the stored injury term (`injury_diff`, the same `score_injuries` the live pipeline uses, flat QB charge included). Graded against the stored near-close line.
+  - Starter = the team's first dropback passer in the game. Season-to-date snap leader = the team's dropback leader in the season before that game (week 1: the prior season's team leader). **Backup-QB game** = either team's starter is not its leader.
+  - Starter-absence charge = 6.0 × the team's `qb_availability_loss` on that week's report (0 if no QB is on the report: then P82 changes nothing for that team).
+  - QB sample for a game in season s, week w: dropbacks in season s−1 and in season s before week w, regular and post season. Opponent adjustment and replacement level are computed inside that window only. Dropbacks per team-game: season s−1.
+  - Credit = clamp((shrunk − replacement) × dropbacks per team-game, 0, starter-absence charge); margin moves toward the backup's team by the credit. The 8.0 team cap is not re-applied in the replay (stated limit).
+  - **G6 grid, chosen on 2016-21 backup-QB games by MAE:** k ∈ {100, 250, 500, 1000} dropbacks × replacement pool ∈ {< 200, < 300, < 500 dropbacks in the window}. Twelve cells; the best 2016-21 cell is frozen.
+  - **How the gates read with G6:** G1's n counts 2016-2025. G2 and G3 are judged on **2022-2025** with the frozen cell (out of sample), bootstrap over games, 10,000 draws. G4 counts all ten seasons with the frozen cell. Also reported, not gated: G2 over all ten seasons, and the subset of games where the credit is non-zero.
+  - G7 (2026 weeks 1-10): the served baseline headline against headline + credit, where the charge is the stored QB-slot charge on the team's season-to-date leader; starters from 2026 play-by-play; frozen cell.
+
+*P79 redesign (evidence-based clearing; replaces the age-based drop that failed on 10/29).* A feed-sourced row (source `espn`) from a week before the game's week is **cleared only on positive evidence that the player is available**, and otherwise stays in force:
+- **Never cleared (official IR status):** status `ir`, or on reserve on the nflverse weekly roster for the target week (`RES`, `PUP`, `NFI`, `SUS`, `EXE`).
+- **Cleared by snaps:** he took offensive or defensive snaps in a game after the row's week and before the target game.
+- **Cleared by official report + depth chart:** his team has filed its official report for the target week (nflverse), he is not on it with a game status, **and** he is on the team's current depth chart at the time (still on the roster in a listed slot).
+- Anything else (no snaps since, no filed report, off the depth chart) is **kept**. Manual rows, inactive lists and rows from the game's own week are untouched. Baseline path only; the sim follows the anchor.
+- **Gates: R1-R5 of the 2026-10-29 criteria entry, word for word, not relaxed:** R1 ≥ 80% of removed charges on players who took snaps in that game, and every removed charge on a player who played or was not on that week's official report; R2 no long-term absence removed (100%); R3 own-week, manual and inactive rows byte-identical; R4 MAE / ATS on changed games, reported; R5 suite plus unit cases at build time.
+- Test: walk-forward over 2026 weeks 1-10 served breakdowns (stale rows can only exist where the newest ESPN pull was older than the game's week; the replay reports which weeks those are). A week with no stale row contributes nothing and is reported as such.
+- **Minimum sample (set now):** R1's 80% is judged only if at least 10 charges are removed in total; fewer than 10 = "not testable", which is a fail to ship.
+
+*Ship rule.* At most one. Both pass → ship the larger validated gain (MAE improvement in points per affected game × affected games per week, on each one's own gate sample) and hold the other. Neither passes → ship neither. No gate is edited after a result is seen.
+
+**Injury-feed repair (data fix, not an engine change): criteria.**
+- Diagnose from the stored rows and the fetch code why no ESPN row carries a pull date between 10/18 and 11/08, and state whether the feed is refreshing today.
+- "Fresh" is proven by: today's pull timestamp on the rows, row count by pull date before / after, and at least 5 named rows whose status is new this week (cross-checked against the user's week-11 file).
+- If the feed is already answering, no source is replaced; the fix is then a guard so a silent outage cannot recur unnoticed (the pull prints and logs a loud warning and a count when ESPN returns nothing, and the stale-row audit reports the age of every in-force ESPN row).
+
+**TD section rebuild (display / shadow; labelled EXPERIMENTAL / UNVALIDATED): criteria.**
+- The week-11 TD lists are archived (P81) before anything is graded or shown.
+- 1+ TD probability per player = share of that game's 10,000 sims in which he scores; **2+ TD is new**: the same sims, share with two or more. If the stored sim does not carry the 2+ count, it is computed from the same engine's per-player TD distribution, not from a hand formula, and the method is stated. Every player with any simulated usage is included.
+- Sort controls: 1+ TD, 2+ TD, edge vs market (edge only where a devigged anytime-TD price exists).
+- Click-through per player: team TD profile, opponent TDs allowed by position, red-zone targets / rushes, goal-line and inside-10 usage, game script (spread, total, pace), role-changing injuries.
+- The graded history is shown as is (anytime-TD top-25: 7 of 38 against 30% predicted). The "experimental" label stays unless the forward bars are met (lists archived first, 150+ forward yes picks, beating the market over 40+ games). Props label likewise (300+ forward kept rows over 30+ games, ROI interval above zero, beating the under baseline).
+- No pick or model number on the ML / spread side changes.
+
+**Week-10 grade: fixed before running.** Each game is graded on its last stored pregame prediction, as every week (the SNF game on its official-lists run, which superseded its preliminary before kickoff, as logged 11/15). WAS @ NYG has no pregame prediction and NE @ DET was not touched: both excluded. The P82 shadow rows are compared descriptively (|shadow − actual| vs |headline − actual|).
 
 ---
 

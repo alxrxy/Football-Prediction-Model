@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { kickoffLabel } from './format.js'
 import { teamColor } from './teams.js'
 import { PageHead, TeamLogo, pct } from './ui.jsx'
+import TdBoard from './TdBoard.jsx'
 
 // Anytime-TD props, from td_props.json:
 //   python -m src.ingest_td_props && python -m src.td_props
@@ -61,6 +62,7 @@ export default function TdPropsPage({ tabs = null }) {
       <div className="split">
         <div className="split-main">
           <ExploratoryBanner />
+          <TdBoard />
           {error || !data ? (
             <div className="card empty">
               <strong>{error ? 'No TD props ranked yet' : 'Loading TD props…'}</strong>
@@ -143,7 +145,14 @@ function ExploratoryBanner() {
           <b>Small market sample.</b> Simulation vs devigged market has been compared on 454 priced players in 24 games
           (weeks 4, 6 and 7, rebuilt from stored odds: Brier 0.1593 vs 0.1557, the market slightly better, and the
           interval includes zero). Graded leans so far: week 6 1&ndash;9, week 7
-          4&ndash;13, neither list served.
+          4&ndash;13, neither list served. Earlier graded history: anytime-TD top-25 picks went 7 of 38 against 30%
+          predicted.
+        </li>
+        <li>
+          <b>Archived lists, graded forward</b> (weeks 8&ndash;10, served lists archived before kickoff): top-25
+          &ldquo;yes&rdquo; picks scored 8 of 60 (13%) against 26% predicted and 18% market, and on 405 priced players in
+          21 games the market&rsquo;s Brier score beat the simulation&rsquo;s (0.1449 vs 0.1562, interval excludes zero).
+          The label stays <b>experimental</b>: the bar is 150+ forward yes picks beating the market over 40+ games.
         </li>
         <li>
           The market number is an estimate. Books only post Yes, so the vig is removed by scaling each book&rsquo;s

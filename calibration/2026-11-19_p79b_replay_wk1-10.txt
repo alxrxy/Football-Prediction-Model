@@ -1,0 +1,49 @@
+weeks [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]: stale feed-sourced charged rows by week: {7: 47, 8: 47, 9: 3}
+cleared 11 charges (5.38 pts) {'off filed report + on depth chart': 6, 'snaps since': 5}; kept 86 {'no report filed': 49, 'reserve': 8, 'ir': 29}
+minimum sample (>= 10 cleared): met
+R1a played that game: 5/11 = 45.5%  (gate >= 80%)
+R1b cleared but did not play AND on that week's official report: 1  (gate 0)
+    {'wk': 8, 'gid': '2026_08_CHI_SEA', 'team': 'SEA', 'player': 'Brandon Pili', 'status': 'out', 'pts': 0.09, 'row_week': 6, 'played': False, 'on_report': True, 'why': 'snaps since'}
+R2 long-term absences cleared: 0  (gate 0)
+cleared rows:
+  wk7 2026_07_DAL_PHI   PHI  Lane Johnson               out           1.80 rowwk 6 played False on_report False [off filed report + on depth chart]
+  wk7 2026_07_DEN_ARI   DEN  Kage Casey                 out           0.63 rowwk 6 played False on_report False [off filed report + on depth chart]
+  wk7 2026_07_DEN_ARI   DEN  Tyler Onyedim              out           0.46 rowwk 6 played False on_report False [off filed report + on depth chart]
+  wk7 2026_07_DEN_ARI   DEN  Dallen Bentley             out           0.32 rowwk 6 played False on_report False [off filed report + on depth chart]
+  wk7 2026_07_GB_DET    GB   Josh Jacobs                out           0.64 rowwk 6 played True on_report False [off filed report + on depth chart]
+  wk7 2026_07_KC_SEA    SEA  Jalen Milroe               out           0.12 rowwk 6 played False on_report False [off filed report + on depth chart]
+  wk8 2026_08_CHI_SEA   SEA  Brandon Pili               out           0.09 rowwk 6 played False on_report True [snaps since]
+  wk8 2026_08_CLE_PIT   PIT  Kevin Jobity Jr.           out           0.46 rowwk 6 played True on_report False [snaps since]
+  wk8 2026_08_MIN_DET   MIN  Jordan Addison             questionable  0.54 rowwk 6 played True on_report False [snaps since]
+  wk8 2026_08_MIN_DET   MIN  T.J. Hockenson             questionable  0.25 rowwk 6 played True on_report False [snaps since]
+  wk8 2026_08_TEN_CIN   CIN  Colbie Young               questionable  0.07 rowwk 6 played True on_report False [snaps since]
+kept rows that then PLAYED (stale charge left in force on a player who played):
+  wk7 2026_07_CIN_BAL   CIN  Kyle Dugger                questionable  0.12 [no report filed]
+  wk7 2026_07_IND_MIN   MIN  Christian Darrisaw         questionable  0.72 [no report filed]
+  wk7 2026_07_IND_MIN   MIN  Christian Darrisaw         None          0.64 [no report filed]
+  wk7 2026_07_IND_MIN   MIN  Jordan Addison             questionable  0.54 [no report filed]
+  wk7 2026_07_IND_MIN   MIN  Jordan Mason               ir            0.49 [ir]
+  wk7 2026_07_IND_MIN   MIN  T.J. Hockenson             questionable  0.25 [no report filed]
+  wk7 2026_07_MIA_NYJ   MIA  Caleb Douglas              questionable  0.53 [no report filed]
+  wk7 2026_07_MIA_NYJ   MIA  Michael Taaffe             questionable  0.49 [no report filed]
+  wk7 2026_07_MIA_NYJ   MIA  Jonah Savaiinaea           questionable  0.46 [no report filed]
+  wk7 2026_07_NYG_HOU   HOU  Braden Smith               out           0.63 [no report filed]
+  wk7 2026_07_NYG_HOU   NYG  CJ Okoye                   out           0.35 [no report filed]
+  wk7 2026_07_SF_ATL    ATL  Ethan Onianwa              out           0.63 [no report filed]
+  wk8 2026_08_ATL_TB    ATL  Ethan Onianwa              out           0.63 [no report filed]
+  wk8 2026_08_CHI_SEA   SEA  Jadarian Price             ir            0.40 [ir]
+  wk8 2026_08_CLE_PIT   PIT  Sean Murphy-Bunting        out           0.59 [no report filed]
+  wk8 2026_08_CLE_PIT   PIT  Terell Smith               out           0.59 [no report filed]
+  wk8 2026_08_IND_JAX   IND  Dalton Tucker              out           0.19 [no report filed]
+  wk8 2026_08_TEN_CIN   TEN  Alontae Taylor             out           1.67 [no report filed]
+R4 changed graded games (wk, game, delta, before, after, actual, |err| before, after, ATS before, after):
+   (7, '2026_07_DEN_ARI', -1.41, -1.75, -3.16, -14, 12.25, 10.84, 'L', 'L')
+   (7, '2026_07_GB_DET', -0.64, 5.44, 4.8, 3, 2.4400000000000004, 1.8000000000000007, 'L', 'L')
+   (7, '2026_07_KC_SEA', 0.12, 5.4, 5.52, 17, 11.6, 11.48, 'W', 'W')
+   (8, '2026_08_CHI_SEA', 0.09, 7.47, 7.56, -17, 24.47, 24.56, 'L', 'L')
+   (8, '2026_08_CLE_PIT', 0.46, 2.34, 2.8, 21, 18.66, 18.2, 'L', 'L')
+   (8, '2026_08_MIN_DET', -0.79, -0.21, -1.0, 4, 4.21, 5.0, 'L', 'L')
+   (8, '2026_08_TEN_CIN', 0.07, 9.1, 9.17, 7, 2.0999999999999996, 2.17, 'W', 'W')
+  all: 7 games MAE 10.82 -> 10.58 (-0.24); ATS W 2 -> 2
+  wk7: 3 games MAE 8.76 -> 8.04; ATS W 1 -> 1
+  wk8: 4 games MAE 12.36 -> 12.48; ATS W 1 -> 1

@@ -417,7 +417,55 @@ def merge_feeds(nfl_rows: list[dict], espn_rows: list[dict]) -> tuple[list[dict]
                           "ir_applied": ir_applied, "ir_conflicts": ir_conflicts}
 
 
-def run(sport: str = "nfl", season: int | None = None, week: int | None = None) -> int:
+def espn_feed_health(stored: list[dict], season: int, week: int, fresh_rows: int, now=None) -> dict:
+    """Health of the ESPN injury feed for this refresh (feed repair, 2026-11-19).
+
+    Between 10/18 and 11/08 no ESPN injury row was refreshed. The feed had not
+    stopped answering: `run` was not being called at all, because it ends with
+    the ESPN inactive-list ingest, which had stored stale lists (P77). That
+    coupling silently left the 10/18 ESPN pull in force for weeks 7 and 8
+    (P79). This reports what a refresh actually got, so the gap cannot recur
+    unnoticed: `stale` is True when ESPN returned nothing, or when the newest
+    stored ESPN pull for this season is from an earlier week.
+    """
+    from datetime import datetime, timezone
+
+    from .features import parse_dt
+
+    now = now or datetime.now(timezone.utc)
+    espn = [r for r in stored if r.get("source") == "espn" and r.get("season") == season and r.get("pulled_at")]
+    newest = max(espn, key=lambda r: parse_dt(r["pulled_at"])) if espn else None
+    newest_at = parse_dt(newest["pulled_at"]) if newest else None
+    newest_week = max((int(r.get("week") or 0) for r in espn), default=None)
+    age_days = round((now - newest_at).total_seconds() / 86400, 1) if newest_at else None
+    stale = fresh_rows == 0 or newest_week is None or newest_week < week
+    return {"fresh_rows": fresh_rows, "newest_pull": newest_at.isoformat() if newest_at else None,
+            "newest_week": newest_week, "age_days": age_days, "week": week, "stale": stale}
+
+
+def _report_espn_health(store: db.Store, sport: str, season: int, week: int, fresh_rows: int) -> None:
+    try:
+        from datetime import datetime, timezone
+
+        h = espn_feed_health(store.select("injuries", {"sport": sport, "season": season}), season, week, fresh_rows)
+        line = (f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} week {week}: ESPN rows this pull {fresh_rows}; "
+                f"newest stored ESPN pull {h['newest_pull']} (week {h['newest_week']}, {h['age_days']} d old)"
+                f"{' ** STALE **' if h['stale'] else ''}")
+        if h["stale"]:
+            print(f"  [WARN][ESPN FEED STALE] {line}")
+            print("  [WARN] older ESPN rows stay in force until a newer ESPN pull arrives (P79): audit them before predicting.")
+        else:
+            print(f"  [espn feed] fresh: {line}")
+        path = config.DATA_DIR / "espn_feed_flags" / "feed_health.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(line + chr(10))
+    except Exception as exc:  # noqa: BLE001 - a health line must never stop a refresh
+        print(f"  [warn] ESPN feed health check failed: {exc}")
+
+
+def run(sport: str = "nfl", season: int | None = None, week: int | None = None,
+        espn_inactives: bool = True) -> int:
     from datetime import datetime, timezone
 
     store = db.get_store()
@@ -457,6 +505,8 @@ def run(sport: str = "nfl", season: int | None = None, week: int | None = None) 
         manual_injuries.print_report(report, manual_injuries.path_for(season, week).name)
 
     store.upsert("injuries", db.stamp(rows))
+    if sport == "nfl":
+        _report_espn_health(store, sport, season, week, len(espn_rows))
 
     if sport == "nfl":
         # P68 decision 4, C: report-only, after the rows are stored; it gets
@@ -481,7 +531,12 @@ def run(sport: str = "nfl", season: int | None = None, week: int | None = None) 
             "no injury adjustment rather than being assumed healthy."
         )
     store.close()
-    if sport == "nfl":
+    if sport == "nfl" and not espn_inactives:
+        # Feed repair 2026-11-19: the injury feed can be refreshed without
+        # touching ESPN's inactive lists (stale since 10/18, P77), so skipping
+        # those lists no longer means skipping the whole injury refresh.
+        print("  [inactives] ESPN inactive lists not asked (--no-espn-inactives); official lists are stored by hand")
+    elif sport == "nfl":
         # Gameday inactives (P10): only games near kickoff are asked, and a list
         # not posted yet writes nothing, so this is cheap on any other day.
         from .ingest_inactives import run as ingest_inactives
@@ -545,5 +600,7 @@ if __name__ == "__main__":
     parser.add_argument("--sport", default="nfl", choices=["nfl", "ncaaf"])
     parser.add_argument("--season", type=int)
     parser.add_argument("--week", type=int)
+    parser.add_argument("--no-espn-inactives", action="store_true",
+                        help="refresh the injury feeds but do not ask ESPN for gameday inactive lists")
     args = parser.parse_args()
-    run(args.sport, args.season, args.week)
+    run(args.sport, args.season, args.week, espn_inactives=not args.no_espn_inactives)

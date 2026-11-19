@@ -1,0 +1,85 @@
+2026 done.
+Downcasting floats.
+  injury reports scored for 5446 team-weeks
+games 2016-2025 with a line and a rating: 2661; backup-QB games: 855; with a starter-absence charge on the backup's team: 376
+G1 (n >= 150 backup-QB games): PASS (n = 855)
+flat-charge baseline MAE, all games 10.228; backup-QB games 10.559
+
+G6 grid on 2016-21 backup-QB games (MAE; flat = 10.9480, n = 447):
+  k=100   pool<200  MAE 10.9616
+  k=100   pool<300  MAE 10.9642
+  k=100   pool<500  MAE 10.9313
+  k=250   pool<200  MAE 10.9411
+  k=250   pool<300  MAE 10.9411
+  k=250   pool<500  MAE 10.9243
+  k=500   pool<200  MAE 10.9208
+  k=500   pool<300  MAE 10.9212
+  k=500   pool<500  MAE 10.9161
+  k=1000  pool<200  MAE 10.9125
+  k=1000  pool<300  MAE 10.9182
+  k=1000  pool<500  MAE 10.9196
+frozen cell: k = 1000, replacement pool < 200 dropbacks
+
+G2/G3, 2022-2025 (out of sample): n 408 | MAE flat 10.133 -> P82 10.119 | diff -0.0145 (95% CI -0.0708 to +0.0432) | credit non-zero in 121 games, there: 9.748 -> 9.700 (diff -0.0489, mean credit 0.88)
+    ATS flat 213-181 (0.541) -> P82 212-182 (0.538); diff -0.0025 (95% CI -0.0152 to +0.0102); picks changed 7
+G2 (MAE improves, CI excludes 0): FAIL
+G3 (ATS not worse: diff CI includes or exceeds 0): PASS
+reported, all ten seasons: n 855 | MAE flat 10.559 -> P82 10.534 | diff -0.0255 (95% CI -0.0634 to +0.0124) | credit non-zero in 232 games, there: 9.963 -> 9.869 (diff -0.0940, mean credit 0.85)
+    ATS flat 431-401 (0.518) -> P82 434-398 (0.522); diff +0.0036 (95% CI -0.0048 to +0.0132); picks changed 15
+reported, 2016-2021 (in sample for the cell): n 447 | MAE flat 10.948 -> P82 10.912 | diff -0.0355 (95% CI -0.0884 to +0.0148) | credit non-zero in 111 games, there: 10.197 -> 10.054 (diff -0.1431, mean credit 0.82)
+    ATS flat 218-220 (0.498) -> P82 222-216 (0.507); diff +0.0091 (95% CI -0.0023 to +0.0228); picks changed 8
+G4 by season (frozen cell):
+  2016: n  60 MAE diff -0.0241 improves
+  2017: n  70 MAE diff +0.0214 no improvement
+  2018: n  77 MAE diff -0.0859 improves
+  2019: n  79 MAE diff -0.0966 improves
+  2020: n  82 MAE diff -0.0059 improves
+  2021: n  79 MAE diff -0.0153 improves
+  2022: n 104 MAE diff -0.0348 improves
+  2023: n 101 MAE diff -0.0196 improves
+  2024: n  94 MAE diff +0.0422 no improvement
+  2025: n 109 MAE diff -0.0393 improves
+G4 (sign in >= 6 of 10 seasons): PASS (8/10)
+G5 (no-QB-change games identical): PASS (1806 games, max |change| 0.000000)
+
+G7, 2026 weeks 1-10 (served baseline headline vs headline + credit; frozen cell):
+  wk1  2026_01_ATL_PIT   head  +4.80 p82  +4.80 actual   +7 | ATL C.Rush for M.Penix charge 5.59 credit 0.00
+  wk1  2026_01_CLE_JAX   head +12.21 p82 +12.21 actual  +24 | CLE D.Watson for S.Sanders charge 0.00 credit 0.00
+  wk1  2026_01_GB_MIN    head  -0.95 p82  -0.95 actual  +17 | MIN K.Murray for J.McCarthy charge 0.00 credit 0.00
+  wk1  2026_01_MIA_LV    head  -3.08 p82  -3.08 actual  +14 | LV K.Cousins for G.Smith charge 0.00 credit 0.00; MIA M.Willis for T.Tagovailoa charge 0.00 credit 0.00
+  wk1  2026_01_NYJ_TEN   head  +2.50 p82  +2.50 actual  -13 | NYJ G.Smith for J.Fields charge 0.00 credit 0.00
+  wk1  2026_01_WAS_PHI   head +12.98 p82 +12.98 actual   +2 | WAS J.Daniels for M.Mariota charge 0.00 credit 0.00
+  wk3  2026_03_ATL_GB    head +12.85 p82 +12.85 actual  -21 | ATL M.Penix for C.Rush charge 0.00 credit 0.00
+  wk3  2026_03_MIN_TB    head  +3.94 p82  +3.94 actual   -7 | MIN K.Murray for C.Wentz charge 0.00 credit 0.00
+  wk3  2026_03_PHI_CHI   head  -2.90 p82  -2.90 actual  +20 | CHI C.Keenum for C.Williams charge 5.58 credit 0.00
+  wk3  2026_03_SEA_WAS   head -15.95 p82 -14.64 actual   +2 | WAS M.Mariota for J.Daniels charge 4.65 credit 1.31; SEA S.Darnold for D.Lock charge 0.00 credit 0.00
+  wk3  2026_03_TEN_NYG   head  +3.98 p82  +4.78 actual   +5 | NYG J.Winston for J.Dart charge 3.36 credit 0.80
+  wk4  2026_04_ATL_NO    head  -0.50 p82  -0.50 actual  -21 | ATL M.Penix for C.Rush charge 0.00 credit 0.00
+  wk4  2026_04_GB_TB     head  -3.99 p82  -3.96 actual   -3 | TB J.Daniels for B.Mayfield charge 5.88 credit 0.03
+  wk4  2026_04_IND_WAS   head -11.31 p82  -9.81 actual  -17 | WAS M.Mariota for J.Daniels charge 2.09 credit 1.50
+  wk4  2026_04_LAC_SEA   head +13.36 p82 +13.36 actual   +7 | SEA S.Darnold for D.Lock charge 0.00 credit 0.00
+  wk4  2026_04_MIA_MIN   head +10.62 p82 +10.62 actual   +5 | MIN K.Murray for C.Wentz charge 0.00 credit 0.00
+  wk4  2026_04_NYJ_CHI   head +11.64 p82 +11.76 actual  +11 | CHI T.Bagent for C.Williams charge 5.02 credit 0.12
+  wk5  2026_05_BAL_ATL   head  +6.56 p82  +5.76 actual   -7 | BAL T.Huntley for L.Jackson charge 5.28 credit 0.80
+  wk5  2026_05_CHI_GB    head  +3.18 p82  +2.66 actual  +24 | CHI T.Bagent for C.Williams charge 2.23 credit 0.52
+  wk5  2026_05_TB_DAL    head  +3.22 p82  +3.12 actual   -8 | TB J.Daniels for B.Mayfield charge 5.88 credit 0.10
+  wk6  2026_06_BAL_CLE   head  +3.31 p82  +2.29 actual   +3 | BAL T.Huntley for L.Jackson charge 5.28 credit 1.02
+  wk6  2026_06_CAR_PHI   head  -0.64 p82  -0.64 actual  -11 | PHI T.McKee for J.Hurts charge 5.90 credit 0.00
+  wk6  2026_06_PIT_TB    head  -0.83 p82  -0.48 actual   -7 | TB J.Daniels for B.Mayfield charge 5.88 credit 0.35
+  wk7  2026_07_CIN_BAL   head  -2.91 p82  -1.50 actual  -22 | BAL T.Huntley for L.Jackson charge 5.28 credit 1.41
+  wk7  2026_07_DAL_PHI   head  -3.23 p82  -3.19 actual  -17 | PHI T.McKee for J.Hurts charge 5.90 credit 0.04
+  wk7  2026_07_NYG_HOU   head  +7.63 p82  +7.63 actual   -6 | NYG J.McCarthy for J.Winston charge 0.00 credit 0.00
+  wk7  2026_07_TB_CAR    head  +2.17 p82  +2.17 actual  -30 | TB B.Mayfield for J.Daniels charge 0.00 credit 0.00
+  wk8  2026_08_BAL_BUF   head  +6.71 p82  +6.71 actual  +26 | BAL L.Jackson for T.Huntley charge 0.00 credit 0.00
+  wk8  2026_08_PHI_WAS   head  +4.54 p82  +4.54 actual  +17 | PHI T.McKee for J.Hurts charge 0.00 credit 0.00
+  wk9  2026_09_ARI_SEA   head  +5.85 p82  +6.37 actual  +14 | SEA D.Lock for S.Darnold charge 5.23 credit 0.85; ARI G.Minshew for J.Brissett charge 2.27 credit 0.34
+  wk9  2026_09_BUF_MIN   head  -4.02 p82  -1.96 actual  -17 | MIN C.Wentz for K.Murray charge 5.17 credit 2.06
+  wk9  2026_09_CLE_NO    head  +6.97 p82  +6.97 actual   +1 | CLE S.Sanders for D.Watson charge 5.95 credit 0.00
+  wk9  2026_09_NYG_PHI   head  -0.41 p82  -0.41 actual   -8 | PHI J.Milton for J.Hurts charge 0.00 credit 0.00; NYG J.McCarthy for J.Winston charge 0.00 credit 0.00
+  wk10 2026_10_LAC_BAL   head  +1.08 p82  +1.08 actual   -3 | BAL J.Brissett for T.Huntley charge 0.00 credit 0.00
+  wk10 2026_10_LA_ARI    head  -6.60 p82  -6.60 actual  -28 | ARI C.Beck for J.Brissett charge 0.00 credit 0.00
+  wk10 2026_10_MIA_IND   head  +8.59 p82  +8.59 actual   +2 | MIA K.McCord for M.Willis charge 6.00 credit 0.00
+  wk10 2026_10_MIN_GB    head  +6.82 p82  +4.08 actual  -20 | MIN K.Cousins for K.Murray charge 5.17 credit 2.74
+  wk10 2026_10_SEA_LV    head  -1.01 p82  -1.01 actual   -8 | LV F.Mendoza for K.Cousins charge 0.00 credit 0.00; SEA D.Lock for S.Darnold charge 0.00 credit 0.00
+G7: n 38 backup-QB games (15 with a non-zero credit) | MAE headline 12.510 -> P82 12.513 | diff +0.0029 (95% CI -0.2333 to +0.2291)
+G7 (MAE lower with the credit): FAIL

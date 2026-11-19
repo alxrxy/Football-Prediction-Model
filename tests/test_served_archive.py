@@ -236,7 +236,11 @@ def test_td_note_is_weeks_4_to_8_and_stays_experimental():
 def test_props_tab_label():
     page = (props.config.ROOT / "dashboard" / "src" / "PropsPage.jsx").read_text(encoding="utf-8")
     check("label on the Props tab",
-          "Weeks 4-8: served picks 48.3%, -7.7% ROI; kept picks 52.6%, break-even; ranking within the list not validated." in page, True)
+          # 2026-11-19: the label's numbers follow the report card (weeks 4-10); the wording is unchanged and it stays
+          # UNVALIDATED until the forward bar is met. (This check still pinned the weeks 4-8 text and failed at HEAD.)
+          ("Weeks 4-10: served picks 49.4%, -5.8% ROI; kept picks 52.7%, +0.4% ROI (95% CI -7 to +7), break-even at best; "
+           "ranking within the list not validated." in page,
+           "The F2 filter and the ranking are UNVALIDATED." in page), (True, True))
 
 
 def test_every_live_served_list_is_archived():
