@@ -753,6 +753,39 @@ constant in training and held at 0 live to match.
 - Several seasons of holdout rather than one; n=285 cannot resolve an edge of
   the size being looked for.
 
+## Data sources and terms
+
+**The terms notes below are UNVERIFIED.** Nobody read the providers' current
+terms-of-use pages when this section was written (2026-11-20). The notes come from
+this project's own log and from general knowledge of these services, and they may
+be wrong or out of date. **If you use, fork or publish this project, read each
+provider's current terms yourself.** This is not legal advice.
+
+| Source | Used for | Access | Terms note (unverified) |
+|---|---|---|---|
+| nflverse, via `nfl_data_py` | schedules, play-by-play, weekly injuries, snap counts, rosters, depth charts | open files on GitHub, no key | open data project; check its licence and attribution requirements |
+| Open-Meteo | kickoff-hour weather | public API, no key | the free API is offered for non-commercial use with attribution |
+| The Odds API | game lines, player props, anytime-TD prices | API key (free tier exists) | the key is personal; redistribution of raw odds is likely restricted |
+| **ESPN** (`site.api.espn.com`, `sports.core.api.espn.com`) | injury feed, gameday rosters / inactives, final scores, live game state | **unofficial, undocumented endpoints; no key, no agreement** | ESPN publishes no public API or terms for these endpoints. The code sends a browser User-Agent and fetches over `urllib` because ESPN rejects other clients. Access can change or stop at any time, and automated use may not be permitted |
+| Sportradar | player-prop lines (P61 / P62 experiments, ended 2026-10-30) | trial API keys | trial data is licensed for evaluation; the project's log flags that holding several trial keys may breach the trial terms (P65). Not used by the weekly routine |
+| FantasyPros | one read-only check of per-day practice data (P47) | API key, free tier | not used by the pipeline |
+| CollegeFootballData | college games, ratings and lines | API key | college is not part of the weekly routine |
+| NFL team sites and NFL.com | official injury reports and inactive lists | **read by hand, never scraped** | the project's log records that team-site terms forbid automated collection (P47), so nothing here fetches them |
+| Anthropic API | game Q&A and written explanations | paid API key | not a data source; game numbers are sent to it as context |
+
+What is and is not in this repository:
+
+- `data/` (the database, caches of API responses, odds, archives) and `models/` are
+  git-ignored. No raw provider data is meant to be committed.
+- The calibration log and the report cards under `calibration/` quote derived
+  numbers (lines, injury statuses, player results) from these sources.
+- Test fixtures: `tests/fixtures/sr_props_synthetic.json` is synthetic (invented
+  ids, lines and prices). `tests/fixtures/atl_2026w3_roster_pregame.json` is a
+  captured ESPN gameday-roster response, kept as the regression case for a bad
+  inactive list (P42).
+- A captured Sportradar trial response was a tracked fixture until 2026-11-20. It was
+  removed from the tree but is still in the git history.
+
 ## Rate limits
 
 - **The Odds API** — ~500 requests/month shared across both sports. One request
