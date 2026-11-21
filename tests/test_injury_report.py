@@ -326,14 +326,17 @@ def test_impossible_list_is_rejected():
 
     from src import ingest_inactives as ii
 
-    atl = json.loads((Path(__file__).parent / "fixtures" / "atl_2026w3_roster_pregame.json").read_text(encoding="utf-8"))
+    # Synthetic roster in the endpoint's shape (invented ids and names): all 4 QBs flagged, as on that list.
+    atl = json.loads((Path(__file__).parent / "fixtures" / "roster_all_qbs_inactive_synthetic.json").read_text(encoding="utf-8"))
+    check("the fixture has the case's shape: 4 QBs and 9 flagged players",
+          (sum(ii._position_id(e) == ii.QB_POSITION_ID for e in atl["entries"]), sum(e["didNotPlay"] for e in atl["entries"])), (4, 9))
     check("the pinned ATL list is judged impossible",
           ii.impossible_list(atl["entries"]), "no active QB (4 on the roster, all flagged inactive)")
     corrected = copy.deepcopy(atl)
     for e in corrected["entries"]:
-        if e["displayName"] == "Penix Jr.":
+        if e["displayName"] == "Quarterback One":      # the starter, who did play
             e["didNotPlay"] = False
-    check("ESPN's post-game correction (Penix active) passes", ii.impossible_list(corrected["entries"]), None)
+    check("the post-game correction (the starter active) passes", ii.impossible_list(corrected["entries"]), None)
     check("a roster with no position refs cannot be judged, so it passes",
           ii.impossible_list([{"playerId": 1, "didNotPlay": True}]), None)
 

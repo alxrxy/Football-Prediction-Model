@@ -1,0 +1,165 @@
+{
+ "_source": "SYNTHETIC test fixture (2026-11-20): invented player ids and names, in the shape of an ESPN core-API competitors/<id>/roster response. It reproduces the P42 case: every quarterback on the roster (4) flagged didNotPlay, with 5 other players flagged, as on the ATL list read before ATL @ GB on 2026-09-24. Nothing is copied from an ESPN response; it replaced a captured one.",
+ "entries": [
+  {
+   "playerId": 900001,
+   "displayName": "Quarterback One",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/8"
+   }
+  },
+  {
+   "playerId": 900002,
+   "displayName": "Quarterback Two",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/8"
+   }
+  },
+  {
+   "playerId": 900003,
+   "displayName": "Quarterback Three",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/8"
+   }
+  },
+  {
+   "playerId": 900004,
+   "displayName": "Quarterback Four",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/8"
+   }
+  },
+  {
+   "playerId": 900005,
+   "displayName": "Tackle One",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/46"
+   }
+  },
+  {
+   "playerId": 900006,
+   "displayName": "Guard One",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/73"
+   }
+  },
+  {
+   "playerId": 900007,
+   "displayName": "Center One",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/45"
+   }
+  },
+  {
+   "playerId": 900008,
+   "displayName": "Receiver One",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/1"
+   }
+  },
+  {
+   "playerId": 900009,
+   "displayName": "Receiver Two",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/1"
+   }
+  },
+  {
+   "playerId": 900010,
+   "displayName": "Runner One",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/9"
+   }
+  },
+  {
+   "playerId": 900011,
+   "displayName": "End One",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/7"
+   }
+  },
+  {
+   "playerId": 900012,
+   "displayName": "Linebacker One",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/30"
+   }
+  },
+  {
+   "playerId": 900013,
+   "displayName": "Linebacker Two",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/31"
+   }
+  },
+  {
+   "playerId": 900014,
+   "displayName": "Corner One",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/29"
+   }
+  },
+  {
+   "playerId": 900015,
+   "displayName": "Corner Two",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/29"
+   }
+  },
+  {
+   "playerId": 900016,
+   "displayName": "Corner Three",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/29"
+   }
+  },
+  {
+   "playerId": 900017,
+   "displayName": "Safety One",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/36"
+   }
+  },
+  {
+   "playerId": 900018,
+   "displayName": "Tackle Two",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/46"
+   }
+  },
+  {
+   "playerId": 900019,
+   "displayName": "Corner Four",
+   "didNotPlay": true,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/29"
+   }
+  },
+  {
+   "playerId": 900020,
+   "displayName": "Kicker One",
+   "didNotPlay": false,
+   "position": {
+    "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/positions/22"
+   }
+  }
+ ]
+}

@@ -783,11 +783,11 @@ What is and is not in this repository:
 - The calibration log and the report cards under `calibration/` quote derived
   numbers (lines, injury statuses, player results) from these sources.
 - Test fixtures: `tests/fixtures/sr_props_synthetic.json` is synthetic (invented
-  ids, lines and prices). `tests/fixtures/atl_2026w3_roster_pregame.json` is a
-  captured ESPN gameday-roster response, kept as the regression case for a bad
-  inactive list (P42).
-- A captured Sportradar trial response was a tracked fixture until 2026-11-20. It was
-  removed from the tree but is still in the git history.
+  ids, lines and prices), and so is
+  `tests/fixtures/roster_all_qbs_inactive_synthetic.json` (invented ids and names;
+  the regression case for a bad inactive list, P42).
+- Two captured responses (a Sportradar trial payload and an ESPN gameday roster) were
+  tracked test fixtures until 2026-11-20, when synthetic ones replaced them.
 
 ## Rate limits
 
