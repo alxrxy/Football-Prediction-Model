@@ -189,6 +189,10 @@ TRADES = [
     ("J.J. McCarthy", "QB", "MIN", "NYG", "09/28"),
     # Added 2026-11-19 from the week-10 log entries and press reports (dates as reported, not re-verified on NFL.com).
     ("Jacoby Brissett", "QB", "ARI", "BAL", "11/05"), ("Kirk Cousins", "QB", "LV", "MIN", "wk 10"),
+    # From nflverse weekly rosters (calibration/roster_moves.py 2026 11): first week on the new team, old-team snap share >= 0.50.
+    ("Keenan Allen", "WR", "IND", "SF", "wk 10"), ("Jessie Bates", "S", "ATL", "JAX", "wk 10"),
+    ("Amani Hooker", "S", "TEN", "BUF", "wk 10"), ("Ryan Neuzil", "C", "ATL", "BAL", "wk 10"),
+    ("Jordan Davis", "DT", "PHI", "JAX", "wk 10"), ("Josh Downs", "WR", "IND", "KC", "wk 10"),
 ]
 
 
