@@ -150,9 +150,10 @@ def run_sport(sport: str, target: list[date] | None, args) -> list[dict]:
     return predictions
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the prediction pipeline.")
-    parser.add_argument("--sport", default="ncaaf", choices=["ncaaf", "nfl", "both"])
+    # Default is NFL (2026-11-20): it needs no key at all. College needs CFBD_API_KEY.
+    parser.add_argument("--sport", default="nfl", choices=["ncaaf", "nfl", "both"])
     parser.add_argument("--date", nargs="+",
                         help="slate date(s), YYYY-MM-DD (default: NFL every slate through the "
                              "next Sunday's week; CFB the next slate with games)")
@@ -164,7 +165,11 @@ def main() -> int:
                         help="score finished games before predicting the next slate")
     parser.add_argument("--model", default="baseline", choices=["baseline", "ml", "both"],
                         help="which modeling layer to run")
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
 
     target = [date.fromisoformat(d) for d in args.date] if args.date else None
     sports = ["ncaaf", "nfl"] if args.sport == "both" else [args.sport]

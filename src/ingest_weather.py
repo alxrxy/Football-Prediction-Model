@@ -149,6 +149,6 @@ def _at_hour(hourly: dict, kickoff: datetime) -> dict | None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Ingest kickoff-hour weather.")
-    parser.add_argument("--sport", default="ncaaf")
+    parser.add_argument("--sport", default="nfl")
     args = parser.parse_args()
     run(sport=args.sport)

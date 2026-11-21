@@ -338,7 +338,7 @@ def calibration_block(rated: list[dict]) -> str:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate baseline predictions.")
     parser.add_argument("--date", help="slate date, YYYY-MM-DD (default: today UTC)")
-    parser.add_argument("--sport", default="ncaaf")
+    parser.add_argument("--sport", default="nfl")
     parser.add_argument("--all", action="store_true", help="every loaded upcoming game")
     parser.add_argument("--json", action="store_true", help="dump full component breakdown")
     args = parser.parse_args()

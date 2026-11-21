@@ -154,7 +154,19 @@ def _dedupe(events: list[dict]) -> list[dict]:
     return list(merged.values())
 
 
+NO_KEY_WARNING = (
+    "  [warn] ODDS_API_KEY is not set: live book lines were SKIPPED. Predictions still run. NFL games keep\n"
+    "         the nflverse schedule line where one exists; a game with no line gets no market, edge or flag.\n"
+    "         For live lines, add a free key from the-odds-api.com to .env (see .env.example)."
+)
+
+
 def run(sport: str = "ncaaf", cache_minutes: int | None = None) -> int:
+    if not config.ODDS_API_KEY:
+        # 2026-11-20: a missing key used to exit the whole pipeline (config.require raises SystemExit,
+        # which run_pipeline's `except Exception` does not catch). Lines are optional to the baseline.
+        print(NO_KEY_WARNING)
+        return 0
     store = db.get_store()
     sport_key = SPORT_KEYS[sport]
     cache_minutes = config.ODDS_CACHE_MINUTES if cache_minutes is None else cache_minutes
@@ -289,7 +301,7 @@ def run(sport: str = "ncaaf", cache_minutes: int | None = None) -> int:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Ingest lines from The Odds API.")
-    parser.add_argument("--sport", default="ncaaf", choices=list(SPORT_KEYS))
+    parser.add_argument("--sport", default="nfl", choices=list(SPORT_KEYS))
     parser.add_argument("--fresh", action="store_true", help="bypass cache (costs quota)")
     args = parser.parse_args()
     run(args.sport, cache_minutes=0 if args.fresh else None)
