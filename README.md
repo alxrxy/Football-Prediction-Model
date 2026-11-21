@@ -717,7 +717,10 @@ p=0.047, marked SIGNIFICANT. It was wrong, for two compounding reasons:
    model was tuned on the season used to judge it.
 2. No correction was applied for testing ten model/threshold combinations.
 
-Fixing both dropped that bucket to 58.3% with a corrected p of 1.000. The
+Fixing both dropped that bucket to 58.3% with a corrected p of 1.000.
+(Note, 2026-11-20: 58.3% was the figure when this was written. The current
+rebuild, `train_model --sport nfl --holdout 2025`, gives 56.8% for the same
+bucket, 21 of 37, corrected p still 1.000; see the table above.) The
 lesson is worth stating plainly: a backtest is only as good as its worst
 methodological shortcut, and a betting signal is exactly the wrong place to let
 one through.
