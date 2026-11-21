@@ -106,12 +106,42 @@ def test_margin_table_push_and_move():
     # Home -3: covers on 4 (0.25), pushes on 3 (0.5) -> 0.25 / 0.5
     check("push excluded", t.cover(-3.0), 0.5, 1e-12)
     check("-2.5 covers on 3 and 4", t.cover(-2.5), 0.75, 1e-12)
-    real = market.margin_table("nfl")
-    across_3 = real.cover(-2.5) - real.cover(-3.5)
-    across_5 = real.cover(-4.5) - real.cover(-5.5)
+    # Key numbers, on a table built here so the test needs no data/ file (2026-11-20). 400 games priced at
+    # home -4: a quarter land on 3, a tenth on 5, the rest spread out. Both lines are read off the SAME
+    # games (`near` fixed), which is how `move` uses the table. The earlier version compared
+    # cover(-2.5) with cover(-3.5) at their own `near`, i.e. two different sets of games.
+    margins = [3] * 100 + [5] * 40 + [7] * 60 + [1] * 40 + [2] * 40 + [4] * 40 + [6] * 40 + [10] * 40
+    key = MarginTable("nfl", spreads=[-4.0] * len(margins), margins=margins)
+    across_3 = key.cover(-2.5, near=-4) - key.cover(-3.5, near=-4)
+    across_5 = key.cover(-4.5, near=-4) - key.cover(-5.5, near=-4)
     check("a point across 3 is worth more than across 5", across_3 > across_5, True)
-    check("move is identity at same line", real.move(0.6, -3.0, -3.0), 0.6, 1e-12)
-    check("worse line, lower probability", real.move(0.5, -2.5, -3.5) < 0.5, True)
+    check("across 3 is about the share of games landing on 3", across_3, 0.9 * 0.25 + 0.1 * 0.03, 0.02)
+    check("move is identity at same line", key.move(0.6, -3.0, -3.0), 0.6, 1e-12)
+    check("worse line, lower probability", key.move(0.5, -2.5, -3.5) < 0.5, True)
+    check("crossing 3 costs more than crossing 5", key.move(0.5, -2.5, -3.5) < key.move(0.5, -4.5, -5.5), True)
+
+
+def test_no_training_file_falls_back_to_a_normal_curve():
+    """With no data/training_<sport>.csv the table is a plain normal curve: usable, but blind to key
+    numbers (every point is worth the same). This is the fresh-clone state before build_training."""
+    flat = MarginTable("nfl", spreads=[], margins=[])
+    across_3 = flat.cover(-2.5, near=-3) - flat.cover(-3.5, near=-3)
+    across_5 = flat.cover(-4.5, near=-5) - flat.cover(-5.5, near=-5)
+    check("fallback gives every point the same value", across_3, across_5, 1e-9)
+    check("fallback still lowers the probability at a worse line", flat.move(0.5, -2.5, -3.5) < 0.5, True)
+
+
+def test_real_margin_table_sees_key_numbers_when_the_training_file_exists():
+    """The same property on the real table. It needs data/training_nfl.csv (git-ignored; built by
+    `python -m src.build_training --sport nfl`), so on a fresh clone it is skipped, with the reason."""
+    import pytest
+
+    if not (market.config.DATA_DIR / "training_nfl.csv").exists():
+        pytest.skip("data/training_nfl.csv not built; run python -m src.build_training --sport nfl")
+    real = MarginTable("nfl")
+    across_3 = real.cover(-2.5, near=-3) - real.cover(-3.5, near=-3)
+    across_5 = real.cover(-4.5, near=-5) - real.cover(-5.5, near=-5)
+    check("real table: a point across 3 is worth more than across 5", across_3 > across_5, True)
 
 
 if __name__ == "__main__":
@@ -125,6 +155,7 @@ if __name__ == "__main__":
         test_edge_flags_past_threshold,
         test_edge_uses_prices,
         test_margin_table_push_and_move,
+        test_no_training_file_falls_back_to_a_normal_curve,
     ]:
         print(f"\n{fn.__name__}")
         fn()

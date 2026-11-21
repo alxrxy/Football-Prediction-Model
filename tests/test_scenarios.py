@@ -149,7 +149,11 @@ def test_publish_merges_and_retires():
         ii._infer_week = lambda *a: 4
         saved_sm = sc.db.select_merged
         sc.db.select_merged = lambda *a, **k: []
-        lines_path = sc.config.DATA_DIR / "props_lines.json"
+        # run() reads data/props_lines.json, which is git-ignored and absent on a fresh clone. The test
+        # stubs run_game, so the lines are never used: give it an empty file in the temp folder (2026-11-20).
+        saved_dir = sc.config.DATA_DIR
+        sc.config.DATA_DIR = tmp
+        (tmp / "props_lines.json").write_text("{}", encoding="utf-8")
         try:
             out = sc.run(publish=True, game_ids={"STILL_OPEN", "NOW_KNOWN"})
             got = json.loads(sc.OUT_JSON.read_text(encoding="utf-8"))
@@ -158,6 +162,7 @@ def test_publish_merges_and_retires():
             sn.load_inputs, sn.qb_check_inputs = saved_sn
             ii._infer_week = saved_iw
             sc.db.select_merged = saved_sm
+            sc.config.DATA_DIR = saved_dir
     check("merged games", sorted(got["games"]), ["OTHER_WINDOW", "STILL_OPEN"])
     check("summary names what qualified", "1 scenario(s)" in sc.summary({**out, "games": {
         "STILL_OPEN": {"away": "A", "home": "H", "scenarios": [1], "control": {"reproduces_served": True}}}}), True)

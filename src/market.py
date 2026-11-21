@@ -143,6 +143,9 @@ class MarginTable:
     def _load(sport: str) -> tuple[list[float], list[int]]:
         path = config.DATA_DIR / f"training_{sport}.csv"
         if not path.exists():
+            # Fresh clone, before build_training: say so rather than degrade silently (2026-11-20).
+            print(f"  [warn] {path.name} not found: line restating uses a plain normal curve, which cannot "
+                  f"see key numbers (3, 7). Build it with: python -m src.build_training --sport {sport}")
             return [], []
         import csv
 
