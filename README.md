@@ -79,25 +79,86 @@ Coverage differs enormously by sport, and the report says which applies:
 
 ## Setup
 
+Checked from a fresh clone on 2026-11-20 (Windows 11, Python 3.11.9, Node 24). The NFL
+pipeline runs with **no keys at all**; keys add live lines, props and the Q&A.
+
+**You need**
+
+- **Python 3.11.** The pins in `requirements.txt` are 3.11 builds (pandas 1.5.3,
+  numpy 1.26.4); other versions are untested.
+- **Node 18+ and npm**, only for the dashboard.
+
+**Steps**
+
 ```bash
+# 1. Python environment
+python -m venv .venv
+.venv\Scripts\activate            # macOS / Linux: source .venv/bin/activate
 pip install -r requirements.txt
+
+# 2. Optional: keys. Copy the template and fill in what you have (see the table below).
+copy .env.example .env             # macOS / Linux: cp .env.example .env
+
+# 3. Data + baseline predictions for the current NFL week (about a minute; creates data/football.db)
+python run_pipeline.py
+
+# 4. Optional: the ML layer. Builds the 2016+ training file (about a minute) and trains the model.
+python -m src.build_training --sport nfl --start 2016
+python -m src.train_model --sport nfl
+python run_pipeline.py --model both --skip-ingest
+
+# 5. Simulate games (about 30 s each), then export for the dashboard
+python -m src.simulate_nfl --date 2026-11-22 --upcoming-only --quiet     # one slate date; repeat per date
+python -m src.export_sims
+python -m src.export_dashboard --no-explain      # --no-explain: no Claude call
+python -m src.td_board                            # optional: the experimental TD board
+
+# 6. Dashboard
+cd dashboard
+npm ci
+npm run dev                                       # http://localhost:5174
+
+# 7. Optional: Claude Q&A on the game pages (needs Claude_API_KEY), in a second terminal
+python -m src.api_server                          # 127.0.0.1:8787; the dashboard proxies /api to it
+
+# Tests
+python -m pytest -q
 ```
 
-Secrets live in `.env` (git-ignored, as is `Lock.txt`). See `.env.example`.
+**Keys**
+
+| Variable | Needed for | Without it |
+|---|---|---|
+| none | nflverse data, weather, ESPN injuries, baseline predictions, simulation, dashboard | this all works |
+| `ODDS_API_KEY` (The Odds API; has a free tier) | live book lines; player props and TD lines | lines are skipped with a warning and NFL games keep the nflverse schedule line; props and TD pulls stop with a clear message |
+| `Claude_API_KEY` (paid, metered) | game Q&A, prop explanations, game notes | Q&A answers "No Claude API key found"; use `--no-explain` on exports |
+| `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` | hosted storage (`STORAGE_BACKEND=supabase`) | local SQLite at `data/football.db`, the default |
+| `CFBD_API_KEY` | college football (`--sport ncaaf`) | college does not run |
+| `SPORTRADAR_API_KEY*`, `FANTASYPROS_API_KEY` | finished experiments (P61, P62, P47) | nothing in the weekly routine uses them |
+
+Secrets live in `.env` (git-ignored, as is `Lock.txt`). Never commit either.
+
+**What a fresh clone does not have.** `data/` and `models/` are git-ignored, so the
+training file, the trained model, the simulation tables and every stored prediction
+are built locally by the steps above. Two things degrade until step 4 has run: the
+ML layer is skipped ("No trained model"), and line restating falls back to a plain
+normal curve (a warning says so).
 
 ## Running
 
 ```bash
-python run_pipeline.py                    # today's CFB slate
-python run_pipeline.py --sport nfl        # next NFL slate with games
+python run_pipeline.py                    # NFL (the default): every slate through the next Sunday's week
+python run_pipeline.py --sport ncaaf      # college; needs CFBD_API_KEY
 python run_pipeline.py --sport both
+python run_pipeline.py --model both       # baseline and ML (the ML needs a trained model)
 python run_pipeline.py --date 2026-09-19
 python run_pipeline.py --skip-ingest      # re-predict from stored data
 python run_pipeline.py --fresh-odds       # bypass odds cache (costs quota)
 ```
 
 With no `--date`, the runner picks the next date that actually has unplayed
-games, so `--sport nfl` on a Tuesday still shows Sunday's slate.
+games, so a run on a Tuesday still shows Sunday's slate. Without `ODDS_API_KEY`
+the live-lines step is skipped with a warning and the run continues.
 
 On an NFL Sunday, `python run_sunday.py --watch` runs the whole refresh once
 per kickoff window, so the inactive lists are picked up before each set of
@@ -160,7 +221,7 @@ To move onto Supabase:
 ## Dashboard
 
 ```bash
-cd dashboard && npm install && npm run dev     # http://localhost:5173
+cd dashboard && npm ci && npm run dev          # http://localhost:5174
 python -m src.export_dashboard                 # refresh its data
 ```
 
@@ -377,7 +438,7 @@ python -m src.live_tracker --no-notify     # no desktop toasts
 python -m tests.test_live
 ```
 
-Open `http://localhost:5173/live.html` with the dashboard dev server running.
+Open `http://localhost:5174/live.html` with the dashboard dev server running.
 The page re-reads `live.json` every 20 seconds.
 
 A layer of its own. It reads the stored pregame prediction and simulation,
@@ -523,9 +584,19 @@ still to come. Timeouts aren't modelled, so late-game clock use is approximate.
 
 ```bash
 python -m src.build_training --sport nfl --start 2016    # historical features
-python -m src.train_model --sport nfl                    # train + backtest
-python run_pipeline.py --sport nfl --model both          # baseline and ML
+python -m src.train_model --sport nfl --holdout 2025     # train + backtest on the 2025 season (the numbers below)
+python -m src.train_model --sport nfl                    # default: holds out the LATEST season, i.e. the one in progress
+python run_pipeline.py --model both                      # baseline and ML
 ```
+
+`--holdout` matters. With no flag the holdout is the newest season in the
+training file, which during a season is a partial one (151 games of 2026 on
+2026-11-20), so the printed numbers change week to week. `--holdout 2025` trains
+on 2016-2023, validates on 2024 and scores 2025, and is what the tables below use.
+
+`train_model` **saves the model it trains** to `models/nfl_margin.json`, replacing
+the one the pipeline serves. To reproduce the backtest without touching a model
+you are using, run it in a separate clone.
 
 ### Lookahead was the main design constraint
 
@@ -551,35 +622,53 @@ model only ever saw as zero is a silent skew, not an upgrade.
 | `fundamentals` | no | the only one that can disagree with the market, so the only one that can find value |
 | `with_market` | yes | more accurate, and useless for value — the cheapest way to predict a margin is to copy the line |
 
-### Results: holdout is the most recent season, never used in fitting
+### Results: 2025 holdout, never used in fitting
+
+Reproduce with `python -m src.build_training --sport nfl --start 2016` then
+`python -m src.train_model --sport nfl --holdout 2025`. The numbers below are that
+command's output on 2026-11-20 (2,191 training games 2016-2023, 285 validation
+games 2024, 285 holdout games 2025).
 
 Early stopping chooses the number of trees, which makes whatever set it watches
 part of fitting. The season before the holdout is therefore carved out as a
 validation set, and the holdout is touched exactly once, at scoring time.
 
-Mean absolute error in points of margin:
+Mean absolute error in points of margin, NFL 2025 (285 games):
 
-| | NFL (285 games) | NCAAF (762 games) |
-|---|---|---|
-| **Closing line** | **9.670** | **11.846** |
-| `fundamentals` | 10.152 (+0.482) | 12.98 (+1.13) |
-| `with_market` | 9.602 (**-0.069**) | 11.88 (+0.03) |
-
-Adding injuries moved the NFL `with_market` model from +0.002 to **-0.069**
-versus the line: with injury features it is no longer merely copying the line,
-it is slightly correcting it. That is the first evidence in this project of
-information the closing line does not fully price.
-
-It is also a very small effect, and it does **not** translate into a spread
-edge. Against the spread, no bucket in either sport survives correction for
-multiple comparisons — five thresholds across two models is ten chances to
-clear p<0.05 by luck, so roughly one false positive is expected per run:
-
-| Edge | NFL win% (n) | raw p | corrected p |
+| | MAE | vs the closing line | Weeks 1-4 (64 games) |
 |---|---|---|---|
-| >= 2.0 | 56.1% (82) | 0.251 | 1.000 |
-| >= 3.0 | 58.3% (36) | 0.238 | 1.000 |
-| >= 4.0 | 68.8% (16) | 0.095 | 0.952 |
+| **Closing line** | **9.670** | | 8.844 |
+| `fundamentals` | 10.150 | +0.480 (worse) | 9.040 |
+| `with_market` | 9.610 | -0.061 | 8.764 |
+
+Against the spread on the same 285 games (break-even at -110 is 52.4%; p-values
+corrected for the ten model-by-threshold tests):
+
+| Edge | `fundamentals` | `with_market` | corrected p |
+|---|---|---|---|
+| >= 0.0 | 142/285 = 49.8% | 151/285 = 53.0% | 1.000 / 1.000 |
+| >= 2.0 | 69/138 = 50.0% | 52/88 = 59.1% | 1.000 / 1.000 |
+| >= 3.0 | 44/94 = 46.8% | 21/37 = 56.8% | 1.000 / 1.000 |
+| >= 4.0 | 25/56 = 44.6% | 12/17 = 70.6% | 1.000 / 0.666 |
+| >= 6.0 | 7/19 = 36.8% | none | 1.000 |
+
+**Conclusion: neither model beats the closing line.**
+
+- `fundamentals`, the only model that can disagree with the market, is 0.48
+  points worse than the line and sits at 50% or below against the spread at
+  every threshold.
+- `with_market` is 0.06 points better than the line on 285 games. That is the
+  line with a small correction. No significance test was run on that margin
+  difference, and it does not turn into a spread edge: no threshold survives the
+  correction for multiple comparisons.
+- It does not hold up on newer games. Holding out the 2026 season to date
+  instead (`python -m src.train_model --sport nfl`, 151 games on 2026-11-20):
+  closing line 9.573, `fundamentals` 9.957, `with_market` 9.908. Both are worse
+  than the line.
+
+The college model was not re-run for this update. Its last stored result
+(2026-09-12, 762 games of 2025): closing line 11.846, `fundamentals` 13.19,
+`with_market` 11.88. Neither beats the line there either.
 
 ### A result that did not survive scrutiny
 

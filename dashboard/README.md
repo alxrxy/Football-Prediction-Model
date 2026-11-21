@@ -7,7 +7,7 @@ React + Vite front end for the predictor. Step 8 of the architecture build order
 ```bash
 cd dashboard
 npm install
-npm run dev          # http://localhost:5173
+npm run dev          # http://localhost:5174
 ```
 
 The dev server reads `public/data.json`. Regenerate that after a pipeline run:
