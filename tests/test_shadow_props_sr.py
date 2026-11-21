@@ -22,7 +22,7 @@ from src import shadow_props_sr as sh
 sh._RESOLVERS[2026] = None   # unit tests never fetch the nflverse roster
 
 PASS, FAIL = 0, 0
-FIXTURE = Path(__file__).parent / "fixtures" / "sr_props_pit_cle_2026w4.json"
+FIXTURE = Path(__file__).parent / "fixtures" / "sr_props_synthetic.json"
 NOW = datetime(2026, 10, 1, 23, 0, tzinfo=timezone.utc)
 
 
@@ -104,7 +104,7 @@ def test_convert_with_resolver_uses_team():
     check("name record kept", counts["names"], [{"sr": "Ward, Cameron", "name": "Cam Ward", "how": "alias", "team": "TEN"}])
 
 
-def test_convert_real_payload():
+def test_convert_full_payload():
     """The 9/30 PIT @ CLE response (trimmed to the four priced markets)."""
     data = json.loads(FIXTURE.read_text(encoding="utf-8"))
     players, counts = sh.convert(data)
@@ -152,7 +152,7 @@ def test_map_events():
 ODDS = {"pulled_at": "2026-10-01T22:58:00+00:00", "season": 2026, "week": 4, "markets": list(sh.MARKET_MAP.values()),
         "games": {"2026_04_PIT_CLE": {"home": "CLE", "away": "PIT", "kickoff": "2026-10-02T00:15:00+00:00",
                                       "event_id": "oddsapi1", "players": {}, "pulled_at": "2026-10-01T22:58:00+00:00"}}}
-SCHEDULE = {"schedules": [{"sport_event": {"id": "sr:sport_event:71515842", "start_time": "2026-10-02T00:15:00+00:00",
+SCHEDULE = {"schedules": [{"sport_event": {"id": "sr:sport_event:900000001", "start_time": "2026-10-02T00:15:00+00:00",
                                            "competitors": [{"qualifier": "home", "abbreviation": "CLE"},
                                                            {"qualifier": "away", "abbreviation": "PIT"}]}}]}
 
@@ -352,7 +352,7 @@ if __name__ == "__main__":
         test_first_last,
         test_name_resolver,
         test_convert_with_resolver_uses_team,
-        test_convert_real_payload,
+        test_convert_full_payload,
         test_convert_exclusions,
         test_map_events,
         test_pull_saves_pair,
