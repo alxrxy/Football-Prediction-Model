@@ -80,3 +80,25 @@ def test_a_started_game_is_marked_started():
     doc = td_board.build(2026, 11, now=datetime(2026, 11, 22, 19, 0, tzinfo=timezone.utc), store=store, facts=facts,
                          td_list=td_list)
     assert all(p["started"] for p in doc["players"])
+
+
+def test_build_on_the_sqlite_backend_decodes_json_columns(tmp_path):
+    """SQLite hands JSON columns back as text (Supabase returns objects). The board must read both:
+    `python -m src.td_board` crashed on the default backend with "'str' object has no attribute 'get'"."""
+    from src.db import SqliteStore, stamp
+
+    fake, facts, td_list = _fixture()
+    store = SqliteStore(tmp_path / "td_board.db")
+    store.upsert("games", stamp([{**g, "is_neutral_site": False} for g in fake.t["games"]]))
+    store.upsert("game_simulations", [{**s, "n_sims": 10000, "sim_version": "sim-v1", "sport": "nfl", "home_team": "BBB", "away_team": "AAA",
+                                       "box_score": {"home": {"team": {"pass_att": {"mean": 30.0}, "rush_att": {"mean": 28.0}}}}}
+                                      for s in fake.t["game_simulations"]])
+    raw = store.select("game_simulations", {"game_id": "2026_11_AAA_BBB"})[0]
+    assert isinstance(raw["td_scorers"], str) and isinstance(raw["box_score"], str)      # the condition that broke it
+    doc = td_board.build(2026, 11, now=datetime(2026, 11, 19, 21, 0, tzinfo=timezone.utc), store=store, facts=facts,
+                         td_list=td_list)
+    store.close()
+    assert doc["counts"] == {"players": 4, "priced": 1, "games": 1}
+    bo = next(p for p in doc["players"] if p["player"] == "Bo One")
+    assert bo["p_two"] == 0.15 and bo["explain"]["role_injuries"][0]["from"] == "Bo Hurt"
+    assert bo["explain"]["game_script"]["sim_plays"] == 58.0

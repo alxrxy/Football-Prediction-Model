@@ -36,6 +36,16 @@ LABEL = ("EXPERIMENTAL / UNVALIDATED. Touchdowns are binary and high-variance; t
 GROUPS = {"RB": "RB", "FB": "RB", "HB": "RB", "WR": "WR", "TE": "TE", "QB": "QB"}
 
 
+def _obj(value):
+    """A JSON column as an object. Supabase returns objects; the SQLite backend returns the stored text."""
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return value
+
+
 def edge(p_model: float | None, p_market: float | None) -> float | None:
     """Model minus devigged market, in probability points; None without a price."""
     if p_model is None or p_market is None:
@@ -176,12 +186,12 @@ def build(season: int | None = None, week: int | None = None, now: datetime | No
         game_meta.append(meta)
         if not sim:
             continue
-        ts = sim.get("td_scorers") or {}
+        ts = _obj(sim.get("td_scorers")) or {}
         spread, total = sim.get("market_spread"), sim.get("market_total")
         meta.update({"market_spread_home": spread, "market_total": total, "sim_margin_home": sim.get("sim_margin_home"),
                      "sim_total": round((sim.get("mean_home_points") or 0) + (sim.get("mean_away_points") or 0), 1),
                      "sim_generated_at": sim.get("generated_at")})
-        box = sim.get("box_score") or {}
+        box = _obj(sim.get("box_score")) or {}
         for side, team, opp in (("away", g["away_team"], g["home_team"]), ("home", g["home_team"], g["away_team"])):
             tb = ((box.get(side) or {}).get("team") or {}) if isinstance(box.get(side), dict) else {}
             plays = None
