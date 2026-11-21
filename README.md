@@ -670,6 +670,44 @@ The college model was not re-run for this update. Its last stored result
 (2026-09-12, 762 games of 2025): closing line 11.846, `fundamentals` 13.19,
 `with_market` 11.88. Neither beats the line there either.
 
+### Live record, 2026 season
+
+```bash
+python calibration/live_record.py                 # current season, both models
+python calibration/live_record.py --season 2026 --json live_record.json
+```
+
+Read-only: the store is wrapped so that any write raises, and nothing is graded
+or refreshed (`python -m src.grade` prints a fuller report but writes grades to
+the store). It counts every finished, non-tied game whose stored prediction was
+generated before the stored kickoff, and compares with the line stored with that
+prediction. Each game and model has one stored row, the last pregame run.
+
+Output on 2026-11-20 (weeks 1-10; 140 graded games per model; 9 finished games had
+no pregame prediction and are not counted):
+
+| | Winner accuracy | Brier | Log loss | Margin MAE |
+|---|---|---|---|---|
+| `baseline-v1` | 61.4% | 0.2343 | 0.6642 | 10.77 |
+| `ml-v1` | 67.9% | 0.2164 | 0.6246 | 9.90 |
+| Reference | market favourite 68.8% | constant 50%: 0.2500 | constant 50%: 0.6931 | stored line 9.56 / 9.57 |
+
+Calibration, by confidence in the side picked (predicted, then how often that side won):
+
+| Confidence | `baseline-v1` n | predicted | actual | `ml-v1` n | predicted | actual |
+|---|---|---|---|---|---|---|
+| 50-55% | 29 | 52.9% | 55.2% | 32 | 52.7% | 53.1% |
+| 55-60% | 27 | 57.6% | 48.1% | 23 | 57.4% | 65.2% |
+| 60-65% | 18 | 62.1% | 66.7% | 27 | 62.5% | 70.4% |
+| 65-70% | 19 | 67.6% | 68.4% | 17 | 67.9% | 76.5% |
+| 70-80% | 31 | 75.4% | 67.7% | 36 | 74.7% | 77.8% |
+| 80%+ | 16 | 84.2% | 68.8% | 5 | 82.4% | 60.0% |
+
+What it says, plainly: both models are better than a coin flip and **neither
+beats the market** on winners or on margin. The baseline is overconfident above
+70%. The bins are small (5 to 36 games), so the calibration table is a description,
+not a fitted curve.
+
 ### A result that did not survive scrutiny
 
 An earlier version of this backtest reported 65.1% ATS at edge >= 3 with
